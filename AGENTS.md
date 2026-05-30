@@ -44,7 +44,9 @@ the image is the lean runtime (`uv sync --no-dev`, no tests, no pytest/ruff).
 ```bash
 uv sync                                  # install deps into .venv (incl. dev)
 cp .env.example .env                     # then fill in real values
-sudo ./scripts/setup_local_db.sh         # provision local Postgres role + db
+# provision the local Postgres role + db (credentials per .env):
+sudo -u postgres psql -c "CREATE ROLE workspace_mcp LOGIN PASSWORD 'wmcp_local_dev_pw';" \
+                      -c "CREATE DATABASE workspace_mcp OWNER workspace_mcp;"
 .venv/bin/alembic upgrade head           # apply migrations
 .venv/bin/python -m pytest -q            # run tests
 .venv/bin/ruff check src tests           # lint (must be clean)
