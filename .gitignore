@@ -1,0 +1,45 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+.git-local/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build and packaging output
+*.egg-info/
+dist/
+build/
+
+# Local databases and runtime output
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Tooling and editor state
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code local (personal) settings — shared settings.json is committed
+.claude/settings.local.json
+
+# OS files
+.DS_Store
+Thumbs.db

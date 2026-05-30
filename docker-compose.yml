@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    network_mode: host
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-${DATABASE_URL:-postgresql+psycopg://workspace_mcp:wmcp_local_dev_pw@127.0.0.1:5432/workspace_mcp}}
+      BASE_URL: ${BASE_URL:-http://localhost:8000}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
+      TRUSTED_OPEN_WEBUI_ORIGIN: ${TRUSTED_OPEN_WEBUI_ORIGIN:-http://localhost:8000}
+      SESSION_SECRET: ${SESSION_SECRET}
+      DEV_TRUST_ALL_ORIGINS: ${DEV_TRUST_ALL_ORIGINS:-false}
