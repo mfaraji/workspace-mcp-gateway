@@ -16,6 +16,7 @@ from gateway.db.models import ToolAuditLog
 
 # Fields safe to record per tool. Anything not listed is dropped from the summary.
 _SAFE_FIELDS: dict[str, set[str]] = {
+    "system_get_current_time": {"time_zone"},
     "google_calendar_list_calendars": set(),
     "google_calendar_list_events": {"calendar_id", "max_results", "order_by", "single_events"},
     "google_calendar_get_event": {"calendar_id", "event_id"},

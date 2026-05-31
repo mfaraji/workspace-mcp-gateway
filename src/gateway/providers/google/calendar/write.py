@@ -20,10 +20,20 @@ class CreateEventInput(BaseModel):
     calendar_id: str = Field("primary", description="Calendar id, or 'primary'.")
     summary: str = Field(..., description="Event title.")
     start: str = Field(
-        ..., description="Start time: RFC3339 datetime, or 'YYYY-MM-DD' for an all-day event."
+        ...,
+        description=(
+            "Start time: RFC3339 datetime, or 'YYYY-MM-DD' for an all-day event. "
+            "For relative dates like 'Monday at 10', first resolve the date with "
+            "system_get_current_time instead of asking the user for today's date."
+        ),
     )
     end: str = Field(
-        ..., description="End time: RFC3339 datetime, or 'YYYY-MM-DD' for an all-day event."
+        ...,
+        description=(
+            "End time: RFC3339 datetime, or 'YYYY-MM-DD' for an all-day event. "
+            "For relative dates like 'Monday at 10', first resolve the date with "
+            "system_get_current_time instead of asking the user for today's date."
+        ),
     )
     description: str | None = Field(None, description="Event description / notes.")
     location: str | None = Field(None, description="Event location.")
@@ -37,8 +47,22 @@ class UpdateEventInput(BaseModel):
     calendar_id: str = Field("primary", description="Calendar id, or 'primary'.")
     event_id: str = Field(..., description="The event id to update.")
     summary: str | None = Field(None, description="New event title.")
-    start: str | None = Field(None, description="New start (RFC3339 datetime or 'YYYY-MM-DD').")
-    end: str | None = Field(None, description="New end (RFC3339 datetime or 'YYYY-MM-DD').")
+    start: str | None = Field(
+        None,
+        description=(
+            "New start (RFC3339 datetime or 'YYYY-MM-DD'). For relative dates, first "
+            "resolve the date with system_get_current_time instead of asking the user "
+            "for today's date."
+        ),
+    )
+    end: str | None = Field(
+        None,
+        description=(
+            "New end (RFC3339 datetime or 'YYYY-MM-DD'). For relative dates, first "
+            "resolve the date with system_get_current_time instead of asking the user "
+            "for today's date."
+        ),
+    )
     description: str | None = Field(None, description="New description.")
     location: str | None = Field(None, description="New location.")
     time_zone: str | None = Field(None, description="IANA timezone for timed start/end.")

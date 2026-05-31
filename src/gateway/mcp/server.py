@@ -33,7 +33,9 @@ def build_mcp(settings: Settings) -> FastMCP:
     # Provider self-registration. Each provider module exposes register(registry).
     from gateway.providers.google.calendar import read as google_calendar_read
     from gateway.providers.google.calendar import write as google_calendar_write
+    from gateway.providers.system import time as system_time
 
+    system_time.register(registry)
     google_calendar_read.register(registry)
     google_calendar_write.register(registry)
 
