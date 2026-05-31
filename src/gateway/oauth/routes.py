@@ -82,9 +82,15 @@ async def start(request: Request):
             {"error": "unauthorized", "detail": "no identity or valid connect ticket"},
             status_code=401,
         )
+    product = request.query_params.get("product")
+    try:
+        scopes = goog.scopes_for_product(product)
+        normalized_product = goog.normalize_product(product)
+    except ValueError as exc:
+        return JSONResponse({"error": "invalid_product", "detail": str(exc)}, status_code=400)
 
-    state = goog.sign_state(settings, external_user_id)
-    flow = goog.build_flow(settings, state=state)
+    state = goog.sign_state(settings, external_user_id, product=normalized_product)
+    flow = goog.build_flow(settings, scopes=scopes, state=state)
     authorization_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
@@ -108,11 +114,16 @@ async def callback(request: Request):
         return JSONResponse({"error": "invalid_request"}, status_code=400)
 
     try:
-        external_user_id = goog.verify_state(settings, state)
+        state_payload = goog.verify_state_payload(settings, state)
     except ValueError as exc:
         return JSONResponse({"error": "invalid_state", "detail": str(exc)}, status_code=400)
 
-    flow = goog.build_flow(settings, state=state)
+    external_user_id = state_payload["uid"]
+    product = state_payload.get("product")
+    try:
+        flow = goog.build_flow(settings, scopes=goog.scopes_for_product(product), state=state)
+    except ValueError as exc:
+        return JSONResponse({"error": "invalid_product", "detail": str(exc)}, status_code=400)
     try:
         with _relax_oauthlib_scope_check():
             flow.fetch_token(code=code, include_client_id=True)
@@ -129,7 +140,6 @@ async def callback(request: Request):
     creds = flow.credentials
 
     account = _identify_google_account(creds, settings)
-
 
     expires_at = creds.expiry.replace(tzinfo=UTC) if creds.expiry else None
     stored = StoredCredentials(

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import inspect
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 import anyio
@@ -50,8 +51,15 @@ class ToolRegistry:
     def add(self, spec: ToolSpec) -> None:
         self._specs.append(spec)
 
-    def register_all(self, mcp: FastMCP, settings: Settings) -> None:
+    def register_all(
+        self,
+        mcp: FastMCP,
+        settings: Settings,
+        predicate: Callable[[ToolSpec], bool] | None = None,
+    ) -> None:
         for spec in self._specs:
+            if predicate is not None and not predicate(spec):
+                continue
             mcp.add_tool(
                 self._build_callable(spec, settings),
                 name=spec.name,

@@ -10,16 +10,17 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from gateway.config import get_settings
 from gateway.db.engine import check_database
 from gateway.logging import configure_logging
 from gateway.mcp.context import IdentityMiddleware
-from gateway.mcp.server import build_mcp
+from gateway.mcp.server import build_mcp, product_tool_filter
 
 
 def create_app() -> FastAPI:
@@ -27,13 +28,20 @@ def create_app() -> FastAPI:
     configure_logging()
     settings = get_settings()
 
-    mcp = build_mcp(settings)
-    # Accessing streamable_http_app() lazily creates the session manager.
-    mcp_app = mcp.streamable_http_app()
+    mcp_servers = {
+        "all": build_mcp(settings),
+        "calendar": build_mcp(settings, product_tool_filter("calendar")),
+        "drive": build_mcp(settings, product_tool_filter("drive")),
+        "tasks": build_mcp(settings, product_tool_filter("tasks")),
+    }
+    # Accessing streamable_http_app() lazily creates each session manager.
+    mcp_apps = {name: mcp.streamable_http_app() for name, mcp in mcp_servers.items()}
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        async with mcp.session_manager.run():
+        async with AsyncExitStack() as stack:
+            for mcp in mcp_servers.values():
+                await stack.enter_async_context(mcp.session_manager.run())
             yield
 
     app = FastAPI(title="workspace-mcp-gateway", lifespan=lifespan)
@@ -62,8 +70,20 @@ def create_app() -> FastAPI:
             return JSONResponse({"status": "ready"})
         return JSONResponse({"status": "not_ready"}, status_code=503)
 
-    # Mount the MCP Streamable HTTP app behind identity enforcement: every
-    # request must carry a trustworthy Open WebUI user identity.
-    app.mount("/mcp", IdentityMiddleware(mcp_app, settings))
+    @app.api_route("/mcp/{product}", methods=["GET", "POST", "DELETE"])
+    async def redirect_product_mcp_root(product: str, request: Request) -> RedirectResponse:
+        """Match /mcp/{product} behavior to /mcp by redirecting to the app root."""
+        if product not in {"calendar", "drive", "tasks"}:
+            return RedirectResponse("/mcp/", status_code=307)
+        query = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(f"/mcp/{product}/{query}", status_code=307)
+
+    # Mount MCP Streamable HTTP apps behind identity enforcement: every request
+    # must carry a trustworthy Open WebUI user identity. Product-specific mounts
+    # are registered before the backward-compatible /mcp catch-all.
+    app.mount("/mcp/calendar", IdentityMiddleware(mcp_apps["calendar"], settings))
+    app.mount("/mcp/drive", IdentityMiddleware(mcp_apps["drive"], settings))
+    app.mount("/mcp/tasks", IdentityMiddleware(mcp_apps["tasks"], settings))
+    app.mount("/mcp", IdentityMiddleware(mcp_apps["all"], settings))
 
     return app

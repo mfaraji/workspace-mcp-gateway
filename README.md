@@ -2,11 +2,10 @@
 
 A multi-user MCP gateway for [Open WebUI](https://github.com/open-webui/open-webui).
 Each Open WebUI user connects their own Google Workspace account; the gateway
-exposes a single Streamable HTTP MCP endpoint and keeps provider integrations
-modular.
+exposes Streamable HTTP MCP endpoints and keeps provider integrations modular.
 
 This is the **V1 vertical slice**: gateway skeleton, Postgres schema, Google
-OAuth with encrypted token storage, and Google **Calendar read** tools. See
+OAuth with encrypted token storage, and Google **Calendar** tools. See
 [`spec.md`](./spec.md) for the full design and roadmap.
 
 ## Architecture
@@ -114,6 +113,16 @@ curl -sS localhost:8000/mcp \
   -H 'X-Open-WebUI-User-Id: alice' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
+
+`/mcp` remains the backward-compatible all-tools endpoint. Open WebUI admins can
+also register product-specific tool servers on the same backend:
+
+- `http://127.0.0.1:8000/mcp/calendar`
+- `http://127.0.0.1:8000/mcp/drive`
+- `http://127.0.0.1:8000/mcp/tasks`
+
+Calendar exposes `system_get_current_time` plus `google_calendar_*`. Drive and
+Tasks currently expose only system tools until their provider modules are wired.
 
 Native-client door (bearer token, works from anywhere incl. the public proxy):
 

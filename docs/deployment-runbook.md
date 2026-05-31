@@ -13,7 +13,7 @@ Last updated: 2026-05-31.
 ```
 Browser (users) ──https──> nginx :443 (mcp.ashpazi.shop) ──> gateway 127.0.0.1:8000
                                   │  strips X-Gateway-Auth + X-Open(-)WebUI-User-* on public path
-Open WebUI (ai_open_webui) ──http──> 127.0.0.1:8000/mcp   (host network, BYPASSES nginx;
+Open WebUI (ai_open_webui) ──http──> 127.0.0.1:8000/mcp/* (host network, BYPASSES nginx;
                                   identity + secret headers survive)
 Cursor / Claude (future) ──https──> nginx :443 ──> gateway  (Authorization: Bearer wmcp_…)
 ```
@@ -64,14 +64,18 @@ Compose passes these through (`docker-compose.yml`). Required keys:
 | `SESSION_SECRET` | signs OAuth state + connect tickets |
 | `DEV_TRUST_ALL_ORIGINS` | `false` in prod |
 
-Apply env changes (no rebuild needed): `docker compose up -d`. Code changes: add `--build`.
+Apply env changes: `docker compose up -d`. Python source and migrations are
+bind-mounted into the app container, so code/migration changes need a container
+restart but not an image rebuild. Dependency, Dockerfile, or entrypoint changes
+still need `docker compose up -d --build`.
 
 ---
 
 ## 4. Open WebUI integration
 
-Add the gateway as an **MCP (Streamable HTTP)** tool server in **Admin Panel →
-Settings → Tools**:
+Add the gateway as **MCP (Streamable HTTP)** tool servers in **Admin Panel →
+Settings → Integrations → Tool Servers**. During migration, `/mcp` remains the
+all-tools endpoint:
 
 - **Type:** **MCP** (NOT OpenAPI — default is OpenAPI; the wrong type makes it fetch
   `/openapi.json` and load zero tools).
@@ -83,6 +87,19 @@ Settings → Tools**:
   ```json
   { "X-Gateway-Auth": "<GATEWAY_SHARED_SECRET from .env>" }
   ```
+
+For product-level selection in Open WebUI, register separate tool servers against
+the same backend and same static header:
+
+| Name | URL |
+|---|---|
+| `Google Calendar` | `http://127.0.0.1:8000/mcp/calendar` |
+| `Google Drive` | `http://127.0.0.1:8000/mcp/drive` |
+| `Google Tasks` | `http://127.0.0.1:8000/mcp/tasks` |
+
+`/mcp/calendar` exposes `system_get_current_time` plus `google_calendar_*`.
+`/mcp/drive` and `/mcp/tasks` are mounted now but expose only system tools until
+their provider modules exist.
 
 ### The identity gotcha (important)
 

@@ -13,6 +13,25 @@ reworking the core.
 The authoritative product/scope document is [`spec.md`](./spec.md) — read it
 before making design decisions. It defines V1 milestones and acceptance criteria.
 
+## Product MCP endpoint convention
+
+Keep one backend gateway process, but expose product-specific MCP mounts so Open
+WebUI admins can register separate tool servers and users can select products
+with Open WebUI's native tool-server UI:
+
+- `/mcp` remains the backward-compatible "all enabled tools" endpoint.
+- `/mcp/calendar` registers `system_get_current_time` plus `google_calendar_*`.
+- `/mcp/drive` registers `system_get_current_time` plus `google_drive_*` when
+  Drive provider modules exist; until then it intentionally exposes only system
+  tools.
+- `/mcp/tasks` registers `system_get_current_time` plus `google_tasks_*` when
+  Tasks provider modules exist; until then it intentionally exposes only system
+  tools.
+
+Mount every MCP app behind `IdentityMiddleware`, using the same Open WebUI
+forwarded-user headers and `X-Gateway-Auth` shared secret. Do not create separate
+backend services for Calendar/Drive/Tasks just to support product selection.
+
 ## Layout
 
 ```
@@ -82,9 +101,10 @@ Run the server locally: `uv run uvicorn gateway.app:create_app --factory --reloa
   Open WebUI never receives Google tokens.
 - **Tool naming** is provider-prefixed: `google_calendar_list_events`, etc.
 - **Minimal OAuth scopes.** Only request scopes for tools actually registered in
-  `build_mcp()` (incremental authorization). When you wire up a new provider
-  module, union its scopes into `DEFAULT_SCOPES` in `oauth/google.py` at the same
-  time — not before.
+  `build_mcp()` (incremental authorization). Product-specific OAuth starts use
+  the relevant product scopes only. When you wire up a new provider module, union
+  its scopes into `DEFAULT_SCOPES` and enable it in `OAUTH_ENABLED_PRODUCTS` in
+  `oauth/google.py` at the same time — not before.
 
 ## Adding a tool (checklist)
 

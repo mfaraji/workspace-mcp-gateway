@@ -1,16 +1,21 @@
 """Google OAuth flow helpers: scopes, Flow construction, and signed state.
 
 Scopes are organized per-product so incremental authorization can union exactly
-the scopes the enabled tools require. The current build enables Calendar, Drive,
-and Tasks tools, so we request their scopes plus the OpenID scopes needed to
-identify the Google account.
+the scopes the enabled tools require. The current build enables Calendar tools,
+so the default flow requests Calendar plus the OpenID scopes needed to identify
+the Google account.
 """
 
 from __future__ import annotations
 
+from typing import Literal, cast
+from urllib.parse import urlencode
+
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from gateway.config import Settings
+
+GoogleProduct = Literal["calendar", "drive", "tasks"]
 
 # OpenID scopes — required to learn the Google account id (sub) and email.
 OPENID_SCOPES = ["openid", "email", "profile"]
@@ -18,6 +23,7 @@ OPENID_SCOPES = ["openid", "email", "profile"]
 # Per-product Google scopes (extend as tools are enabled — incremental auth).
 CALENDAR_READ_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 CALENDAR_WRITE_SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+CALENDAR_SCOPES = CALENDAR_READ_SCOPES + CALENDAR_WRITE_SCOPES
 
 DRIVE_SCOPES = [
     "https://www.googleapis.com/auth/drive.metadata.readonly",
@@ -35,7 +41,14 @@ TASKS_SCOPES = [
 # tools actually registered in build_mcp(); DRIVE_SCOPES/TASKS_SCOPES are unioned
 # in here as their provider modules are wired up (incremental authorization),
 # keeping consent and token blast radius minimal until then.
-DEFAULT_SCOPES = OPENID_SCOPES + CALENDAR_READ_SCOPES + CALENDAR_WRITE_SCOPES
+DEFAULT_SCOPES = OPENID_SCOPES + CALENDAR_SCOPES
+
+PRODUCT_SCOPES: dict[GoogleProduct, list[str]] = {
+    "calendar": CALENDAR_SCOPES,
+    "drive": DRIVE_SCOPES,
+    "tasks": TASKS_SCOPES,
+}
+OAUTH_ENABLED_PRODUCTS: set[GoogleProduct] = {"calendar"}
 
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -76,6 +89,35 @@ def build_flow(settings: Settings, scopes: list[str] | None = None, state: str |
     return flow
 
 
+def normalize_product(product: str | None) -> GoogleProduct | None:
+    """Normalize an optional Google product selector from query params/state."""
+    if product is None or product == "" or product == "all":
+        return None
+    normalized = product.lower()
+    if normalized in PRODUCT_SCOPES:
+        return cast(GoogleProduct, normalized)
+    raise ValueError(f"unknown Google product: {product}")
+
+
+def scopes_for_product(product: str | None) -> list[str]:
+    """Return OAuth scopes for one product, or all currently enabled tools."""
+    normalized = normalize_product(product)
+    if normalized is None:
+        return DEFAULT_SCOPES
+    if normalized not in OAUTH_ENABLED_PRODUCTS:
+        raise ValueError(f"Google {normalized} tools are not enabled in this gateway")
+    return OPENID_SCOPES + PRODUCT_SCOPES[normalized]
+
+
+def build_start_url(settings: Settings, external_user_id: str, product: str | None = None) -> str:
+    """Build a user-bound Google OAuth start URL, optionally product-scoped."""
+    normalized = normalize_product(product)
+    query = {"ticket": sign_connect_ticket(settings, external_user_id)}
+    if normalized is not None:
+        query["product"] = normalized
+    return f"{settings.base_url.rstrip('/')}/oauth/google/start?{urlencode(query)}"
+
+
 def _serializer(settings: Settings) -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(settings.session_secret, salt=_STATE_SALT)
 
@@ -114,13 +156,19 @@ def verify_connect_ticket(settings: Settings, ticket: str) -> str:
     return uid
 
 
-def sign_state(settings: Settings, external_user_id: str) -> str:
+def sign_state(
+    settings: Settings, external_user_id: str, product: str | None = None
+) -> str:
     """Sign an OAuth ``state`` value binding the callback to a specific user."""
-    return _serializer(settings).dumps({"uid": external_user_id})
+    normalized = normalize_product(product)
+    data = {"uid": external_user_id}
+    if normalized is not None:
+        data["product"] = normalized
+    return _serializer(settings).dumps(data)
 
 
-def verify_state(settings: Settings, state: str) -> str:
-    """Verify a signed state and return the bound external user id.
+def verify_state_payload(settings: Settings, state: str) -> dict:
+    """Verify a signed state and return its payload.
 
     Raises:
         ValueError: if the state is missing, tampered, or expired.
@@ -134,4 +182,18 @@ def verify_state(settings: Settings, state: str) -> str:
     uid = data.get("uid")
     if not uid:
         raise ValueError("oauth state missing user binding")
+    product = data.get("product")
+    if product is not None:
+        normalize_product(product)
+    return data
+
+
+def verify_state(settings: Settings, state: str) -> str:
+    """Verify a signed state and return the bound external user id.
+
+    Raises:
+        ValueError: if the state is missing, tampered, or expired.
+    """
+    data = verify_state_payload(settings, state)
+    uid = data.get("uid")
     return uid

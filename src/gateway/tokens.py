@@ -26,7 +26,7 @@ from gateway.db.engine import session_scope
 from gateway.db.models import ClientToken, User
 from gateway.identity.models import AuthenticatedUser
 from gateway.identity.resolver import get_or_create_user
-from gateway.oauth.google import sign_connect_ticket
+from gateway.oauth.google import build_start_url
 
 TOKEN_SCHEME = "wmcp_"
 PREFIX_LEN = 12
@@ -54,10 +54,7 @@ def cmd_create(args: argparse.Namespace) -> int:
                 token_prefix=prefix,
             )
         )
-        connect_url = (
-            f"{settings.base_url.rstrip('/')}/oauth/google/start"
-            f"?ticket={sign_connect_ticket(settings, args.user)}"
-        )
+        connect_url = build_start_url(settings, args.user)
 
     print(f"Token created for user {args.user!r} (name={args.name!r}).")
     print("Store this token now — it will not be shown again:\n")
