@@ -8,6 +8,7 @@ directly through the registry pipeline.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -24,7 +25,11 @@ class ListCalendarsInput(BaseModel):
 class ListEventsInput(BaseModel):
     calendar_id: str = Field("primary", description="Calendar id, or 'primary'.")
     time_min: str | None = Field(
-        None, description="RFC3339 lower bound for event start (inclusive)."
+        None,
+        description=(
+            "RFC3339 lower bound for event start (inclusive). Use system_get_current_time "
+            "to choose this for relative or upcoming-date requests."
+        ),
     )
     time_max: str | None = Field(
         None, description="RFC3339 upper bound for event start (exclusive)."
@@ -33,6 +38,14 @@ class ListEventsInput(BaseModel):
     max_results: int = Field(25, ge=1, le=250, description="Max events to return.")
     single_events: bool = Field(True, description="Expand recurring events into instances.")
     order_by: str = Field("startTime", description="'startTime' or 'updated'.")
+    include_past: bool = Field(
+        False,
+        description=(
+            "Set true only when the user explicitly asks for past or historical events. "
+            "When false and no time_min/time_max is supplied, results default to upcoming "
+            "events starting from the current time."
+        ),
+    )
 
 
 class GetEventInput(BaseModel):
@@ -68,12 +81,32 @@ def list_events(args: ListEventsInput, ctx: CallContext, session: Session) -> di
         params["timeMin"] = args.time_min
     if args.time_max:
         params["timeMax"] = args.time_max
+    if not args.include_past and not args.time_min and not args.time_max:
+        params["timeMin"] = _now_rfc3339_utc()
     if args.query:
         params["q"] = args.query
 
     resp = service.events().list(**params).execute()
     events = [trim_event(e) for e in resp.get("items", [])]
-    return {"calendar_id": args.calendar_id, "events": events}
+    return {
+        "calendar_id": args.calendar_id,
+        "events": events,
+        "date_context": {
+            "defaulted_to_upcoming": (
+                not args.include_past and not args.time_min and not args.time_max
+            ),
+            "time_min": params.get("timeMin"),
+            "guidance": (
+                "Use system_get_current_time as the source of today's date for relative "
+                "scheduling. Event dates in this result are not today's date."
+            ),
+        },
+    }
+
+
+def _now_rfc3339_utc(now: datetime | None = None) -> str:
+    current = now or datetime.now(UTC)
+    return current.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def get_event(args: GetEventInput, ctx: CallContext, session: Session) -> dict[str, Any]:
@@ -102,7 +135,11 @@ def register(registry) -> None:
             name="google_calendar_list_events",
             provider=PROVIDER,
             risk=RiskLevel.READ,
-            description="List events on a Google calendar, optionally filtered by time or query.",
+            description=(
+                "List events on a Google calendar, optionally filtered by time or query. "
+                "Do not use event dates returned by this tool as today's date; use "
+                "system_get_current_time for current-date and relative-date context."
+            ),
             input_model=ListEventsInput,
             handler=list_events,
         )

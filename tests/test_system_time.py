@@ -30,6 +30,7 @@ def test_time_snapshot_includes_upcoming_weekday_context():
     result = time._time_snapshot(now)
 
     assert result["date"] == "2026-05-31"
+    assert result["today_human"] == "Sunday, May 31, 2026"
     assert result["weekday"] == "Sunday"
     assert result["upcoming_days"][0] == {
         "date": "2026-05-31",
@@ -41,9 +42,19 @@ def test_time_snapshot_includes_upcoming_weekday_context():
         "weekday": "Monday",
         "relative": "+1 days",
     }
+    assert result["next_weekdays"]["Monday"] == {
+        "date": "2026-06-01",
+        "relative": "+1 days",
+        "meaning": "next/following Monday",
+    }
+    assert result["next_weekdays"]["Sunday"] == {
+        "date": "2026-06-07",
+        "relative": "+7 days",
+        "meaning": "next/following Sunday",
+    }
+    assert "Do not infer" in result["guidance"]
 
 
 def test_get_current_time_rejects_unknown_timezone():
     with pytest.raises(ValueError, match="unknown IANA timezone"):
         time.GetCurrentTimeInput(time_zone="not/a-zone")
-

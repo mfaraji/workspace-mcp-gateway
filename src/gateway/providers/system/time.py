@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
 PROVIDER = "system"
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
 class GetCurrentTimeInput(BaseModel):
@@ -52,13 +53,32 @@ def _time_snapshot(now: datetime) -> dict[str, Any]:
             }
         )
 
+    next_weekdays = {}
+    today_weekday = now.weekday()
+    for weekday_index, weekday_name in enumerate(WEEKDAYS):
+        offset = (weekday_index - today_weekday) % 7
+        if offset == 0:
+            offset = 7
+        day = now.date() + timedelta(days=offset)
+        next_weekdays[weekday_name] = {
+            "date": day.isoformat(),
+            "relative": f"+{offset} days",
+            "meaning": f"next/following {weekday_name}",
+        }
+
     return {
         "iso_datetime": now.isoformat(),
         "date": now.date().isoformat(),
+        "today_human": f"{now:%A}, {now:%B} {now.day}, {now:%Y}",
         "weekday": now.strftime("%A"),
         "time_zone": str(now.tzinfo),
         "utc_offset": now.strftime("%z"),
         "upcoming_days": upcoming_days,
+        "next_weekdays": next_weekdays,
+        "guidance": (
+            "Use this date as today's date for relative scheduling. Do not infer "
+            "today or next/following weekdays from existing calendar events."
+        ),
     }
 
 
@@ -70,12 +90,13 @@ def register(registry) -> None:
             provider=PROVIDER,
             risk=RiskLevel.READ,
             description=(
-                "Get the current date, weekday, timezone offset, and upcoming dates. "
+                "Get the current date, weekday, timezone offset, upcoming dates, and "
+                "next weekday dates. "
                 "Use this to resolve relative scheduling phrases like today, tomorrow, "
-                "this Monday, or next Monday before asking the user for a date."
+                "this Monday, next Monday, or following Monday before asking the user "
+                "for a date. Never infer today's date from calendar events."
             ),
             input_model=GetCurrentTimeInput,
             handler=get_current_time,
         )
     )
-

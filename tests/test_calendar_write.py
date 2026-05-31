@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import pytest
 
 from gateway.audit.log import summarize_input
 from gateway.config import Settings
 from gateway.policy import confirm
 from gateway.providers.base import CallContext, RiskLevel
 from gateway.providers.google.calendar import write
-from gateway.providers.registry import ToolRegistry
+from gateway.providers.registry import ToolError, ToolRegistry
 
 
 def _settings(**overrides) -> Settings:
@@ -73,6 +77,34 @@ def test_time_field_distinguishes_all_day_from_timed():
         "dateTime": "2026-06-01T10:00:00-07:00",
         "timeZone": "America/Los_Angeles",
     }
+
+
+def test_event_start_is_past_uses_event_timezone():
+    now = datetime(2026, 5, 31, 14, 0, tzinfo=ZoneInfo("UTC"))
+
+    assert write._event_start_is_past(
+        "2023-05-15T10:00:00", "America/Toronto", now
+    )
+    assert not write._event_start_is_past(
+        "2026-06-01T10:00:00", "America/Toronto", now
+    )
+
+
+def test_unintentional_past_create_is_rejected_before_google_call(monkeypatch):
+    def fail_calendar_service(_session, _ctx):
+        raise AssertionError("calendar service should not be built for rejected past dates")
+
+    monkeypatch.setattr(write, "calendar_service", fail_calendar_service)
+    args = write.CreateEventInput(
+        summary="test event",
+        start="2023-05-15T10:00:00",
+        end="2023-05-15T11:00:00",
+        time_zone="America/Toronto",
+    )
+    ctx = CallContext(user_id=uuid.uuid4(), external_user_id="alice", request_id="r1")
+
+    with pytest.raises(ToolError, match="in the past"):
+        write.create_event(args, ctx, session=None)
 
 
 def test_delete_event_requires_then_accepts_confirmation():
