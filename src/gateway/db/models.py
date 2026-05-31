@@ -55,6 +55,9 @@ class User(Base, TimestampMixin):
     connections: Mapped[list[ProviderConnection]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    client_tokens: Mapped[list[ClientToken]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class ProviderConnection(Base, TimestampMixin):
@@ -104,6 +107,33 @@ class ProviderToken(Base, TimestampMixin):
     connection: Mapped[ProviderConnection] = relationship(back_populates="token")
 
 
+class ClientToken(Base, TimestampMixin):
+    """A static bearer token authenticating one user from a native MCP client.
+
+    Used by clients (Cursor, Claude Desktop) that can't ride the on-host Open
+    WebUI header path. Only the SHA-256 hash of the token is stored; the plaintext
+    is shown once at creation. Revoke by setting ``revoked_at``.
+    """
+
+    __tablename__ = "client_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(128))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    token_prefix: Mapped[str] = mapped_column(String(16))
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    user: Mapped[User] = relationship(back_populates="client_tokens")
+
+
 class ToolAuditLog(Base):
     """One row per tool invocation. Never stores secrets or raw content."""
 
@@ -115,6 +145,8 @@ class ToolAuditLog(Base):
     )
     provider: Mapped[str] = mapped_column(String(64))
     tool_name: Mapped[str] = mapped_column(String(128))
+    # How the caller authenticated: "header" (Open WebUI) or "token" (native client).
+    auth_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     input_summary: Mapped[str | None] = mapped_column(String, nullable=True)
     result_status: Mapped[str] = mapped_column(String(32))

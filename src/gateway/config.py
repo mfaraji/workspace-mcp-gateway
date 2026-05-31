@@ -22,6 +22,14 @@ class Settings(BaseSettings):
 
     token_encryption_key: str
 
+    # Shared secret proving a request originates from the trusted Open WebUI
+    # deployment. Open WebUI sends it as the ``X-Gateway-Auth`` header; the public
+    # reverse proxy strips that header, so only the trusted (loopback) path can
+    # present it. This is the primary gate for header-based identity.
+    gateway_shared_secret: str
+
+    # Defense-in-depth only: the expected Open WebUI origin. No longer the trust
+    # gate (a client can spoof Origin); retained for optional logging/checks.
     trusted_open_webui_origin: str
     session_secret: str
 

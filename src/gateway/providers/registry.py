@@ -134,11 +134,11 @@ def _run_pipeline(
             auth, user_id, request_id, input_summary,
         )
     except ToolError as exc:
-        _audit_error(spec, user_id, request_id, input_summary, exc.error_code)
+        _audit_error(spec, user_id, request_id, input_summary, exc.error_code, auth.source)
         raise
     except SQLAlchemyError as exc:
         # Never surface the connection string / DB internals to the client.
-        _audit_error(spec, user_id, request_id, input_summary, "internal_error")
+        _audit_error(spec, user_id, request_id, input_summary, "internal_error", auth.source)
         raise ToolError("internal_error", "backing store unavailable") from exc
 
 
@@ -182,7 +182,7 @@ def _execute(
             write_audit(
                 session, user_id=user_id, provider=spec.provider, tool_name=spec.name,
                 request_id=request_id, input_summary=input_summary,
-                result_status="needs_confirmation",
+                result_status="needs_confirmation", auth_source=auth.source,
             )
             return {
                 "status": "confirmation_required",
@@ -203,12 +203,14 @@ def _execute(
         write_audit(
             session, user_id=user_id, provider=spec.provider, tool_name=spec.name,
             request_id=request_id, input_summary=input_summary, result_status="ok",
+            auth_source=auth.source,
         )
         return result
 
 
 def _audit_error(
-    spec: ToolSpec, user_id, request_id: str, input_summary: str, error_code: str
+    spec: ToolSpec, user_id, request_id: str, input_summary: str, error_code: str,
+    auth_source: str | None = None,
 ) -> None:
     """Record a failed call in its own transaction (the tool's own rolled back).
 
@@ -220,7 +222,7 @@ def _audit_error(
             write_audit(
                 session, user_id=user_id, provider=spec.provider, tool_name=spec.name,
                 request_id=request_id, input_summary=input_summary,
-                result_status="error", error_code=error_code,
+                result_status="error", error_code=error_code, auth_source=auth_source,
             )
     except SQLAlchemyError:
         pass

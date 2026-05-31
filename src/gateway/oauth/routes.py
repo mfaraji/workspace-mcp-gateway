@@ -33,16 +33,39 @@ def _resolve(request: Request):
     return resolve_identity(dict(request.headers), get_settings())
 
 
+def _resolve_start_user(request: Request, settings) -> str | None:
+    """Resolve the external user id for the start route from identity or ticket."""
+    try:
+        return _resolve(request).external_user_id
+    except IdentityError:
+        pass
+    ticket = request.query_params.get("ticket")
+    if ticket:
+        try:
+            return goog.verify_connect_ticket(settings, ticket)
+        except ValueError:
+            return None
+    return None
+
+
 @router.get("/start")
 async def start(request: Request):
-    """Begin the Google OAuth flow for the calling user."""
-    settings = get_settings()
-    try:
-        auth = _resolve(request)
-    except IdentityError as exc:
-        return JSONResponse({"error": "unauthorized", "detail": str(exc)}, status_code=401)
+    """Begin the Google OAuth flow for the calling user.
 
-    state = goog.sign_state(settings, auth.external_user_id)
+    Identifies the user from the trusted Open WebUI headers, or — for native
+    clients whose browser carries no identity — from a signed ``ticket`` query
+    param minted by the token CLI.
+    """
+    settings = get_settings()
+
+    external_user_id = _resolve_start_user(request, settings)
+    if external_user_id is None:
+        return JSONResponse(
+            {"error": "unauthorized", "detail": "no identity or valid connect ticket"},
+            status_code=401,
+        )
+
+    state = goog.sign_state(settings, external_user_id)
     flow = goog.build_flow(settings, state=state)
     authorization_url, _ = flow.authorization_url(
         access_type="offline",

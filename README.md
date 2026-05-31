@@ -104,23 +104,53 @@ http://localhost:8000/oauth/google/start
 
 ### 6. Call MCP tools
 
+Open WebUI door (header identity + shared secret):
+
 ```bash
 curl -sS localhost:8000/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
+  -H 'X-Gateway-Auth: <GATEWAY_SHARED_SECRET>' \
   -H 'X-Open-WebUI-User-Id: alice' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Native-client door (bearer token, works from anywhere incl. the public proxy):
+
+```bash
+# Mint a token for a user (shown once):
+python -m gateway.tokens create --user alice --name cursor-laptop
+python -m gateway.tokens list --user alice
+python -m gateway.tokens revoke <prefix>
+
+curl -sS https://your-host/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Authorization: Bearer wmcp_...' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
 ## Security model
 
-- Identity is taken from `X-Open-WebUI-User-Id/Email/Name` headers, trusted only
-  when the request originates from `TRUSTED_OPEN_WEBUI_ORIGIN`. **In production,
-  run behind a reverse proxy that strips client-supplied `X-Open-WebUI-*` and
-  `X-Forwarded-*` headers** so they cannot be spoofed.
+Two front doors, both resolving to the same user and Google connection:
+
+- **Open WebUI (header identity).** `X-Open-WebUI-User-Id/Email/Name` are trusted
+  **only** when the request also presents the `X-Gateway-Auth` shared secret
+  (`GATEWAY_SHARED_SECRET`), compared in constant time. Open WebUI must reach the
+  gateway directly (e.g. `127.0.0.1:8000`), bypassing the public proxy so its
+  headers survive. The public proxy strips `X-Gateway-Auth` and `X-Open-WebUI-*`,
+  so a public caller can never assert header identity.
+- **Native clients (bearer token).** Cursor / Claude Desktop authenticate with a
+  per-user token minted by `python -m gateway.tokens`. Only the token's SHA-256
+  hash is stored; revoke via `revoke`. A token maps to a `User`, reusing any
+  Google connection made through Open WebUI. Users without a Google connection get
+  an actionable `/oauth/google/start?ticket=...` link in the tool error.
+- **Deployment.** Terminate TLS at the proxy (`SSL_CERT`/`SSL_KEY` in
+  `scripts/setup-nginx.sh`); bind the app to `127.0.0.1` and firewall its port so
+  the only public route is through the proxy.
 - Tokens are encrypted at rest with Fernet (`TOKEN_ENCRYPTION_KEY`).
-- Tool calls are audited (`tool_audit_log`) without logging tokens, file
-  contents, or full event descriptions.
+- Tool calls are audited (`tool_audit_log`, incl. `auth_source`) without logging
+  tokens, file contents, or full event descriptions.
 
 ## Testing
 

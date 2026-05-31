@@ -19,6 +19,7 @@ def _settings(**overrides) -> Settings:
         google_client_id="cid",
         google_client_secret="secret",
         token_encryption_key="x" * 43 + "=",
+        gateway_shared_secret="shared-secret-value",
         trusted_open_webui_origin="https://openwebui.internal",
         session_secret="sess",
     )

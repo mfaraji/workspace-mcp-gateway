@@ -7,11 +7,21 @@ without touching callers.
 
 from __future__ import annotations
 
+import hashlib
 from functools import lru_cache
 
 from cryptography.fernet import Fernet
 
 from gateway.config import get_settings
+
+
+def hash_token(token: str) -> str:
+    """Return the hex SHA-256 of a bearer token, for storage and lookup.
+
+    Bearer tokens carry enough entropy that a fast unsalted hash is sufficient;
+    we never store the plaintext.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 class TokenCipher:
