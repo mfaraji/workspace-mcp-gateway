@@ -43,6 +43,9 @@ GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 _STATE_SALT = "google-oauth-state"
 _STATE_MAX_AGE_SECONDS = 600  # 10 minutes
 
+_CONNECT_TICKET_SALT = "google-connect-ticket"
+_CONNECT_TICKET_MAX_AGE_SECONDS = 7 * 24 * 3600  # 7 days
+
 
 def _client_config(settings: Settings) -> dict:
     return {
@@ -71,6 +74,40 @@ def build_flow(settings: Settings, scopes: list[str] | None = None, state: str |
 
 def _serializer(settings: Settings) -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(settings.session_secret, salt=_STATE_SALT)
+
+
+def _ticket_serializer(settings: Settings) -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(settings.session_secret, salt=_CONNECT_TICKET_SALT)
+
+
+def sign_connect_ticket(settings: Settings, external_user_id: str) -> str:
+    """Sign a one-time link that lets a native-client user start the Google flow.
+
+    Native clients authenticate with a bearer token, but a browser visiting
+    ``/oauth/google/start`` carries no identity. The token CLI hands the user this
+    signed ticket so the OAuth start route can bind the flow to them.
+    """
+    return _ticket_serializer(settings).dumps({"uid": external_user_id})
+
+
+def verify_connect_ticket(settings: Settings, ticket: str) -> str:
+    """Verify a connect ticket and return the bound external user id.
+
+    Raises:
+        ValueError: if the ticket is missing, tampered, or expired.
+    """
+    try:
+        data = _ticket_serializer(settings).loads(
+            ticket, max_age=_CONNECT_TICKET_MAX_AGE_SECONDS
+        )
+    except SignatureExpired as exc:
+        raise ValueError("connect ticket expired") from exc
+    except BadSignature as exc:
+        raise ValueError("invalid connect ticket") from exc
+    uid = data.get("uid")
+    if not uid:
+        raise ValueError("connect ticket missing user binding")
+    return uid
 
 
 def sign_state(settings: Settings, external_user_id: str) -> str:

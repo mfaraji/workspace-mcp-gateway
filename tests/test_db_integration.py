@@ -8,12 +8,17 @@ and at-rest-encryption guarantees from the spec.
 
 from __future__ import annotations
 
-import pytest
+from datetime import UTC, datetime
 
-from gateway.crypto.tokens import get_cipher
+import pytest
+from sqlalchemy import delete
+
+from gateway.config import get_settings
+from gateway.crypto.tokens import get_cipher, hash_token
 from gateway.db.engine import check_database, session_scope
-from gateway.identity.models import AuthenticatedUser
-from gateway.identity.resolver import get_or_create_user
+from gateway.db.models import ClientToken
+from gateway.identity.models import AuthenticatedUser, IdentityError
+from gateway.identity.resolver import get_or_create_user, resolve_identity
 from gateway.providers.google.connections import (
     StoredCredentials,
     get_active_connection,
@@ -64,3 +69,50 @@ def test_two_users_are_isolated_and_tokens_encrypted():
         cipher = get_cipher()
         assert cipher.decrypt(alice_conn.token.encrypted_access_token) == "alice-access"
         assert cipher.decrypt(bob_conn.token.encrypted_refresh_token) == "bob-refresh"
+
+
+def _mint(session, external_user_id: str, token: str, *, revoked: bool = False) -> None:
+    user = get_or_create_user(session, AuthenticatedUser(external_user_id))
+    # Idempotent across re-runs: drop any prior token with this hash.
+    session.execute(delete(ClientToken).where(ClientToken.token_hash == hash_token(token)))
+    session.add(
+        ClientToken(
+            user_id=user.id,
+            name="test",
+            token_hash=hash_token(token),
+            token_prefix=token[:12],
+            revoked_at=datetime.now(UTC) if revoked else None,
+        )
+    )
+    session.flush()
+
+
+def test_bearer_token_resolves_from_untrusted_origin():
+    """A valid bearer token authenticates with no gateway secret / origin."""
+    settings = get_settings()
+    with session_scope() as session:
+        _mint(session, "itest-token-user", "wmcp_validtoken123")
+        auth = resolve_identity(
+            {"authorization": "Bearer wmcp_validtoken123"}, settings, session
+        )
+        assert auth.external_user_id == "itest-token-user"
+        assert auth.source == "token"
+
+
+def test_revoked_bearer_token_rejected():
+    settings = get_settings()
+    with session_scope() as session:
+        _mint(session, "itest-token-revoked", "wmcp_revoked123", revoked=True)
+        with pytest.raises(IdentityError):
+            resolve_identity(
+                {"authorization": "Bearer wmcp_revoked123"}, settings, session
+            )
+
+
+def test_unknown_bearer_token_rejected():
+    settings = get_settings()
+    with session_scope() as session:
+        with pytest.raises(IdentityError):
+            resolve_identity(
+                {"authorization": "Bearer wmcp_doesnotexist"}, settings, session
+            )

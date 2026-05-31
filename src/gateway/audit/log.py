@@ -56,6 +56,7 @@ def write_audit(
     input_summary: str,
     result_status: str,
     error_code: str | None = None,
+    auth_source: str | None = None,
 ) -> None:
     """Persist one audit row."""
     session.add(
@@ -63,6 +64,7 @@ def write_audit(
             user_id=user_id,
             provider=provider,
             tool_name=tool_name,
+            auth_source=auth_source,
             request_id=request_id,
             input_summary=input_summary,
             result_status=result_status,

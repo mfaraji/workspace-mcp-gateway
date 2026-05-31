@@ -71,6 +71,8 @@ class IdentityMiddleware:
 
 async def _send_401(send: Send, detail: str) -> None:
     body = json.dumps({"error": "unauthorized", "detail": detail}).encode()
+    # Advertise Bearer so native MCP clients know to authenticate with a token.
+    www_authenticate = f'Bearer error="invalid_token", error_description="{detail}"'
     await send(
         {
             "type": "http.response.start",
@@ -78,6 +80,7 @@ async def _send_401(send: Send, detail: str) -> None:
             "headers": [
                 (b"content-type", b"application/json"),
                 (b"content-length", str(len(body)).encode()),
+                (b"www-authenticate", www_authenticate.encode("latin-1", "replace")),
             ],
         }
     )

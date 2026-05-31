@@ -9,6 +9,8 @@ from gateway.crypto.tokens import TokenCipher
 from gateway.identity.models import IdentityError
 from gateway.identity.resolver import resolve_identity
 
+SECRET = "shared-secret-value"
+
 
 def _settings(**overrides) -> Settings:
     base = dict(
@@ -17,6 +19,7 @@ def _settings(**overrides) -> Settings:
         google_client_id="cid",
         google_client_secret="secret",
         token_encryption_key="x" * 43 + "=",  # shape-only; not used here
+        gateway_shared_secret=SECRET,
         trusted_open_webui_origin="https://openwebui.internal",
         session_secret="sess",
         dev_trust_all_origins=False,
@@ -25,26 +28,36 @@ def _settings(**overrides) -> Settings:
     return Settings(**base)
 
 
-def test_rejects_request_without_identity_header():
+def test_rejects_request_without_secret_or_header():
     settings = _settings()
     with pytest.raises(IdentityError):
         resolve_identity({"origin": "https://openwebui.internal"}, settings)
 
 
-def test_rejects_untrusted_origin_even_with_header():
+def test_rejects_header_without_shared_secret():
+    """A spoofable Origin is no longer enough — the secret is required."""
     settings = _settings()
     with pytest.raises(IdentityError):
         resolve_identity(
-            {"origin": "https://evil.example", "x-open-webui-user-id": "alice"},
+            {"origin": "https://openwebui.internal", "x-open-webui-user-id": "alice"},
             settings,
         )
 
 
-def test_accepts_trusted_origin_with_header():
+def test_rejects_wrong_shared_secret():
+    settings = _settings()
+    with pytest.raises(IdentityError):
+        resolve_identity(
+            {"x-gateway-auth": "nope", "x-open-webui-user-id": "alice"},
+            settings,
+        )
+
+
+def test_accepts_with_shared_secret():
     settings = _settings()
     auth = resolve_identity(
         {
-            "Origin": "https://openwebui.internal",
+            "X-Gateway-Auth": SECRET,
             "X-Open-WebUI-User-Id": "alice",
             "X-Open-WebUI-User-Email": "alice@example.com",
             "X-Open-WebUI-User-Name": "Alice",
@@ -56,20 +69,13 @@ def test_accepts_trusted_origin_with_header():
     assert auth.display_name == "Alice"
 
 
-def test_accepts_via_forwarded_host():
+def test_secret_present_but_missing_user_id():
     settings = _settings()
-    auth = resolve_identity(
-        {
-            "x-forwarded-proto": "https",
-            "x-forwarded-host": "openwebui.internal",
-            "x-open-webui-user-id": "bob",
-        },
-        settings,
-    )
-    assert auth.external_user_id == "bob"
+    with pytest.raises(IdentityError):
+        resolve_identity({"x-gateway-auth": SECRET}, settings)
 
 
-def test_dev_trust_all_origins_bypasses_origin_check():
+def test_dev_trust_all_origins_bypasses_secret_check():
     settings = _settings(dev_trust_all_origins=True)
     auth = resolve_identity({"x-open-webui-user-id": "carol"}, settings)
     assert auth.external_user_id == "carol"
