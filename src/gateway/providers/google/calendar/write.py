@@ -41,7 +41,7 @@ class CreateEventInput(BaseModel):
     )
     description: str | None = Field(None, description="Event description / notes.")
     location: str | None = Field(None, description="Event location.")
-    attendees: list[str] = Field(default_factory=list, description="Attendee email addresses.")
+    attendees: list[str] | None = Field(None, description="Attendee email addresses.")
     time_zone: str | None = Field(
         None, description="IANA timezone for timed events, e.g. 'America/Los_Angeles'."
     )

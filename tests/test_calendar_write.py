@@ -71,6 +71,16 @@ def test_create_preview_includes_summary_but_audit_does_not():
     assert "start=" in summary
 
 
+def test_create_event_attendees_are_optional():
+    args = write.CreateEventInput(
+        summary="test event",
+        start="2026-06-01T10:00:00",
+        end="2026-06-01T11:00:00",
+    )
+
+    assert args.attendees is None
+
+
 def test_time_field_distinguishes_all_day_from_timed():
     assert write._time_field("2026-06-01", None) == {"date": "2026-06-01"}
     assert write._time_field("2026-06-01T10:00:00-07:00", "America/Los_Angeles") == {
