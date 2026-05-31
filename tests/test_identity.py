@@ -69,6 +69,21 @@ def test_accepts_with_shared_secret():
     assert auth.display_name == "Alice"
 
 
+def test_accepts_openwebui_oneword_header_spelling():
+    """Open WebUI forwards X-OpenWebUI-User-* (one word); accept that too."""
+    settings = _settings()
+    auth = resolve_identity(
+        {
+            "X-Gateway-Auth": SECRET,
+            "X-OpenWebUI-User-Id": "dave",
+            "X-OpenWebUI-User-Email": "dave@example.com",
+        },
+        settings,
+    )
+    assert auth.external_user_id == "dave"
+    assert auth.email == "dave@example.com"
+
+
 def test_secret_present_but_missing_user_id():
     settings = _settings()
     with pytest.raises(IdentityError):

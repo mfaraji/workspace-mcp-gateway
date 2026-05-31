@@ -7,10 +7,14 @@ encrypted tokens server-side. Open WebUI never receives the tokens.
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from oauthlib.oauth2 import OAuth2Error
 
 from gateway.config import get_settings
 from gateway.db.engine import session_scope
@@ -26,6 +30,20 @@ from gateway.providers.google.connections import (
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/oauth/google", tags=["oauth"])
+
+
+@contextmanager
+def _relax_oauthlib_scope_check() -> Iterator[None]:
+    """Allow Google's equivalent OpenID scope aliases during token exchange."""
+    previous = os.environ.get("OAUTHLIB_RELAX_TOKEN_SCOPE")
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("OAUTHLIB_RELAX_TOKEN_SCOPE", None)
+        else:
+            os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = previous
 
 
 def _resolve(request: Request):
@@ -95,7 +113,19 @@ async def callback(request: Request):
         return JSONResponse({"error": "invalid_state", "detail": str(exc)}, status_code=400)
 
     flow = goog.build_flow(settings, state=state)
-    flow.fetch_token(code=code)
+    try:
+        with _relax_oauthlib_scope_check():
+            flow.fetch_token(code=code, include_client_id=True)
+    except OAuth2Error as exc:
+        logger.warning("google oauth token exchange failed: %s", exc)
+        return JSONResponse(
+            {
+                "error": "oauth_token_exchange_failed",
+                "oauth_error": exc.error,
+                "detail": exc.description,
+            },
+            status_code=400,
+        )
     creds = flow.credentials
 
     account = _identify_google_account(creds, settings)

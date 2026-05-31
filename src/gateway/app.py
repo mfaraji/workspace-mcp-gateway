@@ -43,6 +43,13 @@ def create_app() -> FastAPI:
 
     app.include_router(oauth_router)
 
+    @app.get("/")
+    async def index(connected: str | None = None) -> JSONResponse:
+        """Small browser landing page for OAuth redirects."""
+        if connected:
+            return JSONResponse({"status": "connected", "provider": connected})
+        return JSONResponse({"status": "ok", "service": "workspace-mcp-gateway"})
+
     @app.get("/health")
     async def health() -> dict[str, str]:
         """Liveness probe."""

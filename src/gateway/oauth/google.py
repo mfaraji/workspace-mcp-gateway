@@ -67,6 +67,10 @@ def build_flow(settings: Settings, scopes: list[str] | None = None, state: str |
         _client_config(settings),
         scopes=scopes or DEFAULT_SCOPES,
         state=state,
+        # This is a confidential server-side web OAuth client. The callback
+        # reconstructs the Flow from signed state, so a generated PKCE verifier
+        # would be lost and Google would reject the token exchange.
+        autogenerate_code_verifier=False,
     )
     flow.redirect_uri = settings.google_redirect_uri
     return flow

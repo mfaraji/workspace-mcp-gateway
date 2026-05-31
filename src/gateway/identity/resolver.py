@@ -27,11 +27,24 @@ from gateway.db.engine import session_scope
 from gateway.db.models import ClientToken, User
 from gateway.identity.models import AuthenticatedUser, IdentityError
 
-HEADER_USER_ID = "x-open-webui-user-id"
-HEADER_USER_EMAIL = "x-open-webui-user-email"
-HEADER_USER_NAME = "x-open-webui-user-name"
+# Open WebUI forwards identity under "X-OpenWebUI-User-*" (one word) when
+# ENABLE_FORWARD_USER_INFO_HEADERS is set; the spec/older configs use the
+# hyphenated "X-Open-WebUI-User-*". Accept both spellings, preferring the first
+# present in each tuple.
+HEADER_USER_ID = ("x-openwebui-user-id", "x-open-webui-user-id")
+HEADER_USER_EMAIL = ("x-openwebui-user-email", "x-open-webui-user-email")
+HEADER_USER_NAME = ("x-openwebui-user-name", "x-open-webui-user-name")
 HEADER_GATEWAY_AUTH = "x-gateway-auth"
 HEADER_AUTHORIZATION = "authorization"
+
+
+def _first_header(norm: dict[str, str], names: tuple[str, ...]) -> str:
+    """Return the first non-empty value among the given (lower-cased) header names."""
+    for name in names:
+        value = (norm.get(name) or "").strip()
+        if value:
+            return value
+    return ""
 
 
 def _normalize(headers: Mapping[str, str]) -> dict[str, str]:
@@ -118,12 +131,12 @@ def resolve_identity(
     if not _gateway_secret_ok(norm, settings):
         raise IdentityError("request not authorized for header-based identity")
 
-    external_user_id = (norm.get(HEADER_USER_ID) or "").strip()
+    external_user_id = _first_header(norm, HEADER_USER_ID)
     if not external_user_id:
-        raise IdentityError("missing X-Open-WebUI-User-Id")
+        raise IdentityError("missing X-OpenWebUI-User-Id")
 
-    email = (norm.get(HEADER_USER_EMAIL) or "").strip() or None
-    display_name = (norm.get(HEADER_USER_NAME) or "").strip() or None
+    email = _first_header(norm, HEADER_USER_EMAIL) or None
+    display_name = _first_header(norm, HEADER_USER_NAME) or None
     return AuthenticatedUser(
         external_user_id=external_user_id, email=email, display_name=display_name
     )
