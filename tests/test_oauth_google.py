@@ -10,6 +10,7 @@ from gateway.config import Settings
 from gateway.oauth.google import (
     CALENDAR_SCOPES,
     DEFAULT_SCOPES,
+    TASKS_SCOPES,
     build_flow,
     build_start_url,
     scopes_for_product,
@@ -40,9 +41,17 @@ def test_build_flow_does_not_generate_pkce_challenge():
     assert "code_challenge_method" not in params
 
 
-def test_product_scopes_are_calendar_only_until_other_providers_are_enabled():
+def test_product_scopes_include_enabled_calendar_and_tasks():
     assert scopes_for_product(None) == DEFAULT_SCOPES
+    assert DEFAULT_SCOPES == [
+        "openid",
+        "email",
+        "profile",
+        *CALENDAR_SCOPES,
+        *TASKS_SCOPES,
+    ]
     assert scopes_for_product("calendar") == ["openid", "email", "profile", *CALENDAR_SCOPES]
+    assert scopes_for_product("tasks") == ["openid", "email", "profile", *TASKS_SCOPES]
 
     with pytest.raises(ValueError, match="Google drive tools are not enabled"):
         scopes_for_product("drive")
@@ -54,6 +63,14 @@ def test_product_start_url_carries_calendar_selector():
 
     assert url.startswith("https://mcp.ashpazi.shop/oauth/google/start?")
     assert params["product"] == ["calendar"]
+    assert "ticket" in params
+
+
+def test_product_start_url_carries_tasks_selector():
+    url = build_start_url(_settings(), "alice", product="tasks")
+    params = parse_qs(urlparse(url).query)
+
+    assert params["product"] == ["tasks"]
     assert "ticket" in params
 
 

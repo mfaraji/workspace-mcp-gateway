@@ -44,11 +44,23 @@ def test_product_filters_register_expected_calendar_tools():
     )
 
 
-def test_drive_and_tasks_filters_are_system_only_until_providers_exist():
+def test_drive_filter_is_system_only_until_provider_exists():
     settings = _settings()
 
     assert _tool_names(settings, "drive") == {"system_get_current_time"}
-    assert _tool_names(settings, "tasks") == {"system_get_current_time"}
+
+
+def test_tasks_filter_registers_expected_tasks_tools():
+    names = _tool_names(_settings(), "tasks")
+
+    assert "system_get_current_time" in names
+    assert "google_tasks_list_tasklists" in names
+    assert "google_tasks_create_task" in names
+    assert "google_tasks_delete_task" in names
+    assert all(
+        name == "system_get_current_time" or name.startswith("google_tasks_")
+        for name in names
+    )
 
 
 def test_backward_compatible_mcp_endpoint_still_registers_all_enabled_tools():
@@ -57,6 +69,8 @@ def test_backward_compatible_mcp_endpoint_still_registers_all_enabled_tools():
     assert "system_get_current_time" in names
     assert "google_calendar_list_calendars" in names
     assert "google_calendar_delete_event" in names
+    assert "google_tasks_list_tasks" in names
+    assert "google_tasks_complete_task" in names
 
 
 def test_every_mcp_mount_is_behind_identity_middleware(monkeypatch):

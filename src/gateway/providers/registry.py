@@ -143,6 +143,9 @@ def _run_pipeline(
         )
     except ToolError as exc:
         _audit_error(spec, user_id, request_id, input_summary, exc.error_code, auth.source)
+        connect_result = _connect_required_result(spec, settings, auth.external_user_id, exc)
+        if connect_result is not None:
+            return connect_result
         raise
     except SQLAlchemyError as exc:
         # Never surface the connection string / DB internals to the client.
@@ -234,6 +237,61 @@ def _audit_error(
             )
     except SQLAlchemyError:
         pass
+
+
+def _connect_required_result(
+    spec: ToolSpec, settings: Settings, external_user_id: str, exc: ToolError
+) -> str | None:
+    """Return user-facing auth guidance for recoverable provider-connection failures."""
+    if exc.error_code not in {"not_connected", "reauth_required"}:
+        return None
+
+    authorization_url = _authorization_url_for_tool(spec, settings, external_user_id)
+    if authorization_url is None:
+        return None
+
+    product_name = _product_name_for_tool(spec)
+    return (
+        f"Authorization required for {product_name}.\n\n"
+        "Open this authorization URL, approve access, then retry the same request:\n"
+        f"{authorization_url}\n\n"
+        f"Status: {exc.error_code}\n"
+        f"Tool: {spec.name}\n"
+        "Do not create a Calendar event as a fallback unless the user explicitly asks."
+    )
+
+
+def _authorization_url_for_tool(
+    spec: ToolSpec, settings: Settings, external_user_id: str
+) -> str | None:
+    """Build the product-scoped Google authorization URL for a provider tool."""
+    if spec.provider != "google":
+        return None
+
+    product: str | None = None
+    if spec.name.startswith("google_calendar_"):
+        product = "calendar"
+    elif spec.name.startswith("google_drive_"):
+        product = "drive"
+    elif spec.name.startswith("google_tasks_"):
+        product = "tasks"
+
+    if product is None:
+        return None
+
+    from gateway.oauth.google import build_start_url
+
+    return build_start_url(settings, external_user_id, product=product)
+
+
+def _product_name_for_tool(spec: ToolSpec) -> str:
+    if spec.name.startswith("google_calendar_"):
+        return "Google Calendar"
+    if spec.name.startswith("google_drive_"):
+        return "Google Drive"
+    if spec.name.startswith("google_tasks_"):
+        return "Google Tasks"
+    return spec.provider
 
 
 def _classify_error(exc: Exception) -> str:

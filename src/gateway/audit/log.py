@@ -24,6 +24,20 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "google_calendar_create_event": {"calendar_id", "start", "end", "time_zone"},
     "google_calendar_update_event": {"calendar_id", "event_id", "start", "end", "time_zone"},
     "google_calendar_delete_event": {"calendar_id", "event_id"},
+    "google_tasks_list_tasklists": {"max_results"},
+    "google_tasks_list_tasks": {
+        "tasklist_id",
+        "max_results",
+        "show_assigned",
+        "show_completed",
+        "show_deleted",
+        "show_hidden",
+    },
+    # Mutating task tools: record identifiers/dates, never title/notes.
+    "google_tasks_create_task": {"tasklist_id", "due", "parent", "previous"},
+    "google_tasks_update_task": {"tasklist_id", "task_id", "due", "status"},
+    "google_tasks_complete_task": {"tasklist_id", "task_id"},
+    "google_tasks_delete_task": {"tasklist_id", "task_id"},
 }
 
 
@@ -40,7 +54,7 @@ def summarize_input(tool_name: str, args: dict) -> str:
             parts.append(f"{key}={args[key]!r}")
 
     # Record presence (not values) of time-range / query inputs.
-    for key in ("time_min", "time_max", "query"):
+    for key in ("time_min", "time_max", "query", "due_min", "due_max", "updated_min"):
         if args.get(key):
             parts.append(f"{key}=<set>")
 

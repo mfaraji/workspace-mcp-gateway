@@ -38,17 +38,17 @@ TASKS_SCOPES = [
 ]
 
 # Scopes requested by the current build. Only request scopes for products with
-# tools actually registered in build_mcp(); DRIVE_SCOPES/TASKS_SCOPES are unioned
-# in here as their provider modules are wired up (incremental authorization),
-# keeping consent and token blast radius minimal until then.
-DEFAULT_SCOPES = OPENID_SCOPES + CALENDAR_SCOPES
+# tools actually registered in build_mcp(); DRIVE_SCOPES is unioned in here when
+# its provider module is wired up (incremental authorization), keeping consent
+# and token blast radius minimal until then.
+DEFAULT_SCOPES = OPENID_SCOPES + CALENDAR_SCOPES + TASKS_SCOPES
 
 PRODUCT_SCOPES: dict[GoogleProduct, list[str]] = {
     "calendar": CALENDAR_SCOPES,
     "drive": DRIVE_SCOPES,
     "tasks": TASKS_SCOPES,
 }
-OAUTH_ENABLED_PRODUCTS: set[GoogleProduct] = {"calendar"}
+OAUTH_ENABLED_PRODUCTS: set[GoogleProduct] = {"calendar", "tasks"}
 
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
