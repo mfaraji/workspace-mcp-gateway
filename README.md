@@ -5,7 +5,8 @@ Each Open WebUI user connects their own Google Workspace account; the gateway
 exposes Streamable HTTP MCP endpoints and keeps provider integrations modular.
 
 This is the **V1 vertical slice**: gateway skeleton, Postgres schema, Google
-OAuth with encrypted token storage, and Google **Calendar** tools. See
+OAuth with encrypted token storage, and Google Calendar, Drive, and Tasks read
+tools. See
 [`spec.md`](./spec.md) for the full design and roadmap.
 
 ## Architecture
@@ -120,9 +121,42 @@ also register product-specific tool servers on the same backend:
 - `http://127.0.0.1:8000/mcp/calendar`
 - `http://127.0.0.1:8000/mcp/drive`
 - `http://127.0.0.1:8000/mcp/tasks`
+- `http://127.0.0.1:8000/mcp/apex`
 
-Calendar exposes `system_get_current_time` plus `google_calendar_*`. Drive and
-Tasks currently expose only system tools until their provider modules are wired.
+Calendar exposes `system_get_current_time` plus `google_calendar_*`; Drive
+exposes `system_get_current_time`, `google_drive_search_files`, and
+`google_drive_get_file_metadata`; Tasks exposes `system_get_current_time` plus
+`google_tasks_*`; Apex exposes `system_get_current_time` plus `apex_*`
+(`apex_list_clients`, `apex_list_timesheets`, `apex_get_last_timesheet`,
+`apex_create_invoice`, `apex_update_timesheet`) against the
+[Apex invoicing/timesheet REST API](../apex/docs/api/invoice-rest.openapi.yaml),
+authenticated with a single workspace-scoped `APEX_API_KEY` rather than
+per-user OAuth.
+
+## Open WebUI Drive attachments
+
+The trusted Open WebUI backend can use the private HTTP integration routes to
+provide a search-first attachment selector without exposing Google credentials:
+
+- `GET /api/drive/status`
+- `GET /api/drive/files?q=&page_token=&page_size=`
+- `GET /api/drive/files/{file_id}/content`
+
+These routes require the same trusted Open WebUI identity headers and
+`X-Gateway-Auth` shared secret as MCP. They search shared files and Shared
+Drives, resolve shortcuts, export Google Docs/Sheets/Slides to DOCX/XLSX/PPTX,
+and reject post-export downloads over 50 MB. The Open WebUI backend must set:
+
+```text
+ENABLE_WORKSPACE_MCP_GATEWAY_DRIVE=true
+WORKSPACE_MCP_GATEWAY_URL=http://127.0.0.1:<gateway-port>
+WORKSPACE_MCP_GATEWAY_SHARED_SECRET=<same value as GATEWAY_SHARED_SECRET>
+```
+
+The URL and secret are server-only; `/api/config` exposes only the enabled
+feature boolean. A user may have one active Google account for V1. Reauthorizing
+the same account extends its scopes; connecting a different account returns an
+explicit conflict.
 
 Native-client door (bearer token, works from anywhere incl. the public proxy):
 

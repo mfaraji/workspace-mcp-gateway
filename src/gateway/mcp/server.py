@@ -18,7 +18,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from gateway.config import Settings
 from gateway.providers.base import ToolSpec
 
-ProductEndpoint = Literal["calendar", "drive", "tasks"]
+ProductEndpoint = Literal["calendar", "drive", "tasks", "apex"]
 ToolFilter = Callable[[ToolSpec], bool]
 
 
@@ -37,8 +37,11 @@ def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> Fast
     registry = ToolRegistry()
 
     # Provider self-registration. Each provider module exposes register(registry).
+    from gateway.providers.apex import read as apex_read
+    from gateway.providers.apex import write as apex_write
     from gateway.providers.google.calendar import read as google_calendar_read
     from gateway.providers.google.calendar import write as google_calendar_write
+    from gateway.providers.google.drive import read as google_drive_read
     from gateway.providers.google.tasks import read as google_tasks_read
     from gateway.providers.google.tasks import write as google_tasks_write
     from gateway.providers.system import time as system_time
@@ -46,8 +49,11 @@ def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> Fast
     system_time.register(registry)
     google_calendar_read.register(registry)
     google_calendar_write.register(registry)
+    google_drive_read.register(registry)
     google_tasks_read.register(registry)
     google_tasks_write.register(registry)
+    apex_read.register(registry)
+    apex_write.register(registry)
 
     registry.register_all(mcp, settings, predicate=tool_filter)
     return mcp
@@ -59,6 +65,7 @@ def product_tool_filter(product: ProductEndpoint) -> ToolFilter:
         "calendar": "google_calendar_",
         "drive": "google_drive_",
         "tasks": "google_tasks_",
+        "apex": "apex_",
     }
     prefix = product_prefixes[product]
 
@@ -87,10 +94,13 @@ def _transport_security(settings: Settings) -> TransportSecuritySettings:
     hosts = {
         "127.0.0.1",
         "127.0.0.1:8000",
+        "127.0.0.1:8001",
         "localhost",
         "localhost:8000",
+        "localhost:8001",
         "0.0.0.0",
         "0.0.0.0:8000",
+        "0.0.0.0:8001",
     }
     for origin in origins:
         parsed = urlparse(origin)

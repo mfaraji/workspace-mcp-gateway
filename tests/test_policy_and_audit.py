@@ -18,6 +18,7 @@ def _settings(**overrides) -> Settings:
         base_url="http://localhost:8000",
         google_client_id="cid",
         google_client_secret="secret",
+        apex_api_key="pk_live_test",
         token_encryption_key="x" * 43 + "=",
         gateway_shared_secret="shared-secret-value",
         trusted_open_webui_origin="https://openwebui.internal",

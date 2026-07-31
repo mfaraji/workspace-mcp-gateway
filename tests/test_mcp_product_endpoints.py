@@ -16,6 +16,7 @@ def _settings() -> Settings:
         base_url="http://localhost:8000",
         google_client_id="cid",
         google_client_secret="secret",
+        apex_api_key="pk_live_test",
         token_encryption_key="x" * 43 + "=",
         gateway_shared_secret="shared-secret-value",
         trusted_open_webui_origin="https://openwebui.internal",
@@ -44,10 +45,14 @@ def test_product_filters_register_expected_calendar_tools():
     )
 
 
-def test_drive_filter_is_system_only_until_provider_exists():
+def test_drive_filter_registers_drive_read_tools():
     settings = _settings()
 
-    assert _tool_names(settings, "drive") == {"system_get_current_time"}
+    assert _tool_names(settings, "drive") == {
+        "system_get_current_time",
+        "google_drive_search_files",
+        "google_drive_get_file_metadata",
+    }
 
 
 def test_tasks_filter_registers_expected_tasks_tools():
@@ -63,6 +68,19 @@ def test_tasks_filter_registers_expected_tasks_tools():
     )
 
 
+def test_apex_filter_registers_expected_apex_tools():
+    names = _tool_names(_settings(), "apex")
+
+    assert names == {
+        "system_get_current_time",
+        "apex_list_clients",
+        "apex_list_timesheets",
+        "apex_get_last_timesheet",
+        "apex_create_invoice",
+        "apex_update_timesheet",
+    }
+
+
 def test_backward_compatible_mcp_endpoint_still_registers_all_enabled_tools():
     names = _tool_names(_settings())
 
@@ -71,6 +89,9 @@ def test_backward_compatible_mcp_endpoint_still_registers_all_enabled_tools():
     assert "google_calendar_delete_event" in names
     assert "google_tasks_list_tasks" in names
     assert "google_tasks_complete_task" in names
+    assert "apex_list_clients" in names
+    assert "apex_create_invoice" in names
+    assert "google_drive_search_files" in names
 
 
 def test_every_mcp_mount_is_behind_identity_middleware(monkeypatch):

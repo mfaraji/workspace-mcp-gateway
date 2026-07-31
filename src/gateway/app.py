@@ -33,6 +33,7 @@ def create_app() -> FastAPI:
         "calendar": build_mcp(settings, product_tool_filter("calendar")),
         "drive": build_mcp(settings, product_tool_filter("drive")),
         "tasks": build_mcp(settings, product_tool_filter("tasks")),
+        "apex": build_mcp(settings, product_tool_filter("apex")),
     }
     # Accessing streamable_http_app() lazily creates each session manager.
     mcp_apps = {name: mcp.streamable_http_app() for name, mcp in mcp_servers.items()}
@@ -47,9 +48,11 @@ def create_app() -> FastAPI:
     app = FastAPI(title="workspace-mcp-gateway", lifespan=lifespan)
     app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
 
+    from gateway.api.drive import router as drive_api_router
     from gateway.oauth.routes import router as oauth_router
 
     app.include_router(oauth_router)
+    app.include_router(drive_api_router)
 
     @app.get("/")
     async def index(connected: str | None = None) -> JSONResponse:
@@ -73,7 +76,7 @@ def create_app() -> FastAPI:
     @app.api_route("/mcp/{product}", methods=["GET", "POST", "DELETE"])
     async def redirect_product_mcp_root(product: str, request: Request) -> RedirectResponse:
         """Match /mcp/{product} behavior to /mcp by redirecting to the app root."""
-        if product not in {"calendar", "drive", "tasks"}:
+        if product not in {"calendar", "drive", "tasks", "apex"}:
             return RedirectResponse("/mcp/", status_code=307)
         query = f"?{request.url.query}" if request.url.query else ""
         return RedirectResponse(f"/mcp/{product}/{query}", status_code=307)
@@ -84,6 +87,7 @@ def create_app() -> FastAPI:
     app.mount("/mcp/calendar", IdentityMiddleware(mcp_apps["calendar"], settings))
     app.mount("/mcp/drive", IdentityMiddleware(mcp_apps["drive"], settings))
     app.mount("/mcp/tasks", IdentityMiddleware(mcp_apps["tasks"], settings))
+    app.mount("/mcp/apex", IdentityMiddleware(mcp_apps["apex"], settings))
     app.mount("/mcp", IdentityMiddleware(mcp_apps["all"], settings))
 
     return app
