@@ -2,6 +2,8 @@ services:
   app:
     build: .
     network_mode: host
+    command:
+      ["uv", "run", "--no-sync", "uvicorn", "gateway.app:create_app", "--factory", "--host", "127.0.0.1", "--port", "8001"]
     volumes:
       - ./src:/app/src
       - ./migrations:/app/migrations

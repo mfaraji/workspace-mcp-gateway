@@ -24,6 +24,10 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "google_calendar_create_event": {"calendar_id", "start", "end", "time_zone"},
     "google_calendar_update_event": {"calendar_id", "event_id", "start", "end", "time_zone"},
     "google_calendar_delete_event": {"calendar_id", "event_id"},
+    "google_drive_search_files": {"page_size"},
+    "google_drive_get_file_metadata": {"file_id"},
+    "google_drive_api_search_files": set(),
+    "google_drive_api_download_file": {"file_id"},
     "google_tasks_list_tasklists": {"max_results"},
     "google_tasks_list_tasks": {
         "tasklist_id",

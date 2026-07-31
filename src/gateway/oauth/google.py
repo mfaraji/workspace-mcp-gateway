@@ -28,8 +28,6 @@ CALENDAR_SCOPES = CALENDAR_READ_SCOPES + CALENDAR_WRITE_SCOPES
 DRIVE_SCOPES = [
     "https://www.googleapis.com/auth/drive.metadata.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
-    # drive.file: per-file access limited to files the gateway creates/opens.
-    "https://www.googleapis.com/auth/drive.file",
 ]
 
 TASKS_SCOPES = [
@@ -37,18 +35,16 @@ TASKS_SCOPES = [
     "https://www.googleapis.com/auth/tasks",
 ]
 
-# Scopes requested by the current build. Only request scopes for products with
-# tools actually registered in build_mcp(); DRIVE_SCOPES is unioned in here when
-# its provider module is wired up (incremental authorization), keeping consent
-# and token blast radius minimal until then.
-DEFAULT_SCOPES = OPENID_SCOPES + CALENDAR_SCOPES + TASKS_SCOPES
+# Scopes requested by the current build. Drive is read-only: ``drive.file`` is
+# intentionally excluded until a Drive write tool exists.
+DEFAULT_SCOPES = OPENID_SCOPES + CALENDAR_SCOPES + DRIVE_SCOPES + TASKS_SCOPES
 
 PRODUCT_SCOPES: dict[GoogleProduct, list[str]] = {
     "calendar": CALENDAR_SCOPES,
     "drive": DRIVE_SCOPES,
     "tasks": TASKS_SCOPES,
 }
-OAUTH_ENABLED_PRODUCTS: set[GoogleProduct] = {"calendar", "tasks"}
+OAUTH_ENABLED_PRODUCTS: set[GoogleProduct] = {"calendar", "drive", "tasks"}
 
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"

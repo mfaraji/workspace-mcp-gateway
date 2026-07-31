@@ -23,6 +23,7 @@ from gateway.identity.resolver import get_or_create_user, resolve_identity
 from gateway.logging import get_logger
 from gateway.oauth import google as goog
 from gateway.providers.google.connections import (
+    AccountConflict,
     StoredCredentials,
     disconnect,
     upsert_connection,
@@ -94,7 +95,10 @@ async def start(request: Request):
     authorization_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
-        prompt="consent",
+        # Reauthorization must let the user select their existing connected
+        # account. Otherwise Google can silently reuse a different browser
+        # session and trip the V1 single-account conflict guard.
+        prompt="consent select_account",
     )
     return RedirectResponse(authorization_url, status_code=302)
 
@@ -158,14 +162,19 @@ async def callback(request: Request):
                 email=account.get("email"),
             ),
         )
-        upsert_connection(
-            session,
-            user=user,
-            provider_account_id=account["sub"],
-            provider_email=account.get("email"),
-            scopes=list(creds.scopes or goog.DEFAULT_SCOPES),
-            creds=stored,
-        )
+        try:
+            upsert_connection(
+                session,
+                user=user,
+                provider_account_id=account["sub"],
+                provider_email=account.get("email"),
+                scopes=list(creds.scopes or goog.DEFAULT_SCOPES),
+                creds=stored,
+            )
+        except AccountConflict as exc:
+            return JSONResponse(
+                {"error": "account_conflict", "detail": str(exc)}, status_code=409
+            )
 
     logger.info("google account connected for user %s", external_user_id)
     return RedirectResponse(f"{settings.base_url.rstrip('/')}/?connected=google", status_code=302)

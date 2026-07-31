@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from urllib.parse import parse_qs, urlparse
 
-import pytest
-
 from gateway.config import Settings
 from gateway.oauth.google import (
     CALENDAR_SCOPES,
     DEFAULT_SCOPES,
+    DRIVE_SCOPES,
     TASKS_SCOPES,
     build_flow,
     build_start_url,
@@ -24,6 +23,7 @@ def _settings() -> Settings:
         base_url="https://mcp.ashpazi.shop",
         google_client_id="cid",
         google_client_secret="secret",
+        apex_api_key="pk_live_test",
         token_encryption_key="x" * 43 + "=",
         gateway_shared_secret="shared-secret-value",
         trusted_open_webui_origin="https://openwebui.internal",
@@ -41,20 +41,20 @@ def test_build_flow_does_not_generate_pkce_challenge():
     assert "code_challenge_method" not in params
 
 
-def test_product_scopes_include_enabled_calendar_and_tasks():
+def test_product_scopes_include_enabled_read_only_drive():
     assert scopes_for_product(None) == DEFAULT_SCOPES
     assert DEFAULT_SCOPES == [
         "openid",
         "email",
         "profile",
         *CALENDAR_SCOPES,
+        *DRIVE_SCOPES,
         *TASKS_SCOPES,
     ]
     assert scopes_for_product("calendar") == ["openid", "email", "profile", *CALENDAR_SCOPES]
+    assert scopes_for_product("drive") == ["openid", "email", "profile", *DRIVE_SCOPES]
     assert scopes_for_product("tasks") == ["openid", "email", "profile", *TASKS_SCOPES]
-
-    with pytest.raises(ValueError, match="Google drive tools are not enabled"):
-        scopes_for_product("drive")
+    assert "https://www.googleapis.com/auth/drive.file" not in DEFAULT_SCOPES
 
 
 def test_product_start_url_carries_calendar_selector():

@@ -27,6 +27,10 @@ class ReauthRequired(Exception):
     """Raised when a connection's tokens are unusable and re-consent is needed."""
 
 
+class AccountConflict(Exception):
+    """Raised when a user tries to replace their one active Google account."""
+
+
 @dataclass
 class StoredCredentials:
     """Plaintext token material handed to/from the OAuth layer."""
@@ -50,6 +54,23 @@ def upsert_connection(
     If Google does not return a refresh token on re-consent, the previously
     stored refresh token is preserved rather than overwritten with null.
     """
+    # Serialize connection changes per Open WebUI user so two simultaneous OAuth
+    # callbacks cannot activate two different Google accounts.
+    session.scalar(select(User).where(User.id == user.id).with_for_update())
+
+    active = session.scalars(
+        select(ProviderConnection).where(
+            ProviderConnection.user_id == user.id,
+            ProviderConnection.provider == PROVIDER,
+            ProviderConnection.status == "active",
+        )
+    ).first()
+    if active is not None and active.provider_account_id != provider_account_id:
+        raise AccountConflict(
+            "A different Google account is already connected. Disconnect it before "
+            "connecting another account."
+        )
+
     cipher = get_cipher()
 
     conn = session.scalar(
@@ -68,7 +89,9 @@ def upsert_connection(
         session.add(conn)
 
     conn.provider_email = provider_email
-    conn.scopes = scopes
+    # Incremental OAuth may return only the scopes involved in this consent
+    # response. Never discard scopes previously granted to the same account.
+    conn.scopes = sorted(set(conn.scopes or []) | set(scopes))
     conn.status = "active"
     session.flush()
 
@@ -90,23 +113,24 @@ def get_active_connection(
     session: Session, user_id, provider: str = PROVIDER
 ) -> ProviderConnection | None:
     """Return the user's active connection for a provider, if any."""
-    return session.scalar(
+    return session.scalars(
         select(ProviderConnection).where(
             ProviderConnection.user_id == user_id,
             ProviderConnection.provider == provider,
             ProviderConnection.status == "active",
         )
-    )
+    ).first()
 
 
 def disconnect(session: Session, user_id, provider: str = PROVIDER) -> bool:
     """Revoke a connection: mark it revoked and clear stored tokens."""
-    conn = session.scalar(
+    conn = session.scalars(
         select(ProviderConnection).where(
             ProviderConnection.user_id == user_id,
             ProviderConnection.provider == provider,
+            ProviderConnection.status == "active",
         )
-    )
+    ).first()
     if conn is None:
         return False
     conn.status = "revoked"
