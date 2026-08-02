@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
-from gateway.providers.apex.client import apex_request
+from gateway.providers.apex.client import APEX_API_KEY, apex_request
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
 PROVIDER = "apex"
@@ -88,7 +88,7 @@ class UpdateTimesheetInput(BaseModel):
     )
 
 
-def create_invoice(args: CreateInvoiceInput, _ctx: CallContext, _session: Session) -> Any:
+def create_invoice(args: CreateInvoiceInput, ctx: CallContext, session: Session) -> Any:
     body: dict[str, Any] = {"clientId": args.client_id, "issueDate": args.issue_date}
     if args.due_date is not None:
         body["dueDate"] = args.due_date
@@ -117,10 +117,12 @@ def create_invoice(args: CreateInvoiceInput, _ctx: CallContext, _session: Sessio
                 for entry in args.timesheet.entries
             ],
         }
-    return apex_request(get_settings(), "POST", "/api/invoices", json=body)
+    settings = get_settings()
+    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
+    return apex_request(settings, api_key, "POST", "/api/invoices", json=body)
 
 
-def update_timesheet(args: UpdateTimesheetInput, _ctx: CallContext, _session: Session) -> Any:
+def update_timesheet(args: UpdateTimesheetInput, ctx: CallContext, session: Session) -> Any:
     body: dict[str, Any] = {}
     if args.period_start is not None:
         body["periodStart"] = args.period_start
@@ -133,8 +135,10 @@ def update_timesheet(args: UpdateTimesheetInput, _ctx: CallContext, _session: Se
             {"workDate": entry.work_date, "description": entry.description, "hours": entry.hours}
             for entry in args.entries
         ]
+    settings = get_settings()
+    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
     return apex_request(
-        get_settings(), "PUT", f"/api/timesheets/{args.timesheet_id}", json=body
+        settings, api_key, "PUT", f"/api/timesheets/{args.timesheet_id}", json=body
     )
 
 

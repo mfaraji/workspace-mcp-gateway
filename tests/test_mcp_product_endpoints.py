@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 from gateway.app import create_app
 from gateway.config import Settings, get_settings
 from gateway.mcp.context import IdentityMiddleware
-from gateway.mcp.server import ProductEndpoint, build_mcp, product_tool_filter
+from gateway.mcp.server import build_mcp, product_tool_filter
 
 
 def _settings() -> Settings:
@@ -25,11 +23,7 @@ def _settings() -> Settings:
 
 
 def _tool_names(settings: Settings, product: str | None = None) -> set[str]:
-    mcp = (
-        build_mcp(settings, product_tool_filter(cast(ProductEndpoint, product)))
-        if product
-        else build_mcp(settings)
-    )
+    mcp = build_mcp(settings, product_tool_filter(product)) if product else build_mcp(settings)
     return set(mcp._tool_manager._tools)
 
 
@@ -78,6 +72,7 @@ def test_apex_filter_registers_expected_apex_tools():
         "apex_get_last_timesheet",
         "apex_create_invoice",
         "apex_update_timesheet",
+        "apex_set_api_key",
     }
 
 

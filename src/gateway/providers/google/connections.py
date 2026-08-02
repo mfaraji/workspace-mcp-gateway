@@ -16,19 +16,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from gateway.config import Settings
+
+# Re-exported for backward compatibility: existing code imports these
+# exceptions from this module; the canonical definitions now live in
+# gateway.connectors.errors so gateway.providers.registry doesn't need to
+# import from a specific provider package.
+from gateway.connectors.errors import AccountConflict, ReauthRequired  # noqa: F401
 from gateway.crypto.tokens import get_cipher
 from gateway.db.models import ProviderConnection, ProviderToken, User
 
 PROVIDER = "google"
 _EXPIRY_SKEW = timedelta(seconds=60)
-
-
-class ReauthRequired(Exception):
-    """Raised when a connection's tokens are unusable and re-consent is needed."""
-
-
-class AccountConflict(Exception):
-    """Raised when a user tries to replace their one active Google account."""
 
 
 @dataclass
@@ -48,20 +46,23 @@ def upsert_connection(
     provider_email: str | None,
     scopes: list[str],
     creds: StoredCredentials,
+    provider: str = PROVIDER,
 ) -> ProviderConnection:
     """Create or update a connection and its encrypted tokens.
 
-    If Google does not return a refresh token on re-consent, the previously
-    stored refresh token is preserved rather than overwritten with null.
+    If the upstream does not return a refresh token on re-consent, the
+    previously stored refresh token is preserved rather than overwritten with
+    null. ``provider`` defaults to Google; other OAuth-based connectors reuse
+    this unchanged by passing their own ``upstream_provider``.
     """
     # Serialize connection changes per Open WebUI user so two simultaneous OAuth
-    # callbacks cannot activate two different Google accounts.
+    # callbacks cannot activate two different accounts for the same provider.
     session.scalar(select(User).where(User.id == user.id).with_for_update())
 
     active = session.scalars(
         select(ProviderConnection).where(
             ProviderConnection.user_id == user.id,
-            ProviderConnection.provider == PROVIDER,
+            ProviderConnection.provider == provider,
             ProviderConnection.status == "active",
         )
     ).first()
@@ -76,14 +77,14 @@ def upsert_connection(
     conn = session.scalar(
         select(ProviderConnection).where(
             ProviderConnection.user_id == user.id,
-            ProviderConnection.provider == PROVIDER,
+            ProviderConnection.provider == provider,
             ProviderConnection.provider_account_id == provider_account_id,
         )
     )
     if conn is None:
         conn = ProviderConnection(
             user_id=user.id,
-            provider=PROVIDER,
+            provider=provider,
             provider_account_id=provider_account_id,
         )
         session.add(conn)

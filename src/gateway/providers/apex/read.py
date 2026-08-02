@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
-from gateway.providers.apex.client import apex_request
+from gateway.providers.apex.client import APEX_API_KEY, apex_request
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
 PROVIDER = "apex"
@@ -28,18 +28,24 @@ class GetLastTimesheetInput(BaseModel):
     client_id: str = Field(..., description="Client UUID to look up the latest timesheet for.")
 
 
-def list_clients(_args: ListClientsInput, _ctx: CallContext, _session: Session) -> Any:
-    return apex_request(get_settings(), "GET", "/api/clients")
+def list_clients(_args: ListClientsInput, ctx: CallContext, session: Session) -> Any:
+    settings = get_settings()
+    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
+    return apex_request(settings, api_key, "GET", "/api/clients")
 
 
-def list_timesheets(args: ListTimesheetsInput, _ctx: CallContext, _session: Session) -> Any:
+def list_timesheets(args: ListTimesheetsInput, ctx: CallContext, session: Session) -> Any:
+    settings = get_settings()
+    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
     params = {"clientId": args.client_id} if args.client_id else None
-    return apex_request(get_settings(), "GET", "/api/timesheets", params=params)
+    return apex_request(settings, api_key, "GET", "/api/timesheets", params=params)
 
 
-def get_last_timesheet(args: GetLastTimesheetInput, _ctx: CallContext, _session: Session) -> Any:
+def get_last_timesheet(args: GetLastTimesheetInput, ctx: CallContext, session: Session) -> Any:
+    settings = get_settings()
+    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
     return apex_request(
-        get_settings(), "GET", "/api/timesheets/last", params={"clientId": args.client_id}
+        settings, api_key, "GET", "/api/timesheets/last", params={"clientId": args.client_id}
     )
 
 

@@ -56,7 +56,7 @@ def test_apex_request_sends_bearer_auth_and_returns_json(monkeypatch):
     monkeypatch.setattr(apex_client.httpx, "request", fake_request)
 
     result = apex_client.apex_request(
-        _settings(), "GET", "/api/clients", params={"clientId": "c1"}
+        _settings(), "pk_live_test", "GET", "/api/clients", params={"clientId": "c1"}
     )
 
     assert result == {"ok": True}
@@ -79,7 +79,7 @@ def test_apex_request_classifies_http_errors(monkeypatch, status, expected_code)
     )
 
     with pytest.raises(ToolError) as exc_info:
-        apex_client.apex_request(_settings(), "GET", "/api/clients")
+        apex_client.apex_request(_settings(), "pk_live_test", "GET", "/api/clients")
 
     assert exc_info.value.error_code == expected_code
 
@@ -91,7 +91,7 @@ def test_apex_request_wraps_transport_errors(monkeypatch):
     monkeypatch.setattr(apex_client.httpx, "request", raise_error)
 
     with pytest.raises(ToolError) as exc_info:
-        apex_client.apex_request(_settings(), "GET", "/api/clients")
+        apex_client.apex_request(_settings(), "pk_live_test", "GET", "/api/clients")
 
     assert exc_info.value.error_code == "provider_error"
 
@@ -99,12 +99,15 @@ def test_apex_request_wraps_transport_errors(monkeypatch):
 def test_list_timesheets_passes_client_id_filter(monkeypatch):
     captured = {}
 
-    def fake_apex_request(settings, method, path, params=None, json=None):
+    def fake_apex_request(settings, api_key, method, path, params=None, json=None):
         captured.update(method=method, path=path, params=params)
         return {"timesheets": []}
 
     monkeypatch.setattr(read, "apex_request", fake_apex_request)
     monkeypatch.setattr(read, "get_settings", lambda: _settings())
+    monkeypatch.setattr(
+        apex_client.APEX_API_KEY, "get_credentials", lambda session, ctx, settings: "pk_live_test"
+    )
 
     args = read.ListTimesheetsInput(client_id="c1")
     result = read.list_timesheets(args, _ctx(), None)
@@ -133,12 +136,15 @@ def test_create_invoice_requires_exactly_one_billing_payload():
 def test_create_invoice_builds_timesheet_body(monkeypatch):
     captured = {}
 
-    def fake_apex_request(settings, method, path, params=None, json=None):
+    def fake_apex_request(settings, api_key, method, path, params=None, json=None):
         captured.update(method=method, path=path, json=json)
         return {"id": "inv1"}
 
     monkeypatch.setattr(write, "apex_request", fake_apex_request)
     monkeypatch.setattr(write, "get_settings", lambda: _settings())
+    monkeypatch.setattr(
+        apex_client.APEX_API_KEY, "get_credentials", lambda session, ctx, settings: "pk_live_test"
+    )
 
     args = write.CreateInvoiceInput(
         client_id="c1",
@@ -175,12 +181,15 @@ def test_create_invoice_builds_timesheet_body(monkeypatch):
 def test_update_timesheet_builds_partial_body(monkeypatch):
     captured = {}
 
-    def fake_apex_request(settings, method, path, params=None, json=None):
+    def fake_apex_request(settings, api_key, method, path, params=None, json=None):
         captured.update(method=method, path=path, json=json)
         return {"id": "ts1"}
 
     monkeypatch.setattr(write, "apex_request", fake_apex_request)
     monkeypatch.setattr(write, "get_settings", lambda: _settings())
+    monkeypatch.setattr(
+        apex_client.APEX_API_KEY, "get_credentials", lambda session, ctx, settings: "pk_live_test"
+    )
 
     args = write.UpdateTimesheetInput(timesheet_id="ts1", notes="Updated")
     result = write.update_timesheet(args, _ctx(), None)

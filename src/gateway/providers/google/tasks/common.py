@@ -5,37 +5,25 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
-from gateway.oauth.google import TASKS_SCOPES, build_start_url
+from gateway.connectors.upstream import OAuthStrategy
+from gateway.oauth.google import TASKS_SCOPES
 from gateway.providers.base import CallContext
 from gateway.providers.google.client import build_tasks_service
-from gateway.providers.google.connections import get_active_connection
 
 PROVIDER = "google"
+
+TASKS_OAUTH = OAuthStrategy(
+    upstream_provider=PROVIDER,
+    required_scopes=TASKS_SCOPES,
+    display_name="Google Tasks",
+    product="tasks",
+)
 
 
 def tasks_service(session: Session, ctx: CallContext):
     """Resolve the caller's active Google connection and build a Tasks service."""
-    from gateway.providers.registry import ToolError
-
-    settings = get_settings()
-    conn = get_active_connection(session, ctx.user_id, PROVIDER)
-    if conn is None:
-        connect_url = build_start_url(settings, ctx.external_user_id, product="tasks")
-        raise ToolError(
-            "not_connected",
-            f"no active Google connection; authorize here: {connect_url}",
-        )
-    missing_scopes = sorted(set(TASKS_SCOPES) - set(conn.scopes or []))
-    if missing_scopes:
-        connect_url = build_start_url(settings, ctx.external_user_id, product="tasks")
-        raise ToolError(
-            "reauth_required",
-            (
-                "Google Tasks connection is missing required scopes; reconnect here: "
-                f"{connect_url}"
-            ),
-        )
-    return build_tasks_service(session, conn, settings)
+    creds = TASKS_OAUTH.get_credentials(session, ctx, get_settings())
+    return build_tasks_service(creds)
 
 
 def trim_tasklist(tasklist: dict) -> dict:

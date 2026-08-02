@@ -23,13 +23,13 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from gateway.audit.log import summarize_input, write_audit
 from gateway.config import Settings
+from gateway.connectors.errors import ReauthRequired
 from gateway.db.engine import session_scope
 from gateway.identity.models import IdentityError
 from gateway.identity.resolver import get_or_create_user
 from gateway.mcp.context import require_current_user
 from gateway.policy import confirm
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
-from gateway.providers.google.connections import ReauthRequired
 
 _CONFIRM_PARAM = "confirmation_token"
 
@@ -209,7 +209,7 @@ def _execute(
         except ToolError:
             raise
         except Exception as exc:
-            raise ToolError(_classify_error(exc), f"{spec.name} failed") from exc
+            raise ToolError(_classify_error(spec, exc), f"{spec.name} failed") from exc
 
         write_audit(
             session, user_id=user_id, provider=spec.provider, tool_name=spec.name,
@@ -264,49 +264,29 @@ def _connect_required_result(
 def _authorization_url_for_tool(
     spec: ToolSpec, settings: Settings, external_user_id: str
 ) -> str | None:
-    """Build the product-scoped Google authorization URL for a provider tool."""
-    if spec.provider != "google":
+    """Build the connector-scoped authorization URL for a provider tool, if any."""
+    from gateway.connectors import registry as connectors
+
+    connector = connectors.by_spec(spec)
+    if connector is None:
         return None
-
-    product: str | None = None
-    if spec.name.startswith("google_calendar_"):
-        product = "calendar"
-    elif spec.name.startswith("google_drive_"):
-        product = "drive"
-    elif spec.name.startswith("google_tasks_"):
-        product = "tasks"
-
-    if product is None:
-        return None
-
-    from gateway.oauth.google import build_start_url
-
-    return build_start_url(settings, external_user_id, product=product)
+    return connector.connect_url(settings, external_user_id)
 
 
 def _product_name_for_tool(spec: ToolSpec) -> str:
-    if spec.name.startswith("google_calendar_"):
-        return "Google Calendar"
-    if spec.name.startswith("google_drive_"):
-        return "Google Drive"
-    if spec.name.startswith("google_tasks_"):
-        return "Google Tasks"
-    return spec.provider
+    from gateway.connectors import registry as connectors
+
+    connector = connectors.by_spec(spec)
+    return connector.display_name if connector is not None else spec.provider
 
 
-def _classify_error(exc: Exception) -> str:
+def _classify_error(spec: ToolSpec, exc: Exception) -> str:
     """Map a provider exception to a stable, non-sensitive error code."""
-    try:
-        from googleapiclient.errors import HttpError
+    from gateway.connectors import registry as connectors
 
-        if isinstance(exc, HttpError):
-            status = getattr(exc.resp, "status", None)
-            return {
-                401: "unauthorized",
-                403: "forbidden",
-                404: "not_found",
-                429: "rate_limited",
-            }.get(int(status) if status else 0, "provider_error")
-    except Exception:
-        pass
+    connector = connectors.by_spec(spec)
+    if connector is not None:
+        code = connector.classify_error(exc)
+        if code is not None:
+            return code
     return "internal_error"

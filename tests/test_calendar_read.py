@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from gateway.config import Settings
+from gateway.connectors import upstream
 from gateway.providers.base import CallContext
 from gateway.providers.google.calendar import common, read
 from gateway.providers.registry import ToolError
@@ -97,7 +98,7 @@ def test_list_events_can_include_past_when_explicitly_requested(monkeypatch):
 def test_calendar_service_reauth_error_includes_product_scoped_link(monkeypatch):
     monkeypatch.setattr(common, "get_settings", _settings)
     monkeypatch.setattr(
-        common,
+        upstream,
         "get_active_connection",
         lambda _session, _user_id, _provider: SimpleNamespace(scopes=[]),
     )

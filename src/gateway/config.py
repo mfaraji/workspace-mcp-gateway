@@ -20,10 +20,13 @@ class Settings(BaseSettings):
     google_client_id: str
     google_client_secret: str
 
-    # Apex invoicing/timesheet API. A single workspace-scoped API key, not
-    # per-user OAuth — see docs/api/invoice-rest.openapi.yaml in the apex repo.
+    # Apex invoicing/timesheet API. Each user stores their own key (via the
+    # apex_set_api_key tool or POST /connectors/apex/apikey) — see
+    # docs/api/invoice-rest.openapi.yaml in the apex repo. apex_api_key is an
+    # optional deploy-wide fallback for users who haven't set a personal key
+    # yet; it is not required once every user has one.
     apex_base_url: str = "http://localhost:3010"
-    apex_api_key: str
+    apex_api_key: str | None = None
 
     token_encryption_key: str
 

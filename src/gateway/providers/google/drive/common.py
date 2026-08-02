@@ -6,15 +6,16 @@ import io
 import json
 import tempfile
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, BinaryIO
 
 from sqlalchemy.orm import Session
 
 from gateway.config import Settings, get_settings
-from gateway.oauth.google import DRIVE_SCOPES, build_start_url
+from gateway.connectors.upstream import OAuthStrategy
+from gateway.oauth.google import DRIVE_SCOPES
 from gateway.providers.base import CallContext
 from gateway.providers.google.client import build_drive_service
-from gateway.providers.google.connections import get_active_connection
 
 PROVIDER = "google"
 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
@@ -69,22 +70,19 @@ def required_scopes_present(scopes: list[str] | None) -> bool:
     return set(DRIVE_SCOPES).issubset(set(scopes or []))
 
 
+DRIVE_OAUTH = OAuthStrategy(
+    upstream_provider=PROVIDER,
+    required_scopes=DRIVE_SCOPES,
+    display_name="Google Drive",
+    product="drive",
+    missing_scope_hint="missing required read scopes",
+)
+
+
 def drive_service(session: Session, ctx: CallContext):
     """Resolve the caller's scoped Google connection and build Drive v3."""
-    from gateway.providers.registry import ToolError
-
-    settings = get_settings()
-    conn = get_active_connection(session, ctx.user_id, PROVIDER)
-    if conn is None:
-        url = build_start_url(settings, ctx.external_user_id, product="drive")
-        raise ToolError("not_connected", f"no active Google connection; authorize here: {url}")
-    if not required_scopes_present(conn.scopes):
-        url = build_start_url(settings, ctx.external_user_id, product="drive")
-        raise ToolError(
-            "reauth_required",
-            f"Google Drive connection is missing required read scopes; reconnect here: {url}",
-        )
-    return build_drive_service(session, conn, settings)
+    creds = DRIVE_OAUTH.get_credentials(session, ctx, get_settings())
+    return build_drive_service(creds)
 
 
 def build_scoped_drive_service(session: Session, conn, settings: Settings):
@@ -96,7 +94,11 @@ def build_scoped_drive_service(session: Session, conn, settings: Settings):
             status_code=401,
         )
     try:
-        return build_drive_service(session, conn, settings)
+        from gateway.providers.google.connections import load_credentials
+
+        creds = load_credentials(session, conn, settings)
+        conn.last_used_at = datetime.now(UTC)
+        return build_drive_service(creds)
     except Exception as exc:
         from gateway.providers.google.connections import ReauthRequired
 
