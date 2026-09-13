@@ -131,12 +131,46 @@ def test_search_forwards_no_query_content_to_audit(monkeypatch):
     )
     monkeypatch.setattr(drive, "_audit", lambda **kwargs: audits.append(kwargs))
 
-    response = drive.files(_request(), q="payroll acquisition", page_size=25)
+    response = drive.files(
+        _request(), q="payroll acquisition", parent_id=None, page_size=25
+    )
 
     assert response.status_code == 200
-    assert audits[0]["input_summary"] == "query=<set>"
+    assert audits[0]["input_summary"] == "query=<set> parent_id=<none>"
     assert "payroll acquisition" not in str(audits)
     assert response.headers["cache-control"] == "no-store"
+
+
+def test_search_forwards_parent_id_to_search_files(monkeypatch):
+    auth = AuthenticatedUser("alice")
+    user_id = uuid.uuid4()
+    captured_kwargs = {}
+    monkeypatch.setattr(drive, "_authenticate", lambda _request: (auth, user_id))
+    monkeypatch.setattr(drive, "get_settings", _settings)
+
+    @contextmanager
+    def fake_session_scope():
+        yield object()
+
+    monkeypatch.setattr(drive, "session_scope", fake_session_scope)
+    monkeypatch.setattr(
+        drive,
+        "get_active_connection",
+        lambda _session, _user_id: SimpleNamespace(scopes=[]),
+    )
+    monkeypatch.setattr(drive, "build_scoped_drive_service", lambda *_args: object())
+
+    def fake_search_files(_service, **kwargs):
+        captured_kwargs.update(kwargs)
+        return {"files": [], "next_page_token": None}
+
+    monkeypatch.setattr(drive, "search_files", fake_search_files)
+    monkeypatch.setattr(drive, "_audit", lambda **kwargs: None)
+
+    response = drive.files(_request(), q="", parent_id="folder-123", page_size=25)
+
+    assert response.status_code == 200
+    assert captured_kwargs["parent_id"] == "folder-123"
 
 
 def test_download_response_is_private_and_closes_stream(monkeypatch):

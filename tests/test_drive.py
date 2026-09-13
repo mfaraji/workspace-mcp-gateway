@@ -100,6 +100,26 @@ def test_empty_search_returns_recent_files_without_name_clause():
     assert files.list_kwargs["orderBy"] == "modifiedTime desc"
 
 
+def test_search_with_parent_id_narrows_to_folder():
+    files = _Files()
+    common.search_files(
+        _Service(files),
+        query="",
+        page_token=None,
+        page_size=25,
+        parent_id="folder-123",
+    )
+
+    assert "'folder-123' in parents" in files.list_kwargs["q"]
+
+
+def test_search_without_parent_id_omits_parents_clause():
+    files = _Files()
+    common.search_files(_Service(files), query="", page_token=None, page_size=25)
+
+    assert "in parents" not in files.list_kwargs["q"]
+
+
 def test_metadata_is_trimmed_and_marks_shared_and_oversized(monkeypatch):
     monkeypatch.setattr(common, "MAX_ATTACHMENT_BYTES", 10)
     result = common.compact_metadata(

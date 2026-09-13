@@ -116,11 +116,25 @@ def escape_drive_query(value: str) -> str:
     return value.replace("\\", "\\\\").replace("'", "\\'")
 
 
-def search_files(service, *, query: str, page_token: str | None, page_size: int) -> dict:
-    """Search the whole accessible Drive corpus, resolving shortcuts."""
+def search_files(
+    service,
+    *,
+    query: str,
+    page_token: str | None,
+    page_size: int,
+    parent_id: str | None = None,
+) -> dict:
+    """Search the accessible Drive corpus, resolving shortcuts.
+
+    When `parent_id` is set, results are narrowed to direct children of that
+    folder (e.g. a specific shared receipts folder) instead of the whole
+    corpus.
+    """
     clauses = ["trashed = false", f"mimeType != '{FOLDER_MIME_TYPE}'"]
     if query.strip():
         clauses.append(f"name contains '{escape_drive_query(query.strip())}'")
+    if parent_id:
+        clauses.append(f"'{escape_drive_query(parent_id)}' in parents")
 
     params: dict[str, Any] = {
         "q": " and ".join(clauses),

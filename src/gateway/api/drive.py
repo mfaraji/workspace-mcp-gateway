@@ -140,16 +140,24 @@ def status(request: Request):
 def files(
     request: Request,
     q: str = Query("", max_length=200),
+    parent_id: str | None = Query(None, max_length=200),
     page_token: str | None = Query(None, max_length=4096),
     page_size: int = Query(25, ge=1, le=100),
 ):
-    """Search accessible Drive filenames, including shared items and Shared Drives."""
+    """Search accessible Drive filenames, including shared items and Shared Drives.
+
+    Pass `parent_id` to narrow results to one folder's direct children
+    instead of the whole accessible corpus.
+    """
     resolved = _authenticate(request)
     if isinstance(resolved, JSONResponse):
         return resolved
     auth, user_id = resolved
     request_id = uuid.uuid4().hex
-    summary = f"query={'<set>' if q.strip() else '<empty>'}"
+    summary = (
+        f"query={'<set>' if q.strip() else '<empty>'} "
+        f"parent_id={parent_id or '<none>'}"
+    )
 
     try:
         with session_scope() as session:
@@ -166,6 +174,7 @@ def files(
                 query=q,
                 page_token=page_token,
                 page_size=page_size,
+                parent_id=parent_id,
             )
     except DriveProviderError as exc:
         _audit(
