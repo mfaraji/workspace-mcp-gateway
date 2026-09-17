@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+.telegram_token.local
 .git-local/
 
 # Virtual environments

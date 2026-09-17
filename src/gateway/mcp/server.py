@@ -39,7 +39,7 @@ def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> Fast
 
     system_time.register(registry)
     for connector in CONNECTORS:
-        connector.register(registry)
+        connector.register(registry, settings)
 
     registry.register_all(mcp, settings, predicate=tool_filter)
     return mcp

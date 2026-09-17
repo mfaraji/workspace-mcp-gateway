@@ -76,6 +76,16 @@ def test_apex_filter_registers_expected_apex_tools():
     }
 
 
+def test_telegram_filter_registers_expected_telegram_tools():
+    names = _tool_names(_settings(), "telegram")
+
+    assert names == {
+        "system_get_current_time",
+        "telegram_set_api_key",
+        "telegram_send_message",
+    }
+
+
 def test_backward_compatible_mcp_endpoint_still_registers_all_enabled_tools():
     names = _tool_names(_settings())
 
@@ -87,6 +97,8 @@ def test_backward_compatible_mcp_endpoint_still_registers_all_enabled_tools():
     assert "apex_list_clients" in names
     assert "apex_create_invoice" in names
     assert "google_drive_search_files" in names
+    assert "telegram_send_message" in names
+    assert "telegram_set_api_key" in names
 
 
 def test_every_mcp_mount_is_behind_identity_middleware(monkeypatch):
@@ -97,7 +109,14 @@ def test_every_mcp_mount_is_behind_identity_middleware(monkeypatch):
     app = create_app()
     mounted = {route.path: route.app for route in app.routes if hasattr(route, "app")}
 
-    for path in ("/mcp", "/mcp/calendar", "/mcp/drive", "/mcp/tasks"):
+    for path in (
+        "/mcp",
+        "/mcp/calendar",
+        "/mcp/drive",
+        "/mcp/tasks",
+        "/mcp/apex",
+        "/mcp/telegram",
+    ):
         assert isinstance(mounted[path], IdentityMiddleware)
 
     get_settings.cache_clear()

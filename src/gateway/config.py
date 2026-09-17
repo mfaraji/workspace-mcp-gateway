@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     apex_base_url: str = "http://localhost:3010"
     apex_api_key: str | None = None
 
+    # Telegram Bot API. Each user stores their own bot token (via the
+    # telegram_set_api_key tool or POST /connectors/telegram/apikey) — create one
+    # with @BotFather and add it as an admin of the target channel.
+    # telegram_bot_token is an optional deploy-wide fallback for users who haven't
+    # set a personal token.
+    telegram_bot_token: str | None = None
+    # Whether telegram_send_message requires the confirmation flow before posting.
+    telegram_require_confirmation: bool = True
+
     token_encryption_key: str
 
     # Shared secret proving a request originates from the trusted Open WebUI

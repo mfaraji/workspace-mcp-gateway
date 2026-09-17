@@ -39,7 +39,7 @@ class Connector:
     tool_prefix: str
     display_name: str
     upstream_provider: str
-    register: Callable[[ToolRegistry], None]
+    register: Callable[[ToolRegistry, Settings], None]
     upstream: UpstreamAuthStrategy | None = None
     error_classifier: ErrorClassifier | None = None
 

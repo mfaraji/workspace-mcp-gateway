@@ -10,6 +10,7 @@ all derive from this list — nothing else needs to change.
 
 from __future__ import annotations
 
+from gateway.config import Settings
 from gateway.connectors.base import Connector
 from gateway.providers.apex import auth as apex_auth
 from gateway.providers.apex import read as apex_read
@@ -24,26 +25,35 @@ from gateway.providers.google.drive.common import DRIVE_OAUTH
 from gateway.providers.google.tasks import read as google_tasks_read
 from gateway.providers.google.tasks import write as google_tasks_write
 from gateway.providers.google.tasks.common import TASKS_OAUTH
+from gateway.providers.registry import ToolRegistry
+from gateway.providers.telegram import auth as telegram_auth
+from gateway.providers.telegram import write as telegram_write
+from gateway.providers.telegram.client import TELEGRAM_API_KEY
 
 
-def _register_calendar(registry) -> None:
+def _register_calendar(registry: ToolRegistry, _settings: Settings) -> None:
     google_calendar_read.register(registry)
     google_calendar_write.register(registry)
 
 
-def _register_drive(registry) -> None:
+def _register_drive(registry: ToolRegistry, _settings: Settings) -> None:
     google_drive_read.register(registry)
 
 
-def _register_tasks(registry) -> None:
+def _register_tasks(registry: ToolRegistry, _settings: Settings) -> None:
     google_tasks_read.register(registry)
     google_tasks_write.register(registry)
 
 
-def _register_apex(registry) -> None:
+def _register_apex(registry: ToolRegistry, _settings: Settings) -> None:
     apex_read.register(registry)
     apex_write.register(registry)
     apex_auth.register(registry)
+
+
+def _register_telegram(registry: ToolRegistry, settings: Settings) -> None:
+    telegram_auth.register(registry)
+    telegram_write.register(registry, settings)
 
 
 def _google_classify_error(exc: Exception) -> str | None:
@@ -97,6 +107,14 @@ CONNECTORS: list[Connector] = [
         upstream_provider="apex",
         register=_register_apex,
         upstream=APEX_API_KEY,
+    ),
+    Connector(
+        slug="telegram",
+        tool_prefix="telegram_",
+        display_name="Telegram",
+        upstream_provider="telegram",
+        register=_register_telegram,
+        upstream=TELEGRAM_API_KEY,
     ),
 ]
 

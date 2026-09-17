@@ -42,6 +42,8 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "google_tasks_update_task": {"tasklist_id", "task_id", "due", "status"},
     "google_tasks_complete_task": {"tasklist_id", "task_id"},
     "google_tasks_delete_task": {"tasklist_id", "task_id"},
+    "telegram_set_api_key": set(),
+    "telegram_send_message": {"chat_id", "parse_mode", "disable_notification"},
 }
 
 
