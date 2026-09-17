@@ -128,7 +128,7 @@ exposes `system_get_current_time`, `google_drive_search_files`, and
 `google_drive_get_file_metadata`; Tasks exposes `system_get_current_time` plus
 `google_tasks_*`; Apex exposes `system_get_current_time` plus `apex_*`
 (`apex_list_clients`, `apex_list_timesheets`, `apex_get_last_timesheet`,
-`apex_create_invoice`, `apex_update_timesheet`) against the
+`apex_create_invoice`, `apex_create_timesheet`, `apex_update_timesheet`) against the
 [Apex invoicing/timesheet REST API](../apex/docs/api/invoice-rest.openapi.yaml),
 authenticated with a single workspace-scoped `APEX_API_KEY` rather than
 per-user OAuth.

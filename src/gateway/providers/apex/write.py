@@ -76,6 +76,28 @@ class CreateInvoiceInput(BaseModel):
         return self
 
 
+class CreateTimesheetInput(BaseModel):
+    client_id: str = Field(
+        ..., description="Client UUID to invoice. Must be a TIMESHEET-billing client."
+    )
+    issue_date: str = Field(..., description="Invoice issue date, YYYY-MM-DD.")
+    due_date: str | None = Field(
+        None, description="Due date, YYYY-MM-DD. Defaults from business payment terms."
+    )
+    gst_percent: float | None = Field(
+        None,
+        ge=0,
+        description="Override GST/HST percent. Defaults from the client's chargeHst (13 or 0).",
+    )
+    status: InvoiceStatus | None = Field(None, description="Invoice status. Defaults to DRAFT.")
+    period_start: str = Field(..., description="Timesheet period start date, YYYY-MM-DD.")
+    period_end: str = Field(..., description="Timesheet period end date, YYYY-MM-DD.")
+    notes: str | None = Field(None, description="Optional timesheet notes.")
+    entries: list[TimesheetEntryInput] = Field(
+        ..., min_length=1, description="Work entries for the period."
+    )
+
+
 class UpdateTimesheetInput(BaseModel):
     timesheet_id: str = Field(..., description="Timesheet UUID to update.")
     period_start: str | None = Field(None, description="New period start date, YYYY-MM-DD.")
@@ -122,6 +144,35 @@ def create_invoice(args: CreateInvoiceInput, ctx: CallContext, session: Session)
     return apex_request(settings, api_key, "POST", "/api/invoices", json=body)
 
 
+def create_timesheet(args: CreateTimesheetInput, ctx: CallContext, session: Session) -> Any:
+    body: dict[str, Any] = {
+        "clientId": args.client_id,
+        "issueDate": args.issue_date,
+        "timesheet": {
+            "periodStart": args.period_start,
+            "periodEnd": args.period_end,
+            "notes": args.notes,
+            "entries": [
+                {
+                    "workDate": entry.work_date,
+                    "description": entry.description,
+                    "hours": entry.hours,
+                }
+                for entry in args.entries
+            ],
+        },
+    }
+    if args.due_date is not None:
+        body["dueDate"] = args.due_date
+    if args.gst_percent is not None:
+        body["gstPercent"] = args.gst_percent
+    if args.status is not None:
+        body["status"] = args.status
+    settings = get_settings()
+    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
+    return apex_request(settings, api_key, "POST", "/api/invoices", json=body)
+
+
 def update_timesheet(args: UpdateTimesheetInput, ctx: CallContext, session: Session) -> Any:
     body: dict[str, Any] = {}
     if args.period_start is not None:
@@ -157,6 +208,15 @@ def _create_invoice_preview(args: CreateInvoiceInput) -> str:
     )
 
 
+def _create_timesheet_preview(args: CreateTimesheetInput) -> str:
+    hours = sum(entry.hours for entry in args.entries)
+    return (
+        f"File timesheet for client {args.client_id}, {args.period_start} to "
+        f"{args.period_end} ({hours} hours, {len(args.entries)} entries). Apex will "
+        f"create a linked DRAFT invoice from it."
+    )
+
+
 def _update_timesheet_preview(args: UpdateTimesheetInput) -> str:
     return f"Update timesheet '{args.timesheet_id}'."
 
@@ -180,6 +240,24 @@ def register(registry) -> None:
             input_model=CreateInvoiceInput,
             handler=create_invoice,
             preview_builder=_create_invoice_preview,
+        )
+    )
+    registry.add(
+        ToolSpec(
+            name="apex_create_timesheet",
+            provider=PROVIDER,
+            risk=RiskLevel.MUTATING,
+            description=(
+                "File a timesheet (period + hour entries) for a TIMESHEET-billing client. "
+                "Apex creates a linked DRAFT invoice from it automatically — standalone "
+                "timesheets don't exist, filing one always produces an invoice. Use "
+                "apex_list_clients first to confirm the client's billing mode, and "
+                "apex_get_last_timesheet to find the next period's start date. Requires "
+                "confirmation."
+            ),
+            input_model=CreateTimesheetInput,
+            handler=create_timesheet,
+            preview_builder=_create_timesheet_preview,
         )
     )
     registry.add(
