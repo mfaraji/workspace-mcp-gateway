@@ -27,6 +27,9 @@ with Open WebUI's native tool-server UI:
 - `/mcp/tasks` registers `system_get_current_time` plus `google_tasks_*` when
   Tasks provider modules exist; until then it intentionally exposes only system
   tools.
+- `/mcp/telegram` registers `system_get_current_time`,
+  `telegram_list_destinations`, and `telegram_send_message`. Bot credentials are
+  configured through the private HTTP API, never through a model-visible tool.
 
 Mount every MCP app behind `IdentityMiddleware`, using the same Open WebUI
 forwarded-user headers and `X-Gateway-Auth` shared secret. Do not create separate

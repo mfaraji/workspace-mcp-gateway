@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     LargeBinary,
@@ -65,9 +66,7 @@ class ProviderConnection(Base, TimestampMixin):
 
     __tablename__ = "provider_connections"
     __table_args__ = (
-        UniqueConstraint(
-            "user_id", "provider", "provider_account_id", name="provider_account"
-        ),
+        UniqueConstraint("user_id", "provider", "provider_account_id", name="provider_account"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -78,14 +77,16 @@ class ProviderConnection(Base, TimestampMixin):
     provider_account_id: Mapped[str] = mapped_column(String(255))
     provider_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    connection_metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
     status: Mapped[str] = mapped_column(String(32), default="active")
-    last_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="connections")
     token: Mapped[ProviderToken | None] = relationship(
         back_populates="connection", uselist=False, cascade="all, delete-orphan"
+    )
+    telegram_destinations: Mapped[list[TelegramDestination]] = relationship(
+        back_populates="connection", cascade="all, delete-orphan"
     )
 
 
@@ -124,12 +125,8 @@ class ClientToken(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(128))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     token_prefix: Mapped[str] = mapped_column(String(16))
-    last_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    revoked_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="client_tokens")
 
@@ -154,3 +151,54 @@ class ToolAuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
+
+
+class TelegramDestination(Base, TimestampMixin):
+    """A channel that one user's connected Telegram bot may publish to."""
+
+    __tablename__ = "telegram_destinations"
+    __table_args__ = (
+        UniqueConstraint("connection_id", "alias", name="telegram_destination_alias"),
+        UniqueConstraint("connection_id", "chat_id", name="telegram_destination_chat"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    connection_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("provider_connections.id", ondelete="CASCADE"),
+        index=True,
+    )
+    alias: Mapped[str] = mapped_column(String(64))
+    chat_id: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(255))
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    connection: Mapped[ProviderConnection] = relationship(back_populates="telegram_destinations")
+    deliveries: Mapped[list[TelegramDelivery]] = relationship(
+        back_populates="destination", cascade="all, delete-orphan"
+    )
+
+
+class TelegramDelivery(Base, TimestampMixin):
+    """Idempotency and outcome ledger for Telegram channel publications."""
+
+    __tablename__ = "telegram_deliveries"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    destination_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("telegram_destinations.id", ondelete="CASCADE"),
+        index=True,
+    )
+    execution_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32))
+    telegram_message_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    destination: Mapped[TelegramDestination] = relationship(back_populates="deliveries")

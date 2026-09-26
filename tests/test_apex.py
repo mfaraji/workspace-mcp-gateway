@@ -213,6 +213,7 @@ def test_read_and_write_tools_registered_with_expected_risk():
         "apex_list_timesheets",
         "apex_get_last_timesheet",
         "apex_create_invoice",
+        "apex_create_timesheet",
         "apex_update_timesheet",
     }
     assert specs["apex_list_clients"].risk is RiskLevel.READ

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -10,8 +11,8 @@ import pytest
 from gateway.config import Settings
 from gateway.providers.base import CallContext, RiskLevel
 from gateway.providers.registry import ToolError, ToolRegistry
-from gateway.providers.telegram import auth as telegram_auth
 from gateway.providers.telegram import client as telegram_client
+from gateway.providers.telegram import read as telegram_read
 from gateway.providers.telegram import write as telegram_write
 
 
@@ -25,8 +26,6 @@ def _settings(**overrides) -> Settings:
         gateway_shared_secret="shared-secret-value",
         trusted_open_webui_origin="https://openwebui.internal",
         session_secret="sess",
-        telegram_bot_token="123:ABC",
-        telegram_require_confirmation=True,
     )
     base.update(overrides)
     return Settings(**base)
@@ -130,70 +129,47 @@ def test_send_message_builds_send_message_body(monkeypatch):
         "get_credentials",
         lambda session, ctx, settings: "123:TOKEN",
     )
+    destination = SimpleNamespace(
+        id=uuid.uuid4(), alias="announcements", chat_id="-100123"
+    )
+    session = SimpleNamespace(add=lambda _value: None, commit=lambda: None)
+    scalar_values = iter([destination, None])
+    session.scalar = lambda _statement: next(scalar_values)
+    session.rollback = lambda: None
+    monkeypatch.setattr(
+        telegram_write,
+        "get_connection",
+        lambda _session, _user_id: SimpleNamespace(id=uuid.uuid4()),
+    )
 
     args = telegram_write.SendMessageInput(
-        chat_id="@mychannel",
+        destination="announcements",
         text="Hello",
         parse_mode="HTML",
         disable_notification=True,
     )
-    result = telegram_write.send_message(args, _ctx(), None)
+    result = telegram_write.send_message(args, _ctx(), session)
 
-    assert result == {"ok": True, "result": {"message_id": 42}}
+    assert result["status"] == "sent"
+    assert result["message_id"] == "42"
     assert captured["bot_token"] == "123:TOKEN"
     assert captured["method"] == "sendMessage"
     assert captured["json"] == {
-        "chat_id": "@mychannel",
+        "chat_id": "-100123",
         "text": "Hello",
         "disable_notification": True,
         "parse_mode": "HTML",
     }
 
 
-def test_telegram_set_api_key_tool_stores_the_key(monkeypatch):
-    stored = {}
-
-    def fake_store_api_key(_session, user_id, provider, api_key):
-        stored.update(user_id=user_id, provider=provider, api_key=api_key)
-
-    monkeypatch.setattr(telegram_auth, "store_api_key", fake_store_api_key)
-    ctx = _ctx()
-
-    result = telegram_auth.set_api_key(
-        telegram_auth.SetApiKeyInput(api_key="123:ABC"), ctx, None
-    )
-
-    assert result == {"status": "connected", "provider": "telegram"}
-    assert stored == {
-        "user_id": ctx.user_id,
-        "provider": "telegram",
-        "api_key": "123:ABC",
-    }
-
-
-@pytest.mark.parametrize(
-    "require_confirmation,expected_risk",
-    [(True, RiskLevel.MUTATING), (False, RiskLevel.READ)],
-)
-def test_send_message_registered_with_configurable_risk(
-    monkeypatch, require_confirmation, expected_risk
-):
-    monkeypatch.setattr(
-        telegram_write,
-        "get_settings",
-        lambda: _settings(telegram_require_confirmation=require_confirmation),
-    )
-
-    settings = _settings(telegram_require_confirmation=require_confirmation)
+def test_telegram_registers_only_safe_model_tools():
+    settings = _settings()
     registry = ToolRegistry()
-    telegram_auth.register(registry)
+    telegram_read.register(registry)
     telegram_write.register(registry, settings)
     specs = {spec.name: spec for spec in registry._specs}
 
-    assert set(specs) == {"telegram_set_api_key", "telegram_send_message"}
-    assert specs["telegram_set_api_key"].risk is RiskLevel.READ
-    assert specs["telegram_send_message"].risk is expected_risk
-    if expected_risk is RiskLevel.MUTATING:
-        assert specs["telegram_send_message"].preview_builder is not None
-    else:
-        assert specs["telegram_send_message"].preview_builder is None
+    assert set(specs) == {"telegram_list_destinations", "telegram_send_message"}
+    assert specs["telegram_list_destinations"].risk is RiskLevel.READ
+    assert specs["telegram_send_message"].risk is RiskLevel.MUTATING
+    assert specs["telegram_send_message"].requires_confirmation is False

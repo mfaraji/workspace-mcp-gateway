@@ -46,11 +46,13 @@ def create_app() -> FastAPI:
     app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
 
     from gateway.api.drive import router as drive_api_router
+    from gateway.api.telegram import router as telegram_api_router
     from gateway.connectors.routes import router as connectors_router
     from gateway.oauth.routes import router as oauth_router
 
     app.include_router(oauth_router)
     app.include_router(drive_api_router)
+    app.include_router(telegram_api_router)
     app.include_router(connectors_router)
 
     @app.get("/")

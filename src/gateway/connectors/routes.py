@@ -37,7 +37,11 @@ async def set_api_key(slug: str, body: SetApiKeyBody, request: Request) -> JSONR
         return JSONResponse({"error": "unauthorized", "detail": str(exc)}, status_code=401)
 
     connector = by_slug(slug)
-    if connector is None or not isinstance(connector.upstream, ApiKeyStrategy):
+    if (
+        connector is None
+        or not isinstance(connector.upstream, ApiKeyStrategy)
+        or connector.slug == "telegram"
+    ):
         return JSONResponse(
             {"error": "not_found", "detail": f"no API-key connector '{slug}'"}, status_code=404
         )

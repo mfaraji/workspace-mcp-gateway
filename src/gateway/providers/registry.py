@@ -91,7 +91,7 @@ class ToolRegistry:
             )
             annotations[name] = field.annotation
 
-        if spec.risk is RiskLevel.MUTATING:
+        if spec.risk is RiskLevel.MUTATING and spec.requires_confirmation is not False:
             params.append(
                 inspect.Parameter(
                     _CONFIRM_PARAM,
@@ -138,8 +138,14 @@ def _run_pipeline(
 
     try:
         return _execute(
-            spec, settings, raw_args, confirmation_token,
-            auth, user_id, request_id, input_summary,
+            spec,
+            settings,
+            raw_args,
+            confirmation_token,
+            auth,
+            user_id,
+            request_id,
+            input_summary,
         )
     except ToolError as exc:
         _audit_error(spec, user_id, request_id, input_summary, exc.error_code, auth.source)
@@ -171,7 +177,12 @@ def _execute(
     """
     with session_scope() as session:
         ctx = CallContext(
-            user_id=user_id, external_user_id=auth.external_user_id, request_id=request_id
+            user_id=user_id,
+            external_user_id=auth.external_user_id,
+            request_id=request_id,
+            chat_id=auth.chat_id,
+            message_id=auth.message_id,
+            automation_id=auth.automation_id,
         )
 
         # Validate input against the declared model.
@@ -182,18 +193,25 @@ def _execute(
 
         # Policy / confirmation gate. The preview is built from the validated
         # model so mutating tools can render a meaningful confirmation message.
-        preview_builder = (
-            (lambda _: spec.preview_builder(model)) if spec.preview_builder else None
-        )
+        preview_builder = (lambda _: spec.preview_builder(model)) if spec.preview_builder else None
         decision = confirm.check(
-            settings, spec, raw_args, ctx,
-            confirmation_token=confirmation_token, preview_builder=preview_builder,
+            settings,
+            spec,
+            raw_args,
+            ctx,
+            confirmation_token=confirmation_token,
+            preview_builder=preview_builder,
         )
         if isinstance(decision, confirm.NeedsConfirmation):
             write_audit(
-                session, user_id=user_id, provider=spec.provider, tool_name=spec.name,
-                request_id=request_id, input_summary=input_summary,
-                result_status="needs_confirmation", auth_source=auth.source,
+                session,
+                user_id=user_id,
+                provider=spec.provider,
+                tool_name=spec.name,
+                request_id=request_id,
+                input_summary=input_summary,
+                result_status="needs_confirmation",
+                auth_source=auth.source,
             )
             return {
                 "status": "confirmation_required",
@@ -212,15 +230,24 @@ def _execute(
             raise ToolError(_classify_error(spec, exc), f"{spec.name} failed") from exc
 
         write_audit(
-            session, user_id=user_id, provider=spec.provider, tool_name=spec.name,
-            request_id=request_id, input_summary=input_summary, result_status="ok",
+            session,
+            user_id=user_id,
+            provider=spec.provider,
+            tool_name=spec.name,
+            request_id=request_id,
+            input_summary=input_summary,
+            result_status="ok",
             auth_source=auth.source,
         )
         return result
 
 
 def _audit_error(
-    spec: ToolSpec, user_id, request_id: str, input_summary: str, error_code: str,
+    spec: ToolSpec,
+    user_id,
+    request_id: str,
+    input_summary: str,
+    error_code: str,
     auth_source: str | None = None,
 ) -> None:
     """Record a failed call in its own transaction (the tool's own rolled back).
@@ -231,9 +258,15 @@ def _audit_error(
     try:
         with session_scope() as session:
             write_audit(
-                session, user_id=user_id, provider=spec.provider, tool_name=spec.name,
-                request_id=request_id, input_summary=input_summary,
-                result_status="error", error_code=error_code, auth_source=auth_source,
+                session,
+                user_id=user_id,
+                provider=spec.provider,
+                tool_name=spec.name,
+                request_id=request_id,
+                input_summary=input_summary,
+                result_status="error",
+                error_code=error_code,
+                auth_source=auth_source,
             )
     except SQLAlchemyError:
         pass

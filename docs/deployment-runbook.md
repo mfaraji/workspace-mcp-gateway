@@ -96,6 +96,7 @@ the same backend and same static header:
 | `Google Calendar` | `http://127.0.0.1:8000/mcp/calendar` |
 | `Google Drive` | `http://127.0.0.1:8000/mcp/drive` |
 | `Google Tasks` | `http://127.0.0.1:8000/mcp/tasks` |
+| `Telegram` | `http://127.0.0.1:8001/mcp/telegram` |
 
 `/mcp/calendar` exposes `system_get_current_time` plus `google_calendar_*`.
 `/mcp/drive` and `/mcp/tasks` are mounted now but expose only system tools until

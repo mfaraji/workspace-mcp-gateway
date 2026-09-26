@@ -13,6 +13,7 @@ import httpx
 
 from gateway.config import Settings
 from gateway.connectors.upstream import ApiKeyStrategy
+from gateway.providers.registry import ToolError
 
 PROVIDER = "telegram"
 TELEGRAM_API_BASE = "https://api.telegram.org"
@@ -28,9 +29,16 @@ _STATUS_ERROR_CODES = {
 TELEGRAM_API_KEY = ApiKeyStrategy(
     upstream_provider=PROVIDER,
     display_name="Telegram",
-    set_key_tool="telegram_set_api_key",
-    fallback_key=lambda settings: settings.telegram_bot_token,
+    set_key_tool="Telegram settings",
 )
+
+
+class TelegramProviderError(ToolError):
+    """A sanitized Telegram failure with delivery-certainty information."""
+
+    def __init__(self, error_code: str, message: str, *, delivery_unknown: bool = False) -> None:
+        super().__init__(error_code, message)
+        self.delivery_unknown = delivery_unknown
 
 
 def telegram_request(
@@ -45,17 +53,23 @@ def telegram_request(
     Raises ``gateway.providers.registry.ToolError`` on transport failures or
     non-2xx / ``ok: false`` responses.
     """
-    from gateway.providers.registry import ToolError
-
     url = f"{TELEGRAM_API_BASE}/bot{bot_token}/{method}"
     try:
         response = httpx.post(url, json=json, timeout=30.0)
+    except httpx.TimeoutException as exc:
+        raise TelegramProviderError(
+            "provider_timeout",
+            "Telegram did not confirm whether the request was delivered.",
+            delivery_unknown=True,
+        ) from exc
     except httpx.HTTPError as exc:
-        raise ToolError("provider_error", f"telegram request failed: {exc}") from exc
+        raise TelegramProviderError(
+            "provider_error", "Telegram is temporarily unavailable."
+        ) from exc
 
     if response.status_code >= 400:
         detail = response.text[:500] if response.text else str(response.status_code)
-        raise ToolError(
+        raise TelegramProviderError(
             _STATUS_ERROR_CODES.get(response.status_code, "provider_error"),
             f"telegram request failed ({response.status_code}): {detail}",
         )
@@ -66,6 +80,6 @@ def telegram_request(
     body = response.json()
     if isinstance(body, dict) and body.get("ok") is False:
         description = str(body.get("description", "unknown error"))[:500]
-        raise ToolError("provider_error", f"telegram API error: {description}")
+        raise TelegramProviderError("provider_error", f"telegram API error: {description}")
 
     return body

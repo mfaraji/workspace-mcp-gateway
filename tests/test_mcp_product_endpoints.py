@@ -71,6 +71,7 @@ def test_apex_filter_registers_expected_apex_tools():
         "apex_list_timesheets",
         "apex_get_last_timesheet",
         "apex_create_invoice",
+        "apex_create_timesheet",
         "apex_update_timesheet",
         "apex_set_api_key",
     }
@@ -81,7 +82,7 @@ def test_telegram_filter_registers_expected_telegram_tools():
 
     assert names == {
         "system_get_current_time",
-        "telegram_set_api_key",
+        "telegram_list_destinations",
         "telegram_send_message",
     }
 
@@ -98,7 +99,7 @@ def test_backward_compatible_mcp_endpoint_still_registers_all_enabled_tools():
     assert "apex_create_invoice" in names
     assert "google_drive_search_files" in names
     assert "telegram_send_message" in names
-    assert "telegram_set_api_key" in names
+    assert "telegram_list_destinations" in names
 
 
 def test_every_mcp_mount_is_behind_identity_middleware(monkeypatch):

@@ -31,6 +31,9 @@ class CallContext:
     user_id: uuid.UUID
     external_user_id: str
     request_id: str
+    chat_id: str | None = None
+    message_id: str | None = None
+    automation_id: str | None = None
 
 
 # A handler receives validated input, the call context, and an open DB session,
@@ -54,3 +57,4 @@ class ToolSpec:
     input_model: type[BaseModel]
     handler: ToolHandler
     preview_builder: PreviewBuilder | None = None
+    requires_confirmation: bool | None = None

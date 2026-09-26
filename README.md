@@ -122,6 +122,7 @@ also register product-specific tool servers on the same backend:
 - `http://127.0.0.1:8000/mcp/drive`
 - `http://127.0.0.1:8000/mcp/tasks`
 - `http://127.0.0.1:8000/mcp/apex`
+- `http://127.0.0.1:8000/mcp/telegram`
 
 Calendar exposes `system_get_current_time` plus `google_calendar_*`; Drive
 exposes `system_get_current_time`, `google_drive_search_files`, and
@@ -132,6 +133,19 @@ exposes `system_get_current_time`, `google_drive_search_files`, and
 [Apex invoicing/timesheet REST API](../apex/docs/api/invoice-rest.openapi.yaml),
 authenticated with a single workspace-scoped `APEX_API_KEY` rather than
 per-user OAuth.
+
+Telegram exposes `telegram_list_destinations` and `telegram_send_message`.
+Each Open WebUI user connects one BotFather token through Settings →
+Integrations; the token is validated and encrypted without entering model
+context. Channel aliases are accepted only after the gateway verifies that the
+bot is a channel administrator with permission to post.
+
+Private Telegram settings routes use the same trusted headers as MCP:
+
+- `GET /api/telegram/status`
+- `PUT` / `DELETE /api/telegram/connection`
+- `POST /api/telegram/destinations`
+- `POST` / `DELETE /api/telegram/destinations/{alias}`
 
 ## Open WebUI Drive attachments
 

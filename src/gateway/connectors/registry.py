@@ -26,7 +26,7 @@ from gateway.providers.google.tasks import read as google_tasks_read
 from gateway.providers.google.tasks import write as google_tasks_write
 from gateway.providers.google.tasks.common import TASKS_OAUTH
 from gateway.providers.registry import ToolRegistry
-from gateway.providers.telegram import auth as telegram_auth
+from gateway.providers.telegram import read as telegram_read
 from gateway.providers.telegram import write as telegram_write
 from gateway.providers.telegram.client import TELEGRAM_API_KEY
 
@@ -52,7 +52,7 @@ def _register_apex(registry: ToolRegistry, _settings: Settings) -> None:
 
 
 def _register_telegram(registry: ToolRegistry, settings: Settings) -> None:
-    telegram_auth.register(registry)
+    telegram_read.register(registry)
     telegram_write.register(registry, settings)
 
 

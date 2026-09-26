@@ -34,6 +34,9 @@ from gateway.identity.models import AuthenticatedUser, IdentityError
 HEADER_USER_ID = ("x-openwebui-user-id", "x-open-webui-user-id")
 HEADER_USER_EMAIL = ("x-openwebui-user-email", "x-open-webui-user-email")
 HEADER_USER_NAME = ("x-openwebui-user-name", "x-open-webui-user-name")
+HEADER_CHAT_ID = ("x-openwebui-chat-id", "x-open-webui-chat-id")
+HEADER_MESSAGE_ID = ("x-openwebui-message-id", "x-open-webui-message-id")
+HEADER_AUTOMATION_ID = ("x-openwebui-automation-id", "x-open-webui-automation-id")
 HEADER_GATEWAY_AUTH = "x-gateway-auth"
 HEADER_AUTHORIZATION = "authorization"
 
@@ -138,15 +141,18 @@ def resolve_identity(
     email = _first_header(norm, HEADER_USER_EMAIL) or None
     display_name = _first_header(norm, HEADER_USER_NAME) or None
     return AuthenticatedUser(
-        external_user_id=external_user_id, email=email, display_name=display_name
+        external_user_id=external_user_id,
+        email=email,
+        display_name=display_name,
+        chat_id=_first_header(norm, HEADER_CHAT_ID) or None,
+        message_id=_first_header(norm, HEADER_MESSAGE_ID) or None,
+        automation_id=_first_header(norm, HEADER_AUTOMATION_ID) or None,
     )
 
 
 def get_or_create_user(session: Session, auth: AuthenticatedUser) -> User:
     """Upsert a ``User`` by external id, refreshing email/display name."""
-    user = session.scalar(
-        select(User).where(User.external_user_id == auth.external_user_id)
-    )
+    user = session.scalar(select(User).where(User.external_user_id == auth.external_user_id))
     if user is None:
         user = User(
             external_user_id=auth.external_user_id,

@@ -93,7 +93,7 @@ def check(
     token; absent one, a ``NeedsConfirmation`` carrying a fresh token (and an
     optional human-readable preview) is returned.
     """
-    if spec.risk is RiskLevel.READ:
+    if spec.risk is RiskLevel.READ or spec.requires_confirmation is False:
         return Allow()
 
     if confirmation_token and verify_confirmation_token(

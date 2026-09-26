@@ -20,6 +20,9 @@ class AuthenticatedUser:
     email: str | None = None
     display_name: str | None = None
     source: IdentitySource = "header"
+    chat_id: str | None = None
+    message_id: str | None = None
+    automation_id: str | None = None
 
 
 class IdentityError(Exception):
