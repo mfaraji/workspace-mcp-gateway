@@ -86,6 +86,10 @@ Set `DOCKER_DATABASE_URL` in `.env` if your host Postgres uses a different port,
 database, user, or password. The container runs `alembic upgrade head` before
 starting Uvicorn.
 
+To deploy on a server, run `scripts/deploy.sh` (fast-forwards `main`, rebuilds,
+restarts, and waits for `/health`), or `DEPLOY_HOST=user@host DEPLOY_DIR=/path
+scripts/deploy.sh` to run it over SSH.
+
 Health checks:
 
 ```bash
