@@ -35,6 +35,16 @@ APEX_API_KEY = ApiKeyStrategy(
     fallback_key=lambda settings: settings.apex_api_key,
 )
 
+# Wealth data only exists in PERSONAL workspaces, whereas the invoicing key is
+# typically for a BUSINESS workspace, so wealth uses its own per-user key.
+WEALTH_PROVIDER = "apex_wealth"
+APEX_WEALTH_API_KEY = ApiKeyStrategy(
+    upstream_provider=WEALTH_PROVIDER,
+    display_name="Apex Wealth",
+    set_key_tool="apex_wealth_set_api_key",
+    fallback_key=lambda settings: settings.apex_wealth_api_key,
+)
+
 
 def apex_request(
     settings: Settings,

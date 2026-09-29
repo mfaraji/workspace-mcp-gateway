@@ -17,6 +17,13 @@ from gateway.db.models import ToolAuditLog
 # Fields safe to record per tool. Anything not listed is dropped from the summary.
 _SAFE_FIELDS: dict[str, set[str]] = {
     "system_get_current_time": {"time_zone"},
+    # Apex wealth tools are read-only; balances live in responses, never inputs.
+    "apex_wealth_list_accounts": set(),
+    "apex_wealth_get_accounts_summary": set(),
+    "apex_wealth_get_investments_summary": set(),
+    "apex_wealth_get_positions": {"account_id", "as_of_date"},
+    "apex_wealth_list_manual_holdings": {"account_id"},
+    "apex_wealth_get_net_worth_history": {"months"},
     "google_calendar_list_calendars": set(),
     "google_calendar_list_events": {"calendar_id", "max_results", "order_by", "single_events"},
     "google_calendar_get_event": {"calendar_id", "event_id"},

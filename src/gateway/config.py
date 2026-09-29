@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     # yet; it is not required once every user has one.
     apex_base_url: str = "http://localhost:3010"
     apex_api_key: str | None = None
+    # Wealth endpoints need a key for a PERSONAL workspace; optional deploy-wide fallback.
+    apex_wealth_api_key: str | None = None
 
     token_encryption_key: str
 

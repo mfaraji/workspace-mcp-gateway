@@ -30,6 +30,10 @@ with Open WebUI's native tool-server UI:
 - `/mcp/telegram` registers `system_get_current_time`,
   `telegram_list_destinations`, and `telegram_send_message`. Bot credentials are
   configured through the private HTTP API, never through a model-visible tool.
+- `/mcp/apex-wealth` registers `system_get_current_time`, read-only
+  `apex_wealth_*` tools, and `apex_wealth_set_api_key`. It uses its own per-user
+  key (wealth data only exists in PERSONAL workspaces); `/mcp/apex` excludes these
+  tools via `Connector.exclude_prefixes`.
 
 Mount every MCP app behind `IdentityMiddleware`, using the same Open WebUI
 forwarded-user headers and `X-Gateway-Auth` shared secret. Do not create separate

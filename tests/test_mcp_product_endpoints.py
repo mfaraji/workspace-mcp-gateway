@@ -77,6 +77,25 @@ def test_apex_filter_registers_expected_apex_tools():
     }
 
 
+def test_apex_wealth_filter_registers_only_wealth_tools():
+    names = _tool_names(_settings(), "apex-wealth")
+
+    assert names == {
+        "system_get_current_time",
+        "apex_wealth_list_accounts",
+        "apex_wealth_get_accounts_summary",
+        "apex_wealth_get_investments_summary",
+        "apex_wealth_get_positions",
+        "apex_wealth_list_manual_holdings",
+        "apex_wealth_get_net_worth_history",
+        "apex_wealth_set_api_key",
+    }
+
+
+def test_apex_filter_excludes_wealth_tools():
+    assert not any(n.startswith("apex_wealth_") for n in _tool_names(_settings(), "apex"))
+
+
 def test_telegram_filter_registers_expected_telegram_tools():
     names = _tool_names(_settings(), "telegram")
 
@@ -97,6 +116,7 @@ def test_backward_compatible_mcp_endpoint_still_registers_all_enabled_tools():
     assert "google_tasks_complete_task" in names
     assert "apex_list_clients" in names
     assert "apex_create_invoice" in names
+    assert "apex_wealth_get_investments_summary" in names
     assert "google_drive_search_files" in names
     assert "telegram_send_message" in names
     assert "telegram_list_destinations" in names

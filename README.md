@@ -122,6 +122,7 @@ also register product-specific tool servers on the same backend:
 - `http://127.0.0.1:8000/mcp/drive`
 - `http://127.0.0.1:8000/mcp/tasks`
 - `http://127.0.0.1:8000/mcp/apex`
+- `http://127.0.0.1:8000/mcp/apex-wealth`
 - `http://127.0.0.1:8000/mcp/telegram`
 
 Calendar exposes `system_get_current_time` plus `google_calendar_*`; Drive
@@ -131,8 +132,19 @@ exposes `system_get_current_time`, `google_drive_search_files`, and
 (`apex_list_clients`, `apex_list_timesheets`, `apex_get_last_timesheet`,
 `apex_create_invoice`, `apex_create_timesheet`, `apex_update_timesheet`) against the
 [Apex invoicing/timesheet REST API](../apex/docs/api/invoice-rest.openapi.yaml),
-authenticated with a single workspace-scoped `APEX_API_KEY` rather than
-per-user OAuth.
+authenticated with a per-user, workspace-scoped Apex API key (stored with
+`apex_set_api_key` or `POST /connectors/apex/apikey`; `APEX_API_KEY` is only an
+optional deploy-wide fallback) rather than per-user OAuth.
+
+Apex Wealth (`/mcp/apex-wealth`) exposes `system_get_current_time` plus read-only
+`apex_wealth_*` tools: `apex_wealth_list_accounts`, `apex_wealth_get_accounts_summary`
+(cash and liabilities), `apex_wealth_get_investments_summary`,
+`apex_wealth_get_positions`, `apex_wealth_list_manual_holdings`, and
+`apex_wealth_get_net_worth_history`, against the
+[Apex wealth REST API](../apex/docs/api/wealth-rest.openapi.yaml). Wealth data only
+exists in PERSONAL workspaces, so it uses its own key, stored with
+`apex_wealth_set_api_key` or `POST /connectors/apex-wealth/apikey`
+(`APEX_WEALTH_API_KEY` is an optional fallback).
 
 Telegram exposes `telegram_list_destinations` and `telegram_send_message`.
 Each Open WebUI user connects one BotFather token through Settings →

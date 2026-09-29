@@ -42,10 +42,15 @@ class Connector:
     register: Callable[[ToolRegistry, Settings], None]
     upstream: UpstreamAuthStrategy | None = None
     error_classifier: ErrorClassifier | None = None
+    # Tool-name prefixes owned by a sibling connector whose own prefix extends this one
+    # (e.g. ``apex_`` vs ``apex_wealth_``).
+    exclude_prefixes: tuple[str, ...] = ()
 
     def matches(self, spec: ToolSpec) -> bool:
         """Whether a tool spec belongs to this connector."""
-        return spec.name.startswith(self.tool_prefix)
+        return spec.name.startswith(self.tool_prefix) and not spec.name.startswith(
+            self.exclude_prefixes
+        )
 
     def connect_url(self, settings: Settings, external_user_id: str) -> str | None:
         """Return a user-facing URL to (re)connect this connector, if it has one."""

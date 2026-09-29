@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from gateway.connectors.apikey import store_api_key
-from gateway.providers.apex.client import PROVIDER
+from gateway.providers.apex.client import PROVIDER, WEALTH_PROVIDER
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
 
@@ -40,5 +40,28 @@ def register(registry) -> None:
             ),
             input_model=SetApiKeyInput,
             handler=set_api_key,
+        )
+    )
+
+
+def set_wealth_api_key(args: SetApiKeyInput, ctx: CallContext, session: Session) -> dict:
+    store_api_key(session, ctx.user_id, WEALTH_PROVIDER, args.api_key)
+    return {"status": "connected", "provider": WEALTH_PROVIDER}
+
+
+def register_wealth(registry) -> None:
+    """Register the Apex Wealth API key intake tool with the tool registry."""
+    registry.add(
+        ToolSpec(
+            name="apex_wealth_set_api_key",
+            provider=WEALTH_PROVIDER,
+            risk=RiskLevel.READ,
+            description=(
+                "Store your personal Apex API key for a PERSONAL workspace so apex_wealth_* "
+                "tools act as you. This is separate from the invoicing key set by "
+                "apex_set_api_key. The key is encrypted at rest and never returned by any tool."
+            ),
+            input_model=SetApiKeyInput,
+            handler=set_wealth_api_key,
         )
     )

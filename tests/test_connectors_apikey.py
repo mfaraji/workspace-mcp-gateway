@@ -272,3 +272,39 @@ async def test_set_api_key_route_stores_key_for_apex(monkeypatch):
     assert _body(response) == {"connected": True, "connector": "apex"}
     assert stored == {"user_id": user.id, "provider": "apex", "api_key": "pk_live_x"}
 
+
+
+async def test_set_api_key_route_stores_wealth_key_under_wealth_provider(monkeypatch):
+    monkeypatch.setattr(connectors_routes, "get_settings", _settings)
+    monkeypatch.setattr(
+        connectors_routes,
+        "resolve_identity",
+        lambda _headers, _settings: AuthenticatedUser("alice", "alice@example.com"),
+    )
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def fake_session_scope():
+        yield object()
+
+    user = SimpleNamespace(id=uuid.uuid4())
+    stored = {}
+
+    monkeypatch.setattr(connectors_routes, "session_scope", fake_session_scope)
+    monkeypatch.setattr(connectors_routes, "get_or_create_user", lambda _session, _auth: user)
+    monkeypatch.setattr(
+        connectors_routes,
+        "store_api_key",
+        lambda _session, user_id, provider, api_key: stored.update(
+            user_id=user_id, provider=provider, api_key=api_key
+        ),
+    )
+
+    response = await connectors_routes.set_api_key(
+        "apex-wealth", connectors_routes.SetApiKeyBody(api_key="pk_live_w"), _request()
+    )
+
+    assert response.status_code == 200
+    assert _body(response) == {"connected": True, "connector": "apex-wealth"}
+    assert stored == {"user_id": user.id, "provider": "apex_wealth", "api_key": "pk_live_w"}
