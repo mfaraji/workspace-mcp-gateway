@@ -61,7 +61,7 @@ def test_current_rate_averages_and_skips_null(fake_api):
         ],
         "invalids": [{"sourceTitle": "C", "isOutlier": 1, "isExpired": 1}],
     }
-    out = read.get_current_rate(read.CurrentRateInput(**{"from": "cad"}), _ctx(), None)
+    out = read.get_current_rate(read.CurrentRateInput(from_currency="cad"), _ctx(), None)
     assert out["pair"] == "CAD/IRR"
     assert out["averageBuy"] == 1897000
     assert out["averageSell"] == 1942500
@@ -72,7 +72,7 @@ def test_current_rate_averages_and_skips_null(fake_api):
 
 def test_current_rate_no_data(fake_api):
     fake_api["sources"] = {"hasMultiSources": False}
-    out = read.get_current_rate(read.CurrentRateInput(**{"from": "USD"}), _ctx(), None)
+    out = read.get_current_rate(read.CurrentRateInput(from_currency="USD"), _ctx(), None)
     assert out == {"pair": "USD/IRR", "noData": True}
 
 
@@ -87,7 +87,7 @@ def test_unknown_currency_lists_valid_codes(monkeypatch):
 def test_rate_change_24h_uses_index_minus_25(fake_api):
     rates = [str(1000 + i) for i in range(168)]
     fake_api["rates_1W"] = {"rates": rates, "dates": [f"d{i}" for i in range(168)]}
-    out = read.get_rate_change(read.RateChangeInput(**{"from": "USD"}), _ctx(), None)
+    out = read.get_rate_change(read.RateChangeInput(from_currency="USD"), _ctx(), None)
     assert out["current"] == 1167
     assert out["previous"] == 1143
     assert out["previousDate"] == "d143"
@@ -98,7 +98,7 @@ def test_rate_change_24h_uses_index_minus_25(fake_api):
 def test_rate_change_daily_uses_last_two(fake_api):
     fake_api["rates_all"] = {"rates": ["100", "110"], "dates": ["a", "b"]}
     out = read.get_rate_change(
-        read.RateChangeInput(**{"from": "USD", "window": "daily"}), _ctx(), None
+        read.RateChangeInput(from_currency="USD", window="daily"), _ctx(), None
     )
     assert (out["current"], out["previous"], out["previousDate"]) == (110, 100, "a")
 
@@ -106,7 +106,7 @@ def test_rate_change_daily_uses_last_two(fake_api):
 def test_history_all_respects_limit(fake_api):
     fake_api["rates_all"] = {"rates": ["1", "2", "3"], "dates": ["a", "b", "c"]}
     out = read.get_rate_history(
-        read.RateHistoryInput(**{"from": "USD", "view": "all", "limit": 2}), _ctx(), None
+        read.RateHistoryInput(from_currency="USD", view="all", limit=2), _ctx(), None
     )
     assert out["points"] == [{"date": "b", "rate": 2.0}, {"date": "c", "rate": 3.0}]
 
@@ -114,3 +114,13 @@ def test_history_all_respects_limit(fake_api):
 def test_audit_records_pair_fields():
     summary = summarize_input("finance_get_current_rate", {"from_currency": "USD", "to": "IRR"})
     assert "from_currency='USD'" in summary and "to='IRR'" in summary
+
+
+def test_mcp_schema_exposes_from_currency():
+    from gateway.mcp.server import build_mcp, product_tool_filter
+    from tests.test_mcp_product_endpoints import _settings
+
+    mcp = build_mcp(_settings(), product_tool_filter("finance"))
+    tool = mcp._tool_manager._tools["finance_get_current_rate"]
+    assert "from_currency" in tool.parameters["properties"]
+    assert "from_currency" in tool.parameters["required"]

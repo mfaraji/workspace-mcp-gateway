@@ -22,11 +22,9 @@ _EXCLUSION_FLAGS = (
 
 class CurrentRateInput(BaseModel):
     from_currency: str = Field(
-        ..., alias="from", description="Currency code to convert from, e.g. 'USD' or 'CAD'."
+        ..., description="Currency code to convert from, e.g. 'USD' or 'CAD'."
     )
     to: str = Field("IRR", description="Currency code to convert to. Defaults to 'IRR'.")
-
-    model_config = {"populate_by_name": True}
 
 
 class RateChangeInput(CurrentRateInput):
