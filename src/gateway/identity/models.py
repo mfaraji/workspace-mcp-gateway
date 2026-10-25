@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-IdentitySource = Literal["header", "token"]
+IdentitySource = Literal["header", "token", "oauth"]
 
 
 @dataclass(frozen=True)
@@ -13,7 +13,8 @@ class AuthenticatedUser:
     """A verified user identity for the current request.
 
     ``source`` records how the caller authenticated: ``"header"`` for the trusted
-    Open WebUI header path, ``"token"`` for a native-client bearer token.
+    Open WebUI header path, ``"token"`` for a static client bearer token,
+    or ``"oauth"`` for a linked Clerk identity.
     """
 
     external_user_id: str

@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import Tool as MCPTool
 
 from gateway.config import Settings
 from gateway.connectors.registry import CONNECTORS, by_slug
@@ -22,10 +23,28 @@ from gateway.providers.base import ToolSpec
 ToolFilter = Callable[[ToolSpec], bool]
 
 
+class GatewayFastMCP(FastMCP):
+    """Advertise OAuth on tools while retaining header and static-token access."""
+
+    def __init__(self, *args, oauth_enabled: bool = False, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.oauth_enabled = oauth_enabled
+
+    async def list_tools(self) -> list[MCPTool]:
+        tools = await super().list_tools()
+        if self.oauth_enabled:
+            for tool in tools:
+                tool.__pydantic_extra__["securitySchemes"] = [
+                    {"type": "oauth2", "scopes": ["mcp:tools"]}
+                ]
+        return tools
+
+
 def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> FastMCP:
     """Build and return the configured FastMCP server."""
-    mcp = FastMCP(
+    mcp = GatewayFastMCP(
         name="workspace-mcp-gateway",
+        oauth_enabled=bool(settings.clerk_issuer),
         stateless_http=True,
         streamable_http_path="/",
         transport_security=_transport_security(settings),

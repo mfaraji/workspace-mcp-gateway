@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from contextvars import ContextVar
 
+import anyio
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from gateway.config import Settings
@@ -43,9 +44,10 @@ def require_current_user() -> AuthenticatedUser:
 class IdentityMiddleware:
     """ASGI middleware enforcing identity on every wrapped request."""
 
-    def __init__(self, app: ASGIApp, settings: Settings) -> None:
+    def __init__(self, app: ASGIApp, settings: Settings, resource: str = "/mcp") -> None:
         self.app = app
         self.settings = settings
+        self.resource = resource
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -57,9 +59,15 @@ class IdentityMiddleware:
             for k, v in scope.get("headers", [])
         }
         try:
-            auth = resolve_identity(headers, self.settings)
+            auth = await anyio.to_thread.run_sync(
+                lambda: resolve_identity(
+                    headers,
+                    self.settings,
+                    oauth_resource=f"{self.settings.base_url.rstrip('/')}{self.resource}",
+                )
+            )
         except IdentityError as exc:
-            await _send_401(send, str(exc))
+            await _send_401(send, str(exc), self.settings, self.resource)
             return
 
         token = _current_user.set(auth)
@@ -69,10 +77,16 @@ class IdentityMiddleware:
             _current_user.reset(token)
 
 
-async def _send_401(send: Send, detail: str) -> None:
+async def _send_401(send: Send, detail: str, settings: Settings, resource: str) -> None:
     body = json.dumps({"error": "unauthorized", "detail": detail}).encode()
     # Advertise Bearer so native MCP clients know to authenticate with a token.
-    www_authenticate = f'Bearer error="invalid_token", error_description="{detail}"'
+    error = "insufficient_scope" if detail == "insufficient OAuth scope" else "invalid_token"
+    www_authenticate = f'Bearer error="{error}", error_description="Authentication required"'
+    if settings.clerk_issuer:
+        metadata_url = (
+            f"{settings.base_url.rstrip('/')}/.well-known/oauth-protected-resource{resource}"
+        )
+        www_authenticate += f', resource_metadata="{metadata_url}", scope="mcp:tools"'
     await send(
         {
             "type": "http.response.start",

@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     trusted_open_webui_origin: str
     session_secret: str
 
+    # Clerk OAuth authorization server. Unset means the existing header/static
+    # token paths remain the only authentication methods.
+    clerk_issuer: str | None = None
+    clerk_link_client_id: str | None = None
+    clerk_link_client_secret: str | None = None
+    clerk_link_scope: str = "openid profile mcp:tools"
+
     # Local-dev escape hatch: trust identity headers from any origin.
     dev_trust_all_origins: bool = False
 
@@ -57,6 +64,11 @@ class Settings(BaseSettings):
     def google_redirect_uri(self) -> str:
         """The OAuth redirect URI, derived from ``base_url``."""
         return f"{self.base_url.rstrip('/')}/oauth/google/callback"
+
+    @property
+    def clerk_link_redirect_uri(self) -> str:
+        """Callback for the gateway's confidential account-linking OAuth client."""
+        return f"{self.base_url.rstrip('/')}/oauth/clerk/link/callback"
 
 
 @lru_cache

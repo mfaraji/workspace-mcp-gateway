@@ -188,7 +188,7 @@ feature boolean. A user may have one active Google account for V1. Reauthorizing
 the same account extends its scopes; connecting a different account returns an
 explicit conflict.
 
-Native-client door (bearer token, works from anywhere incl. the public proxy):
+Native-client door (static bearer token, works from anywhere incl. the public proxy):
 
 ```bash
 # Mint a token for a user (shown once):
@@ -203,9 +203,103 @@ curl -sS https://your-host/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
+## OAuth for ChatGPT and headless MCP clients
+
+OAuth is optional and disabled unless `CLERK_ISSUER` is configured. The existing
+Open WebUI trusted-header route and `wmcp_` static tokens continue to work. The
+same six product mounts and `/mcp` are protected resources; HTTPS nginx forwards
+`/.well-known/oauth-protected-resource[/mcp[/<product>]]` and OAuth callbacks to
+the gateway. OAuth never carries Google, Apex, or Telegram credentials to the
+client. A verified Clerk issuer and subject identify the same gateway user
+across ChatGPT and CLI clients. The user is created on first use. Existing Open
+WebUI provider connections can be reused through an explicit account link.
+
+1. In a Clerk tenant, enable Google sign-in, OAuth, JWT access tokens, and a
+   custom `mcp:tools` scope. Advertise this scope and assign it to the OAuth
+   applications. Enable CIMD for clients that support it (including ChatGPT);
+   enable DCR only if a required client lacks CIMD, because DCR allows public
+   unauthenticated client registration. Set the default scopes for clients that
+   omit `scope` to include `mcp:tools`. Require PKCE S256 for authorization-code
+   clients, and keep consent enabled.
+   Register every MCP URL clients will use as a Clerk MCP server resource and
+   enable the OAuth audience claim (`aud_claim_enabled`). Clerk's management
+   MCP provides `configure_mcp_server`: preview with `dry_run: true`, then save
+   with `dry_run: false`. Register `/mcp` and any product URLs separately because
+   the gateway checks the exact resource audience. The first resource setup can
+   enable the audience claim; verify it is enabled after saving. Clients with
+   tokens issued before this change must complete a fresh authorization flow.
+2. For optional reuse of an existing Open WebUI account, create a
+   **confidential** Clerk OAuth application for account linking. Allow
+   `openid profile mcp:tools` and register the exact callback
+   `https://mcp.ashpazi.shop/oauth/clerk/link/callback` (replace the hostname if
+   your `BASE_URL` differs). Set `CLERK_ISSUER` to the Clerk HTTPS Frontend API
+   issuer and set `CLERK_LINK_CLIENT_ID` and `CLERK_LINK_CLIENT_SECRET` in the
+   gateway's private `.env`. Do not put the secret in Open WebUI or a CLI.
+3. Rebuild/restart the gateway after updating its dependencies and run the
+   Alembic `0004_oauth_identity_links` migration. If reusing an Open WebUI
+   account, enable `ENABLE_WORKSPACE_MCP_GATEWAY_OAUTH_LINKING=true` in its
+   backend, rebuild the fork, and restart it. The signed-in user then goes to
+   Settings → Integrations → External MCP access, clicks **Link OAuth login**,
+   completes Clerk sign-in, and refreshes the status. Removing the link stops
+   access to that Open WebUI user's provider connections; the Clerk identity
+   can still use its own gateway account.
+4. Connect a client to `https://mcp.ashpazi.shop/mcp` or a product URL such as
+   `/mcp/telegram`. The gateway advertises Clerk authorization-server discovery,
+   `mcp:tools` tool security schemes, and a `WWW-Authenticate` challenge. The
+   authorization-code flow is handled by the client and Clerk, not by Open
+   WebUI. For ChatGPT, enable Developer mode and add the HTTPS MCP URL as a
+   connector. Test both list and mutating tools with a Clerk test user.
+
+For a headless CLI, create a separate **public** Clerk OAuth application with
+Device Authorization Grant and `mcp:tools` enabled. It has no client secret.
+The helper below prints a verification URL and user code on stderr, polls at
+Clerk's advertised interval, and writes only the access token to stdout. The
+user completes approval on another browser-capable device. A CLI with native
+OAuth device-flow support should use Clerk's advertised
+`device_authorization_endpoint` directly and manage refresh tokens in its own
+secure credential store. Fully unattended jobs can continue using revocable
+`wmcp_` tokens; device-code login itself always requires user approval.
+The helper supports `--offline-access --json` when a CLI needs to capture a
+refresh token; treat that JSON as a secret and store it with owner-only access.
+
+```bash
+umask 077
+.venv/bin/python scripts/mcp_oauth_device.py \
+  --issuer 'https://YOUR_CLERK_FRONTEND_API' \
+  --client-id 'YOUR_PUBLIC_DEVICE_CLIENT_ID' \
+  --resource 'https://mcp.ashpazi.shop/mcp/telegram' \
+  > /path/to/secure-token-output
+```
+
+**Current ChatGPT status (2026-10-25):** The user confirmed tools are available
+after reconnecting and `system_get_current_time` returned the time successfully.
+The earlier action-discovery failure was caused by missing
+Clerk MCP resource registration and a disabled audience claim. Using Clerk's
+management MCP, we registered `/mcp` and all six product URLs in the development
+instance at `https://robust-ibex-65.clerk.accounts.dev` and enabled
+`aud_claim_enabled`. The gateway's strict audience validation remains enabled.
+Provider-specific actions and CLI device-flow verification are separate checks; see
+[the investigation summary](docs/oauth-status-and-issues.md).
+
+**Release gate:** Before relying on Clerk OAuth, verify a real
+authorization-code token and a real device-code token have JWT `iss` equal to
+`CLERK_ISSUER`, `aud` equal to the exact MCP resource URL, and `scope` containing
+`mcp:tools`. The gateway intentionally rejects client-ID-only or unbound
+audiences. Clerk resource registration and the audience-claim setting must be
+configured before this test. If the test fails, investigate the resource,
+audience setting, and token issuance flow without weakening audience validation.
+With the gateway's Clerk settings present, check a token without displaying
+it:
+
+```bash
+.venv/bin/python scripts/check_oauth_token.py \
+  --resource 'https://mcp.ashpazi.shop/mcp/telegram' \
+  < /path/to/secure-token-output
+```
+
 ## Security model
 
-Two front doors, both resolving to the same user and Google connection:
+Three front doors, all resolving to the same user and provider connections:
 
 - **Open WebUI (header identity).** `X-Open-WebUI-User-Id/Email/Name` are trusted
   **only** when the request also presents the `X-Gateway-Auth` shared secret
@@ -218,6 +312,12 @@ Two front doors, both resolving to the same user and Google connection:
   hash is stored; revoke via `revoke`. A token maps to a `User`, reusing any
   Google connection made through Open WebUI. Users without a Google connection get
   an actionable `/oauth/google/start?ticket=...` link in the tool error.
+- **OAuth clients.** Clerk access tokens must have a valid signature, issuer,
+  expiry, exact resource audience, and `mcp:tools` scope. The verified issuer
+  and subject map to one gateway user across OAuth clients. An explicit link
+  lets that user reuse an existing Open WebUI user's provider connections;
+  email similarity never creates a link. Unlink removes only that mapping, not
+  the Open WebUI user's provider connections.
 - **Deployment.** Terminate TLS at the proxy (`SSL_CERT`/`SSL_KEY` in
   `scripts/setup-nginx.sh`); bind the app to `127.0.0.1` and firewall its port so
   the only public route is through the proxy.

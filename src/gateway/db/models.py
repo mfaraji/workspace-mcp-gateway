@@ -131,6 +131,40 @@ class ClientToken(Base, TimestampMixin):
     user: Mapped[User] = relationship(back_populates="client_tokens")
 
 
+class OAuthIdentityLink(Base, TimestampMixin):
+    """A verified OAuth subject bound to an existing Open WebUI user."""
+
+    __tablename__ = "oauth_identity_links"
+    __table_args__ = (
+        UniqueConstraint("issuer", "subject", name="oauth_identity_subject"),
+        UniqueConstraint("user_id", "issuer", name="oauth_identity_user_issuer"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    issuer: Mapped[str] = mapped_column(String(512))
+    subject: Mapped[str] = mapped_column(String(255))
+    user: Mapped[User] = relationship()
+
+
+class OAuthLinkIntent(Base):
+    """Short-lived, single-use account-link flow state; no tokens are stored."""
+
+    __tablename__ = "oauth_link_intents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    state_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    code_verifier: Mapped[str] = mapped_column(String(128))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    user: Mapped[User] = relationship()
+
+
 class ToolAuditLog(Base):
     """One row per tool invocation. Never stores secrets or raw content."""
 
@@ -142,7 +176,7 @@ class ToolAuditLog(Base):
     )
     provider: Mapped[str] = mapped_column(String(64))
     tool_name: Mapped[str] = mapped_column(String(128))
-    # How the caller authenticated: "header" (Open WebUI) or "token" (native client).
+    # How the caller authenticated: "header", "token", or "oauth".
     auth_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     input_summary: Mapped[str | None] = mapped_column(String, nullable=True)

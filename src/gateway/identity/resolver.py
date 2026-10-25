@@ -1,11 +1,14 @@
 """Identity resolution and the request trust boundary.
 
 This module is the single chokepoint for deciding *who* is making a request.
-There are two front doors, resolved here and nowhere else:
+There are three front doors, resolved here and nowhere else:
 
 * **Bearer token** (``Authorization: Bearer wmcp_...``) — a self-contained
   per-user secret used by native MCP clients (Cursor, Claude Desktop). Works from
   any network path, including the public reverse proxy.
+* **OAuth token** — a Clerk-signed, resource-bound access token. Its subject
+  identifies one gateway user across OAuth clients, or an existing user when
+  explicitly linked. Accepted only on MCP mounts.
 * **Trusted header identity** (``X-Open-WebUI-*``) — used by the on-host Open
   WebUI deployment. Only honored when the request also presents the
   ``X-Gateway-Auth`` shared secret, which the public reverse proxy strips. The
@@ -14,6 +17,7 @@ There are two front doors, resolved here and nowhere else:
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -24,7 +28,7 @@ from sqlalchemy.orm import Session
 from gateway.config import Settings
 from gateway.crypto.tokens import hash_token
 from gateway.db.engine import session_scope
-from gateway.db.models import ClientToken, User
+from gateway.db.models import ClientToken, OAuthIdentityLink, User
 from gateway.identity.models import AuthenticatedUser, IdentityError
 
 # Open WebUI forwards identity under "X-OpenWebUI-User-*" (one word) when
@@ -105,18 +109,51 @@ def _resolve_bearer(token: str, session: Session) -> AuthenticatedUser:
     )
 
 
+def _resolve_oauth(
+    token: str, settings: Settings, resource: str, session: Session
+) -> AuthenticatedUser:
+    """Map a Clerk subject to a stable gateway user, honoring explicit links."""
+    from gateway.oauth.clerk import issuer_url, verify_access_token
+
+    subject = verify_access_token(token, settings, resource)
+    issuer = issuer_url(settings)
+    link = session.scalar(
+        select(OAuthIdentityLink).where(
+            OAuthIdentityLink.issuer == issuer,
+            OAuthIdentityLink.subject == subject,
+        )
+    )
+    if link is None:
+        # The immutable issuer and subject, rather than the OAuth client ID or
+        # mutable email, determine identity. Keep the legacy external ID short.
+        digest = hashlib.sha256(f"{issuer}\0{subject}".encode()).hexdigest()
+        return AuthenticatedUser(external_user_id=f"oauth:{digest}", source="oauth")
+    user = link.user
+    return AuthenticatedUser(
+        external_user_id=user.external_user_id,
+        email=user.email,
+        display_name=user.display_name,
+        source="oauth",
+    )
+
+
 def resolve_identity(
     headers: Mapping[str, str],
     settings: Settings,
     session: Session | None = None,
+    *,
+    oauth_resource: str | None = None,
 ) -> AuthenticatedUser:
     """Resolve the authenticated user from request headers, or raise.
 
-    Dispatches between two front doors:
+    Dispatches between three front doors:
 
     1. ``Authorization: Bearer <token>`` — a native-client token, valid from any
        network path. Requires a DB session; one is opened if not supplied.
-    2. ``X-Open-WebUI-*`` identity — trusted only when the ``X-Gateway-Auth``
+    2. ``Authorization: Bearer <OAuth JWT>`` on an MCP resource — verified
+       against Clerk and mapped to a stable user. Explicit links take precedence
+       for users with existing Open WebUI connections.
+    3. ``X-Open-WebUI-*`` identity — trusted only when the ``X-Gateway-Auth``
        shared secret is presented.
 
     Raises:
@@ -127,8 +164,12 @@ def resolve_identity(
     bearer = _extract_bearer(norm)
     if bearer is not None:
         if session is not None:
+            if oauth_resource and not bearer.startswith("wmcp_") and settings.clerk_issuer:
+                return _resolve_oauth(bearer, settings, oauth_resource, session)
             return _resolve_bearer(bearer, session)
         with session_scope() as owned:
+            if oauth_resource and not bearer.startswith("wmcp_") and settings.clerk_issuer:
+                return _resolve_oauth(bearer, settings, oauth_resource, owned)
             return _resolve_bearer(bearer, owned)
 
     if not _gateway_secret_ok(norm, settings):

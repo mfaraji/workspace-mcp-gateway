@@ -106,11 +106,20 @@ ${TLS_DIRECTIVES}
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
 
         # Strip client-supplied identity + trust headers. Public callers must
-        # authenticate with a Bearer token; only the on-host Open WebUI path
+        # authenticate with an OAuth or static Bearer token; only on-host Open WebUI
         # (which bypasses this proxy) may assert header identity.
         proxy_set_header X-Open-WebUI-User-Id "";
         proxy_set_header X-Open-WebUI-User-Email "";
         proxy_set_header X-Open-WebUI-User-Name "";
+        proxy_set_header X-Open-WebUI-Chat-Id "";
+        proxy_set_header X-Open-WebUI-Message-Id "";
+        proxy_set_header X-Open-WebUI-Automation-Id "";
+        proxy_set_header X-OpenWebUI-User-Id "";
+        proxy_set_header X-OpenWebUI-User-Email "";
+        proxy_set_header X-OpenWebUI-User-Name "";
+        proxy_set_header X-OpenWebUI-Chat-Id "";
+        proxy_set_header X-OpenWebUI-Message-Id "";
+        proxy_set_header X-OpenWebUI-Automation-Id "";
         proxy_set_header X-Gateway-Auth "";
     }
 }
