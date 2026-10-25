@@ -49,6 +49,10 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "google_tasks_update_task": {"tasklist_id", "task_id", "due", "status"},
     "google_tasks_complete_task": {"tasklist_id", "task_id"},
     "google_tasks_delete_task": {"tasklist_id", "task_id"},
+    "finance_get_current_rate": {"from_currency", "to"},
+    "finance_get_rate_change": {"from_currency", "to", "window"},
+    "finance_get_rate_history": {"from_currency", "to", "view", "limit"},
+    "finance_list_currencies": set(),
     "telegram_list_destinations": set(),
     "telegram_send_message": {"destination", "parse_mode", "disable_notification"},
 }

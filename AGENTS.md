@@ -34,6 +34,8 @@ with Open WebUI's native tool-server UI:
   `apex_wealth_*` tools, and `apex_wealth_set_api_key`. It uses its own per-user
   key (wealth data only exists in PERSONAL workspaces); `/mcp/apex` excludes these
   tools via `Connector.exclude_prefixes`.
+- `/mcp/finance` registers `system_get_current_time` plus `finance_*` read-only
+  exchange-rate tools (public API, no per-user credentials; default quote IRR).
 
 Mount every MCP app behind `IdentityMiddleware`, using the same Open WebUI
 forwarded-user headers and `X-Gateway-Auth` shared secret. Do not create separate

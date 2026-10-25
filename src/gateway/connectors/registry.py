@@ -18,6 +18,7 @@ from gateway.providers.apex import wealth as apex_wealth
 from gateway.providers.apex import write as apex_write
 from gateway.providers.apex.client import APEX_API_KEY, APEX_WEALTH_API_KEY
 from gateway.providers.base import ToolSpec
+from gateway.providers.finance import read as finance_read
 from gateway.providers.google.calendar import read as google_calendar_read
 from gateway.providers.google.calendar import write as google_calendar_write
 from gateway.providers.google.calendar.common import CALENDAR_OAUTH
@@ -55,6 +56,10 @@ def _register_apex(registry: ToolRegistry, _settings: Settings) -> None:
 def _register_apex_wealth(registry: ToolRegistry, _settings: Settings) -> None:
     apex_wealth.register(registry)
     apex_auth.register_wealth(registry)
+
+
+def _register_finance(registry: ToolRegistry, _settings: Settings) -> None:
+    finance_read.register(registry)
 
 
 def _register_telegram(registry: ToolRegistry, settings: Settings) -> None:
@@ -130,6 +135,13 @@ CONNECTORS: list[Connector] = [
         upstream_provider="telegram",
         register=_register_telegram,
         upstream=TELEGRAM_API_KEY,
+    ),
+    Connector(
+        slug="finance",
+        tool_prefix="finance_",
+        display_name="Finance",
+        upstream_provider="finance",
+        register=_register_finance,
     ),
 ]
 
