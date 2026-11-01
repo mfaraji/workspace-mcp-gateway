@@ -36,6 +36,11 @@ with Open WebUI's native tool-server UI:
   tools via `Connector.exclude_prefixes`.
 - `/mcp/finance` registers `system_get_current_time` plus `finance_*` read-only
   exchange-rate tools (public API, no per-user credentials; default quote IRR).
+- `/mcp/recipes` registers `system_get_current_time` plus `recipes_*` tools
+  (get/list/search/save/update/delete) backed by Couchbase Capella. Capella is
+  optional: without `CAPELLA_*` settings the tools return
+  `storage_not_configured` and nothing else is affected. See
+  `docs/recipes-capella.md`.
 
 Mount every MCP app behind `IdentityMiddleware`, using the same Open WebUI
 forwarded-user headers and `X-Gateway-Auth` shared secret. Do not create separate
@@ -59,9 +64,11 @@ src/gateway/
       client.py         authorized Google API service builders
       connections.py    connection/token persistence + refresh
       calendar/         read.py (read tools), write.py (mutating tools), common.py
+    recipes/          Capella-backed recipe book (models, read, write, common)
+  storage/capella/  lazy shared Capella client, OwnedDocumentRepository, storage errors
 migrations/         Alembic migrations
 tests/              pytest suite (some DB-backed, auto-skip without Postgres)
-scripts/            local dev helpers (setup_local_db.sh)
+scripts/            local dev helpers; capella_admin.py (check/indexes/export, operator-only)
 ```
 
 ## Setup & common commands
@@ -89,8 +96,9 @@ Run the server locally: `uv run uvicorn gateway.app:create_app --factory --reloa
 ## Architecture conventions
 
 - **Every tool is a `ToolSpec`** (`providers/base.py`) registered via a provider
-  module's `register(registry)` entrypoint, wired in `mcp/server.py`. Adding a
-  provider is a one-line change there.
+  module's `register(registry)` entrypoint, wired through a `Connector` entry in
+  `connectors/registry.py`. Mounting, tool filtering and error classification
+  derive from that list.
 - **One uniform pipeline** (`providers/registry.py`) wraps every call:
   resolve identity → validate input → policy/confirm → execute handler →
   write audit. This is the single chokepoint for identity enforcement and audit.
@@ -108,6 +116,15 @@ Run the server locally: `uv run uvicorn gateway.app:create_app --factory --reloa
   its own committed transaction first so the audit FK stays valid.
 - **Tokens are encrypted at rest** (Fernet) and refreshed under a row lock.
   Open WebUI never receives Google tokens.
+- **Document storage (Capella).** Storage-backed providers use
+  `storage/capella.OwnedDocumentRepository` — never the SDK directly. It builds
+  owner-scoped keys (`user::<uuid>::<type>::<uuid>`), verifies ownership on
+  read (mismatch = `not_found`), injects `d.owner_user_id = $owner` into every
+  SQL++ query, and binds all values as named parameters. The owner is always
+  `CallContext.user_id`; never accept it from tool input. Never expose raw
+  SQL++, backup, or admin operations as tools. Add one scope per domain in the
+  shared bucket and document any index in `scripts/capella/`. Storage errors
+  carry stable codes; never return SDK exceptions or connection details.
 - **Tool naming** is provider-prefixed: `google_calendar_list_events`, etc.
 - **Minimal OAuth scopes.** Only request scopes for tools actually registered in
   `build_mcp()` (incremental authorization). Product-specific OAuth starts use
@@ -122,7 +139,7 @@ Run the server locally: `uv run uvicorn gateway.app:create_app --factory --reloa
 3. Register a `ToolSpec` with the right `RiskLevel` (+ `preview_builder` if mutating).
 4. Add a `_SAFE_FIELDS` whitelist entry in `audit/log.py`.
 5. If it needs a new Google scope, add it to `oauth/google.py` and `DEFAULT_SCOPES`.
-6. Wire the module's `register()` into `mcp/server.py`.
+6. Wire the module's `register()` into a `Connector` in `connectors/registry.py`.
 7. Add tests; run pytest + ruff.
 
 ## House rules
