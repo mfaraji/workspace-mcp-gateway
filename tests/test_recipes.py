@@ -537,3 +537,9 @@ def test_recipe_tools_belong_to_recipes_connector():
     }
     for spec in registry._specs:
         assert by_spec(spec).slug == "recipes"
+
+
+def test_summary_select_quotes_sqlpp_reserved_words():
+    """`language` is reserved in SQL++; unquoted it fails to parse on a real cluster."""
+    assert "d.`language`" in read.SUMMARY_SELECT
+    assert "d.language" not in read.SUMMARY_SELECT
