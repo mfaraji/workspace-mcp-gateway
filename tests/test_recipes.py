@@ -144,6 +144,7 @@ def test_create_and_get_recipe(env):
         "quantity": 1.5,
         "quantity_text": "1 1/2",
         "unit": "cup",
+        "brand": None,
         "notes": None,
     }
     assert got["source_url"] == "https://example.com/cake"
@@ -537,3 +538,36 @@ def test_recipe_tools_belong_to_recipes_connector():
     }
     for spec in registry._specs:
         assert by_spec(spec).slug == "recipes"
+
+
+def test_ingredient_brand_is_optional_and_roundtrips(env):
+    saved = env.call(
+        "recipes_save",
+        "alice",
+        **{
+            **CAKE,
+            "ingredients": [
+                {"name": "Ketchup", "quantity": 2, "unit": "tbsp", "brand": "  Heinz "},
+                {"name": "Flour"},
+            ],
+        },
+    )
+    got = env.call("recipes_get", "alice", recipe_id=saved["id"])
+    assert got["ingredients"][0]["brand"] == "Heinz"  # trimmed
+    assert got["ingredients"][1]["brand"] is None
+
+    # Updating the ingredient list can add/change a brand.
+    env.call(
+        "recipes_update", "alice", recipe_id=saved["id"], version=got["version"],
+        ingredients=[{"name": "Ketchup", "brand": "Hunt's"}],
+    )
+    after = env.call("recipes_get", "alice", recipe_id=saved["id"])
+    assert after["ingredients"] == [
+        {"name": "Ketchup", "quantity": None, "quantity_text": None, "unit": None,
+         "brand": "Hunt's", "notes": None}
+    ]
+
+
+def test_ingredient_brand_too_long_rejected(env):
+    bad = {**CAKE, "ingredients": [{"name": "x", "brand": "b" * 101}]}
+    assert _err(env, "recipes_save", "alice", **bad).error_code == "invalid_input"

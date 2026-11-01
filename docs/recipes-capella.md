@@ -50,7 +50,7 @@ credentials are never returned or logged.
 - No tool runs arbitrary SQL++.
 - Stored fields: `id`, `owner_user_id`, `schema_version` (1), `title`,
   `description`, `language` (e.g. `en`, `fa`), `cuisine`, `category`,
-  `servings`, `ingredients[] {name, quantity, quantity_text, unit, notes}`,
+  `servings`, `ingredients[] {name, quantity, quantity_text, unit, brand, notes}` (`brand` is optional),
   `instructions[]` (ordered), `prep_time_minutes`, `cook_time_minutes`, `tags`,
   `source_url`, `personal_notes`, `created_at`, `updated_at` (ISO-8601 UTC).
   There is also a derived `searchable` object (normalized copies used for

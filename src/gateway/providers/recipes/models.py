@@ -129,6 +129,9 @@ class Ingredient(BaseModel):
     unit: str | None = Field(
         None, max_length=50, description="Unit exactly as written (cup, g, tbsp, پیمانه)."
     )
+    brand: str | None = Field(
+        None, max_length=100, description="Optional brand, e.g. 'Heinz' or 'Barilla'."
+    )
     notes: str | None = Field(None, max_length=300, description="e.g. 'finely chopped'.")
 
     @model_validator(mode="after")
