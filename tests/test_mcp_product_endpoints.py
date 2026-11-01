@@ -106,6 +106,27 @@ def test_telegram_filter_registers_expected_telegram_tools():
     }
 
 
+def test_recipes_filter_registers_only_recipe_tools():
+    assert _tool_names(_settings(), "recipes") == {
+        "system_get_current_time",
+        "recipes_get",
+        "recipes_list",
+        "recipes_search",
+        "recipes_save",
+        "recipes_update",
+        "recipes_delete",
+    }
+
+
+def test_other_connectors_unaffected_without_capella():
+    settings = _settings().model_copy(update={"capella_connection_string": None})
+    assert not settings.capella_configured
+    names = _tool_names(settings)
+    assert {"finance_get_current_rate", "apex_list_clients", "telegram_send_message"} <= names
+    assert {"recipes_get", "recipes_save"} <= names
+    assert not any(n.startswith("recipes_") for n in _tool_names(settings, "finance"))
+
+
 def test_backward_compatible_mcp_endpoint_still_registers_all_enabled_tools():
     names = _tool_names(_settings())
 
@@ -120,6 +141,8 @@ def test_backward_compatible_mcp_endpoint_still_registers_all_enabled_tools():
     assert "google_drive_search_files" in names
     assert "telegram_send_message" in names
     assert "telegram_list_destinations" in names
+    assert "recipes_search" in names
+    assert "recipes_delete" in names
 
 
 def test_every_mcp_mount_is_behind_identity_middleware(monkeypatch):
@@ -137,8 +160,40 @@ def test_every_mcp_mount_is_behind_identity_middleware(monkeypatch):
         "/mcp/tasks",
         "/mcp/apex",
         "/mcp/telegram",
+        "/mcp/recipes",
     ):
         assert isinstance(mounted[path], IdentityMiddleware)
+
+    get_settings.cache_clear()
+
+
+def test_app_starts_without_capella_and_lists_recipe_tools(monkeypatch):
+    """The app boots with Capella unset and /mcp/recipes/ serves tool discovery."""
+    from fastapi.testclient import TestClient
+
+    settings = _settings().model_copy(update={"capella_connection_string": None})
+    get_settings.cache_clear()
+    monkeypatch.setattr("gateway.app.get_settings", lambda: settings)
+
+    app = create_app()
+    headers = {
+        "accept": "application/json, text/event-stream",
+        "content-type": "application/json",
+        "x-gateway-auth": settings.gateway_shared_secret,
+        "x-openwebui-user-id": "alice",
+    }
+    with TestClient(app, base_url="http://localhost:8000") as client:
+        assert client.get("/health").json() == {"status": "ok"}
+        response = client.post(
+            "/mcp/recipes/",
+            headers=headers,
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+        )
+    assert response.status_code == 200, response.text
+    body = response.text
+    for name in ("recipes_get", "recipes_search", "recipes_delete", "system_get_current_time"):
+        assert name in body
+    assert "google_calendar" not in body
 
     get_settings.cache_clear()
 

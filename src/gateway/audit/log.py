@@ -53,6 +53,14 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "finance_get_rate_change": {"from_currency", "to", "window"},
     "finance_get_rate_history": {"from_currency", "to", "view", "limit"},
     "finance_list_currencies": set(),
+    # Recipe tools: ids and paging only — never titles, ingredients,
+    # instructions, notes, tags, or search text (query is recorded as <set>).
+    "recipes_get": {"recipe_id"},
+    "recipes_list": {"limit", "offset", "category"},
+    "recipes_search": {"limit", "offset"},
+    "recipes_save": {"language"},
+    "recipes_update": {"recipe_id"},
+    "recipes_delete": {"recipe_id"},
     "telegram_list_destinations": set(),
     "telegram_send_message": {"destination", "parse_mode", "disable_notification"},
 }

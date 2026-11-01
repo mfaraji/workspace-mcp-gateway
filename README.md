@@ -17,7 +17,8 @@ Open WebUI -> workspace-mcp-gateway
                 ├─ MCP Streamable HTTP server       (src/gateway/mcp)
                 ├─ tool registry + policy layer      (src/gateway/providers, policy)
                 ├─ provider modules (google/calendar) (src/gateway/providers/google)
-                └─ Postgres token/audit store        (src/gateway/db)
+                ├─ Postgres token/audit store        (src/gateway/db)
+                └─ optional Capella document store   (src/gateway/storage/capella)
 ```
 
 The gateway owns all user-provider connection state. Open WebUI never receives
@@ -128,6 +129,8 @@ also register product-specific tool servers on the same backend:
 - `http://127.0.0.1:8000/mcp/apex`
 - `http://127.0.0.1:8000/mcp/apex-wealth`
 - `http://127.0.0.1:8000/mcp/telegram`
+- `http://127.0.0.1:8000/mcp/finance`
+- `http://127.0.0.1:8000/mcp/recipes`
 
 Calendar exposes `system_get_current_time` plus `google_calendar_*`; Drive
 exposes `system_get_current_time`, `google_drive_search_files`, and
@@ -162,6 +165,16 @@ Private Telegram settings routes use the same trusted headers as MCP:
 - `PUT` / `DELETE /api/telegram/connection`
 - `POST /api/telegram/destinations`
 - `POST` / `DELETE /api/telegram/destinations/{alias}`
+
+Recipes (`/mcp/recipes`) exposes `system_get_current_time` plus `recipes_get`,
+`recipes_list`, `recipes_search`, `recipes_save`, `recipes_update`, and
+`recipes_delete` (delete requires confirmation). Recipes are stored per user in
+Couchbase Capella; Capella is optional — without `CAPELLA_*` settings the gateway
+starts normally and the recipe tools return `storage_not_configured`. See
+[`docs/recipes-capella.md`](docs/recipes-capella.md) for Capella Free Tier setup,
+RBAC, IP allowlisting, indexes, Docker configuration, connection testing, MCP
+client registration, search limitations, and JSON backup/export
+(`scripts/capella_admin.py`).
 
 ## Open WebUI Drive attachments
 
@@ -323,10 +336,15 @@ Three front doors, all resolving to the same user and provider connections:
   the only public route is through the proxy.
 - Tokens are encrypted at rest with Fernet (`TOKEN_ENCRYPTION_KEY`).
 - Tool calls are audited (`tool_audit_log`, incl. `auth_source`) without logging
-  tokens, file contents, or full event descriptions.
+  tokens, file contents, full event descriptions, or recipe contents.
+- Capella credentials stay server-side; only `couchbases://` (TLS) is accepted,
+  and recipe documents are isolated per user by key and an owner check.
 
 ## Testing
 
 ```bash
 uv run pytest
 ```
+
+Capella integration tests are opt-in:
+`CAPELLA_INTEGRATION_TESTS=1 uv run pytest tests/test_capella_integration.py`.

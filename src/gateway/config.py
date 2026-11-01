@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,6 +54,20 @@ class Settings(BaseSettings):
     # Local-dev escape hatch: trust identity headers from any origin.
     dev_trust_all_origins: bool = False
 
+    # Couchbase Capella document storage (optional). Unset means storage-backed
+    # connectors (recipes) report ``storage_not_configured``; every other
+    # connector is unaffected. One cluster + one bucket, one scope per domain.
+    # The connection string must use TLS (``couchbases://``).
+    capella_connection_string: str | None = None
+    capella_username: str | None = None
+    capella_password: SecretStr | None = None
+    capella_bucket: str = "personal"
+    capella_recipes_scope: str = "recipes"
+    capella_recipes_collection: str = "recipes"
+    capella_connect_timeout_seconds: float = 10.0
+    capella_kv_timeout_seconds: float = 5.0
+    capella_query_timeout_seconds: float = 15.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -64,6 +79,16 @@ class Settings(BaseSettings):
     def google_redirect_uri(self) -> str:
         """The OAuth redirect URI, derived from ``base_url``."""
         return f"{self.base_url.rstrip('/')}/oauth/google/callback"
+
+    @property
+    def capella_configured(self) -> bool:
+        """Whether every credential needed to reach Capella is present."""
+        return bool(
+            self.capella_connection_string
+            and self.capella_username
+            and self.capella_password
+            and self.capella_password.get_secret_value()
+        )
 
     @property
     def clerk_link_redirect_uri(self) -> str:

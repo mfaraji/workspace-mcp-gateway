@@ -1,0 +1,13 @@
+/*
+ * Indexes for the recipes collection. Run once in the Capella Query Workbench
+ * (or `uv run python scripts/capella_admin.py create-indexes`). Adjust the
+ * keyspace if CAPELLA_BUCKET / CAPELLA_RECIPES_SCOPE / CAPELLA_RECIPES_COLLECTION
+ * differ from the defaults.
+ *
+ * Every recipe query leads with `owner_user_id = $owner`, so this one index
+ * serves get-by-owner listing (ordered by updated_at DESC, id) and bounds every
+ * search/filter scan to a single user's documents. Do NOT create a primary
+ * index: it would allow unbounded collection scans.
+ */
+CREATE INDEX IF NOT EXISTS idx_recipes_owner_updated
+  ON `personal`.`recipes`.`recipes`(owner_user_id, updated_at DESC, id);
