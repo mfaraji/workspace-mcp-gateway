@@ -571,3 +571,9 @@ def test_ingredient_brand_is_optional_and_roundtrips(env):
 def test_ingredient_brand_too_long_rejected(env):
     bad = {**CAKE, "ingredients": [{"name": "x", "brand": "b" * 101}]}
     assert _err(env, "recipes_save", "alice", **bad).error_code == "invalid_input"
+
+
+def test_summary_select_quotes_sqlpp_reserved_words():
+    """`language` is reserved in SQL++; unquoted it fails to parse on a real cluster."""
+    assert "d.`language`" in read.SUMMARY_SELECT
+    assert "d.language" not in read.SUMMARY_SELECT
