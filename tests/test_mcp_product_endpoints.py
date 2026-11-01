@@ -115,6 +115,8 @@ def test_recipes_filter_registers_only_recipe_tools():
         "recipes_save",
         "recipes_update",
         "recipes_delete",
+        "recipes_add_feedback",
+        "recipes_delete_feedback",
     }
 
 

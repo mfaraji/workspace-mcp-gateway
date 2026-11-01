@@ -10,7 +10,7 @@ It has no separate deployment or OAuth flow.
 
 | Endpoint | Tools |
 | --- | --- |
-| `/mcp/recipes/` | `system_get_current_time` plus the six `recipes_*` tools |
+| `/mcp/recipes/` | `system_get_current_time` plus the eight `recipes_*` tools |
 | `/mcp/` | every tool, including the recipe tools |
 
 | Tool | Risk | Confirmation | Purpose |
@@ -21,6 +21,8 @@ It has no separate deployment or OAuth flow.
 | `recipes_save` | mutating | no | Create (insert-only; server-generated id) |
 | `recipes_update` | mutating | no | Partial update, CAS-checked via `version` |
 | `recipes_delete` | mutating | **yes** | Two-step confirm-token delete |
+| `recipes_add_feedback` | mutating | no | Add a 1-5 rating, comment and date cooked; no `version` needed |
+| `recipes_delete_feedback` | mutating | **yes** | Remove one feedback entry |
 
 Save and update skip confirmation (`requires_confirmation=False`, the same
 mechanism `telegram_send_message` uses). They only touch the caller's own
@@ -59,6 +61,22 @@ credentials are never returned or logged.
   is parsed to a number when possible, and the original text is kept in
   `quantity_text`. Units are stored exactly as written; they are never
   converted.
+
+## Feedback
+
+Each recipe holds a `feedback` list of the user's own after-cooking reviews:
+`{id, rating (1-5), comment, cooked_on, created_at}`, up to 100 entries. A
+recipe can collect several over time.
+
+- `recipes_get` returns the entries. `recipes_list` and `recipes_search`
+  return only `rating_avg` and `feedback_count`, never the comments.
+- Feedback is not a recipe edit. It leaves `updated_at` alone, and
+  `recipes_update` carries existing entries over unchanged.
+- Feedback tools take no `version`. They re-read and retry up to 4 times if the
+  recipe changed in between, so neither write is lost.
+- `recipes_add_feedback` accepts an `idempotency_key`, so a retry after a
+  transient failure doesn't add a duplicate. The audit log records only the
+  recipe id and rating, never the comment.
 
 ## Search behaviour and limitations
 

@@ -37,7 +37,7 @@ with Open WebUI's native tool-server UI:
 - `/mcp/finance` registers `system_get_current_time` plus `finance_*` read-only
   exchange-rate tools (public API, no per-user credentials; default quote IRR).
 - `/mcp/recipes` registers `system_get_current_time` plus `recipes_*` tools
-  (get/list/search/save/update/delete) backed by Couchbase Capella. Capella is
+  (get/list/search/save/update/delete plus add/delete feedback) backed by Couchbase Capella. Capella is
   optional: without `CAPELLA_*` settings the tools return
   `storage_not_configured` and nothing else is affected. See
   `docs/recipes-capella.md`.

@@ -238,6 +238,18 @@ def search_fields(fields: RecipeFields) -> dict[str, Any]:
     }
 
 
+MAX_FEEDBACK_ENTRIES = 100
+
+
+def feedback_summary(feedback: list[dict[str, Any]]) -> dict[str, Any]:
+    """Denormalized rating stats stored on the recipe (used by list/search summaries)."""
+    ratings = [entry["rating"] for entry in feedback if entry.get("rating") is not None]
+    return {
+        "feedback_count": len(feedback),
+        "rating_avg": round(sum(ratings) / len(ratings), 2) if ratings else None,
+    }
+
+
 def build_document(
     fields: RecipeFields,
     *,
@@ -245,13 +257,21 @@ def build_document(
     owner: uuid.UUID,
     created_at: str,
     updated_at: str,
+    feedback: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Assemble the stored JSON document for a recipe."""
+    """Assemble the stored JSON document for a recipe.
+
+    ``feedback`` is owned by the feedback tools; save starts it empty and update
+    carries the existing entries over unchanged.
+    """
+    feedback = list(feedback or [])
     return {
         "id": str(recipe_id),
         "owner_user_id": str(owner),
         "schema_version": SCHEMA_VERSION,
         **fields.model_dump(mode="json"),
+        "feedback": feedback,
+        **feedback_summary(feedback),
         "created_at": created_at,
         "updated_at": updated_at,
         "searchable": search_fields(fields),

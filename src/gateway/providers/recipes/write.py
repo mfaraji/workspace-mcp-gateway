@@ -20,6 +20,7 @@ the Capella write happens first, then the audit row commits):
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError
@@ -28,12 +29,14 @@ from sqlalchemy.orm import Session
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 from gateway.providers.recipes.common import PROVIDER, get_repository, storage_errors
 from gateway.providers.recipes.models import (
+    MAX_FEEDBACK_ENTRIES,
     ClearableField,
     Ingredient,
     RecipeFields,
     RecipeId,
     build_document,
     clear_value,
+    feedback_summary,
     fields_from_document,
 )
 from gateway.providers.registry import ToolError
@@ -189,6 +192,7 @@ def update_recipe(args: UpdateRecipeInput, ctx: CallContext, _session: Session) 
             owner=ctx.user_id,
             created_at=current["created_at"],
             updated_at=utc_now_iso(),
+            feedback=current.get("feedback"),  # feedback is never touched by update
         )
         try:
             new_cas = repo.replace(ctx.user_id, args.recipe_id, doc, expected)
@@ -211,6 +215,102 @@ def delete_recipe(args: DeleteRecipeInput, ctx: CallContext, _session: Session) 
         current, _cas = repo.get(ctx.user_id, args.recipe_id)
         repo.remove(ctx.user_id, args.recipe_id)
     return {"deleted": True, "id": args.recipe_id, "title": current.get("title")}
+
+
+class AddFeedbackInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    recipe_id: str = RecipeId
+    rating: int = Field(..., ge=1, le=5, description="Rating from 1 (poor) to 5 (excellent).")
+    comment: str | None = Field(
+        None, max_length=2000, description="How it turned out, what to change next time."
+    )
+    cooked_on: date | None = Field(None, description="Date cooked (YYYY-MM-DD), if known.")
+    idempotency_key: str | None = Field(
+        None,
+        min_length=1,
+        max_length=128,
+        description="Optional key; retrying with the same key does not add a duplicate entry.",
+    )
+
+
+class DeleteFeedbackInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recipe_id: str = RecipeId
+    feedback_id: str = Field(..., pattern=r"^[0-9a-fA-F-]{36}$", description="Feedback entry id.")
+
+
+_FEEDBACK_ATTEMPTS = 4
+
+
+def _modify_feedback(ctx: CallContext, recipe_id: str, change) -> dict[str, Any]:
+    """Read-modify-write the recipe's feedback list under CAS, retrying on conflict.
+
+    Feedback tools don't take a ``version`` (the user didn't edit the recipe
+    itself), so a concurrent change is retried against the fresh copy.
+    """
+    repo = get_repository()
+    for attempt in range(_FEEDBACK_ATTEMPTS):
+        doc, cas = repo.get(ctx.user_id, recipe_id)
+        feedback = list(doc.get("feedback") or [])
+        result = change(feedback)
+        if result.get("unchanged"):
+            return {**result, **feedback_summary(feedback), "version": str(cas)}
+        doc = {**doc, "feedback": feedback, **feedback_summary(feedback)}
+        try:
+            new_cas = repo.replace(ctx.user_id, recipe_id, doc, cas)
+        except storage.VersionConflict:
+            if attempt == _FEEDBACK_ATTEMPTS - 1:
+                raise
+            continue
+        return {**result, **feedback_summary(feedback), "version": str(new_cas)}
+    raise storage.VersionConflict()  # pragma: no cover - loop always returns or raises
+
+
+def add_feedback(args: AddFeedbackInput, ctx: CallContext, _session: Session) -> Any:
+    if args.idempotency_key is None:
+        feedback_id = str(uuid.uuid4())
+    else:
+        name = f"{ctx.user_id}:{args.recipe_id}:{args.idempotency_key}"
+        feedback_id = str(uuid.uuid5(_IDEMPOTENCY_NAMESPACE, name))
+
+    def change(feedback: list[dict[str, Any]]) -> dict[str, Any]:
+        if any(entry["id"] == feedback_id for entry in feedback):
+            return {"feedback_id": feedback_id, "added": False, "unchanged": True}
+        if len(feedback) >= MAX_FEEDBACK_ENTRIES:
+            raise ToolError(
+                "invalid_input",
+                f"a recipe can hold at most {MAX_FEEDBACK_ENTRIES} feedback entries; "
+                "delete an old one first",
+            )
+        feedback.append(
+            {
+                "id": feedback_id,
+                "rating": args.rating,
+                "comment": args.comment,
+                "cooked_on": args.cooked_on.isoformat() if args.cooked_on else None,
+                "created_at": utc_now_iso(),
+            }
+        )
+        return {"feedback_id": feedback_id, "added": True}
+
+    with storage_errors():
+        result = _modify_feedback(ctx, args.recipe_id, change)
+    return {"recipe_id": args.recipe_id, **result}
+
+
+def delete_feedback(args: DeleteFeedbackInput, ctx: CallContext, _session: Session) -> Any:
+    def change(feedback: list[dict[str, Any]]) -> dict[str, Any]:
+        remaining = [e for e in feedback if e["id"] != args.feedback_id]
+        if len(remaining) == len(feedback):
+            raise ToolError("not_found", "Feedback entry not found.")
+        feedback[:] = remaining
+        return {"feedback_id": args.feedback_id, "deleted": True}
+
+    with storage_errors():
+        result = _modify_feedback(ctx, args.recipe_id, change)
+    return {"recipe_id": args.recipe_id, **result}
 
 
 def _delete_preview(args: BaseModel) -> str:
@@ -249,6 +349,36 @@ def register(registry) -> None:
             input_model=UpdateRecipeInput,
             handler=update_recipe,
             requires_confirmation=False,
+        )
+    )
+    registry.add(
+        ToolSpec(
+            name="recipes_add_feedback",
+            provider=PROVIDER,
+            risk=RiskLevel.MUTATING,
+            description=(
+                "Add the user's feedback on a recipe they cooked: a 1-5 rating, an optional "
+                "comment and the date cooked. A recipe can have several entries over time; "
+                "they appear in recipes_get and the average rating in list/search results. "
+                "Does not change the recipe itself."
+            ),
+            input_model=AddFeedbackInput,
+            handler=add_feedback,
+            requires_confirmation=False,
+        )
+    )
+    registry.add(
+        ToolSpec(
+            name="recipes_delete_feedback",
+            provider=PROVIDER,
+            risk=RiskLevel.MUTATING,
+            description=(
+                "Remove one feedback entry (by feedback_id from recipes_get) from a recipe. "
+                "Requires confirmation."
+            ),
+            input_model=DeleteFeedbackInput,
+            handler=delete_feedback,
+            preview_builder=lambda a: f"Delete feedback {a.feedback_id} on recipe {a.recipe_id}?",
         )
     )
     registry.add(
