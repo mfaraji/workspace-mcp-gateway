@@ -27,6 +27,9 @@ from gateway.providers.google.drive.common import DRIVE_OAUTH
 from gateway.providers.google.tasks import read as google_tasks_read
 from gateway.providers.google.tasks import write as google_tasks_write
 from gateway.providers.google.tasks.common import TASKS_OAUTH
+from gateway.providers.recipes import read as recipes_read
+from gateway.providers.recipes import write as recipes_write
+from gateway.providers.recipes.common import classify_storage_error
 from gateway.providers.registry import ToolRegistry
 from gateway.providers.telegram import read as telegram_read
 from gateway.providers.telegram import write as telegram_write
@@ -60,6 +63,11 @@ def _register_apex_wealth(registry: ToolRegistry, _settings: Settings) -> None:
 
 def _register_finance(registry: ToolRegistry, _settings: Settings) -> None:
     finance_read.register(registry)
+
+
+def _register_recipes(registry: ToolRegistry, _settings: Settings) -> None:
+    recipes_read.register(registry)
+    recipes_write.register(registry)
 
 
 def _register_telegram(registry: ToolRegistry, settings: Settings) -> None:
@@ -142,6 +150,14 @@ CONNECTORS: list[Connector] = [
         display_name="Finance",
         upstream_provider="finance",
         register=_register_finance,
+    ),
+    Connector(
+        slug="recipes",
+        tool_prefix="recipes_",
+        display_name="Recipes",
+        upstream_provider="recipes",
+        register=_register_recipes,
+        error_classifier=classify_storage_error,
     ),
 ]
 
