@@ -22,6 +22,7 @@ from gateway.db.engine import check_database
 from gateway.logging import configure_logging
 from gateway.mcp.context import IdentityMiddleware
 from gateway.mcp.server import build_mcp, product_tool_filter
+from gateway.storage.capella.client import close_client as close_capella
 
 
 def create_app() -> FastAPI:
@@ -37,10 +38,14 @@ def create_app() -> FastAPI:
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        async with AsyncExitStack() as stack:
-            for mcp in mcp_servers.values():
-                await stack.enter_async_context(mcp.session_manager.run())
-            yield
+        try:
+            async with AsyncExitStack() as stack:
+                for mcp in mcp_servers.values():
+                    await stack.enter_async_context(mcp.session_manager.run())
+                yield
+        finally:
+            # Close the shared Capella connection if any tool opened it.
+            close_capella()
 
     app = FastAPI(title="workspace-mcp-gateway", lifespan=lifespan)
     app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)

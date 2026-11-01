@@ -262,6 +262,35 @@ wheels = [
 ]
 
 [[package]]
+name = "couchbase"
+version = "4.6.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/22/a6/095c75222000c330c696cb586b8c78cb2b367c6073b2e01245ddf5234eb9/couchbase-4.6.4.tar.gz", hash = "sha256:5f2282661eb78af021e7e34cb6131e4e69d66d3f9cd3a5137bef3d9b0589bbb5", size = 6738443, upload-time = "2026-10-28T00:57:31.989Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e9/ec/3d87bae34ec6f1929924aa22d51e80c93a49417c34438340e73ffba68577/couchbase-4.6.4-cp312-cp312-macosx_10_15_x86_64.whl", hash = "sha256:888c31c7e8e9b9983419073cd0b063823fa81d99fbc4f3025b76d0e50af7e4e4", size = 5689851, upload-time = "2026-10-28T00:55:23.191Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/da/6fda49feb7ac893e71d448f62311dc9ac7561253981dd4f7f69c8915472b/couchbase-4.6.4-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:6f85a584cff58e5fae9ab5d45892494c780f37fe782e5ecd053d3f7e61a2a972", size = 4830177, upload-time = "2026-10-28T00:55:28.414Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/7f/766ee21a71481d10c585eda761587fb9813ebaa7b912023d4b4ef0131067/couchbase-4.6.4-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:01fd9372adbcd5411e1ec9ecd4fee46c5541ef8868dbc6a24494783559b56e83", size = 5659594, upload-time = "2026-10-28T00:55:35.233Z" },
+    { url = "https://files.pythonhosted.org/packages/df/34/c3a2788c3e6bcbf0df1ec50a35141336eef4a9aaad47f37696fb37a3ee58/couchbase-4.6.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:26627cbfb71c3279ef08b03e227c6d0307f8564792f80fb7f938f83c13b9959d", size = 5944977, upload-time = "2026-10-28T00:55:42.684Z" },
+    { url = "https://files.pythonhosted.org/packages/65/72/30636ea58b060c4ce5d9c0fc6e42dab7c0828b2594f60421291bb31cf48b/couchbase-4.6.4-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:83b094fcb5bb1fe3743faa671739fee3464b27cde5985586feae3845faa5847a", size = 7494487, upload-time = "2026-10-28T00:55:50.159Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/8b/a444b8c65932232a58b4c927fcd7eb01ea3afa5ac3c6d2d8479b904e85c0/couchbase-4.6.4-cp312-cp312-win_amd64.whl", hash = "sha256:3af4f93183a51c991bb228ad24fca85c14dee4749216003e32ce397aa12788e4", size = 5028736, upload-time = "2026-10-28T00:55:57.957Z" },
+    { url = "https://files.pythonhosted.org/packages/93/7a/2e2a00683d6639e42ed596723fc54851fdd3e99fb9ad896007dc91e6f4e4/couchbase-4.6.4-cp313-cp313-macosx_10_15_x86_64.whl", hash = "sha256:08a1d8733451b3a1c9bcc951bf4d2137077087138ba4672b10f6b62395ebda91", size = 5603500, upload-time = "2026-10-28T00:56:02.911Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/ce/03e8702f2ee3996ca94a7628ea3183536cb0f7777db9ef7230121e4dd737/couchbase-4.6.4-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:d99af2020be705f0a93bcb73a945cee7fafb2adbb3bf75fcc214bcdf7da6ccbe", size = 4830184, upload-time = "2026-10-28T00:56:09.037Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/88/c6eb530a3f94315d702d06e306395d3d7aee0ce2094e4dcf3d6b14e374d0/couchbase-4.6.4-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:5d42da7cc5a438a70d3054323a24abc6ef11b68d6dd3a5b4325db0445f4fa977", size = 5659586, upload-time = "2026-10-28T00:56:17.179Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/cf/83eec27fa159e0cc72e44ba7f27affe45c5c3e2196c3da06ab7ccc711afa/couchbase-4.6.4-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:c7165997ceb4b21870282f208a7539aa668e0ffb76c6572dd1d6ee4daaf924cd", size = 5944980, upload-time = "2026-10-28T00:56:25.714Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/dd/7030f16591034f22a7b8b690aedbfbcc7f24685b0d6ce09c362001fa6c58/couchbase-4.6.4-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:4da303596e5c91c62d2fc59c20c4e3f7c6f9e8487209655607a2ac98bb35de95", size = 7494500, upload-time = "2026-10-28T00:56:35.862Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/03/bb0df1e840042ffd5f2c31c87561cc703e4659ee9af9d1a21f68621c0084/couchbase-4.6.4-cp313-cp313-win_amd64.whl", hash = "sha256:c559e48b293cf006aeac8eb2c286aa14d931260bd299fb776ce517724db3f1c9", size = 5024509, upload-time = "2026-10-28T00:56:45.295Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/ce/0bf1c8a4bb905c9f5aa7f2b9f786017a5973e26471747418406bf2651f43/couchbase-4.6.4-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:3bd68d2dc1c804cdafedb44d01e8eb9ab4e6a9038eba56d397937031e6ca351d", size = 5688989, upload-time = "2026-10-28T00:56:54.216Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/f1/4d4ed8609295352936095a1674e577c8d8a4a63791896dd1fc9265701b05/couchbase-4.6.4-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:66e9ced27fd550cedb1bfbd234c994f7f29a4878f7556923d642b82fc4833b1f", size = 4830394, upload-time = "2026-10-28T00:56:59.612Z" },
+    { url = "https://files.pythonhosted.org/packages/08/c2/122642f54a87c62ea00bf3237cc7ee89e33a6e0667733534164d54e74862/couchbase-4.6.4-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:0449806f40efdf0d68381cca3f2a3e1f3484286297ca128a78f1093039c416f9", size = 5659676, upload-time = "2026-10-28T00:57:05.468Z" },
+    { url = "https://files.pythonhosted.org/packages/34/0f/04f9209999535d9c1879b1da54b88fa08d04311efc632756d826731cd089/couchbase-4.6.4-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:d7e8812300eb79ecc5b72bf58168d08eeeeb1dc7c120e6167a8673dd345c54e9", size = 5945023, upload-time = "2026-10-28T00:57:11.747Z" },
+    { url = "https://files.pythonhosted.org/packages/df/e9/b38b9323caffad22766c869c2c29d58c849f33490c24f53a9c0a4557a634/couchbase-4.6.4-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:ede40689ae8623a56ea43688098929e253ea792f9930fdd8c468877e83548b80", size = 7494354, upload-time = "2026-10-28T00:57:19.974Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/5c/7fcbe44b73e8c22b4fdc3be861d1fc754e89f2062b14743a51a95e327f78/couchbase-4.6.4-cp314-cp314-win_amd64.whl", hash = "sha256:8b288c803d643b711bdc02c92c74d2a20a395d490202a07bee8e14b3aaf92e6d", size = 5170443, upload-time = "2026-10-28T00:57:25.491Z" },
+]
+
+[[package]]
 name = "cryptography"
 version = "48.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1710,6 +1739,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "couchbase" },
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "google-api-python-client" },
@@ -1719,9 +1749,9 @@ dependencies = [
     { name = "itsdangerous" },
     { name = "mcp" },
     { name = "psycopg", extra = ["binary"] },
-    { name = "pyjwt", extra = ["crypto"] },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1738,6 +1768,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
+    { name = "couchbase", specifier = ">=4.6" },
     { name = "cryptography", specifier = ">=43" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "google-api-python-client", specifier = ">=2.150" },
@@ -1749,9 +1780,9 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.6" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.7" },
