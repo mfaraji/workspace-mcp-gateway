@@ -77,6 +77,19 @@ def test_crud_search_and_isolation_against_capella(users):
         read.get_recipe(read.GetRecipeInput(recipe_id=rid), bob, None)
     assert exc.value.error_code == "not_found"
 
+    fb = write.add_feedback(
+        write.AddFeedbackInput(recipe_id=rid, rating=4, comment="عالی بود", cooked_on="2026-10-30"),
+        alice,
+        None,
+    )
+    assert fb["added"] is True and fb["rating_avg"] == 4.0
+    listed = read.list_recipes(read.ListRecipesInput(), alice, None)["items"][0]
+    assert listed["rating_avg"] == 4.0 and listed["feedback_count"] == 1
+    with pytest.raises(ToolError):
+        write.add_feedback(write.AddFeedbackInput(recipe_id=rid, rating=1), bob, None)
+    got = read.get_recipe(read.GetRecipeInput(recipe_id=rid), alice, None)
+    assert got["feedback"][0]["comment"] == "عالی بود"
+
     updated = write.update_recipe(
         write.UpdateRecipeInput(recipe_id=rid, version=got["version"], servings=4), alice, None
     )

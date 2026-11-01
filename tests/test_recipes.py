@@ -144,6 +144,7 @@ def test_create_and_get_recipe(env):
         "quantity": 1.5,
         "quantity_text": "1 1/2",
         "unit": "cup",
+        "brand": None,
         "notes": None,
     }
     assert got["source_url"] == "https://example.com/cake"
@@ -534,6 +535,174 @@ def test_recipe_tools_belong_to_recipes_connector():
     assert {s.name for s in registry._specs} == {
         "recipes_get", "recipes_list", "recipes_search",
         "recipes_save", "recipes_update", "recipes_delete",
+        "recipes_add_feedback", "recipes_delete_feedback",
     }
     for spec in registry._specs:
         assert by_spec(spec).slug == "recipes"
+
+
+def test_ingredient_brand_is_optional_and_roundtrips(env):
+    saved = env.call(
+        "recipes_save",
+        "alice",
+        **{
+            **CAKE,
+            "ingredients": [
+                {"name": "Ketchup", "quantity": 2, "unit": "tbsp", "brand": "  Heinz "},
+                {"name": "Flour"},
+            ],
+        },
+    )
+    got = env.call("recipes_get", "alice", recipe_id=saved["id"])
+    assert got["ingredients"][0]["brand"] == "Heinz"  # trimmed
+    assert got["ingredients"][1]["brand"] is None
+
+    # Updating the ingredient list can add/change a brand.
+    env.call(
+        "recipes_update", "alice", recipe_id=saved["id"], version=got["version"],
+        ingredients=[{"name": "Ketchup", "brand": "Hunt's"}],
+    )
+    after = env.call("recipes_get", "alice", recipe_id=saved["id"])
+    assert after["ingredients"] == [
+        {"name": "Ketchup", "quantity": None, "quantity_text": None, "unit": None,
+         "brand": "Hunt's", "notes": None}
+    ]
+
+
+def test_ingredient_brand_too_long_rejected(env):
+    bad = {**CAKE, "ingredients": [{"name": "x", "brand": "b" * 101}]}
+    assert _err(env, "recipes_save", "alice", **bad).error_code == "invalid_input"
+
+
+def test_summary_select_quotes_sqlpp_reserved_words():
+    """`language` is reserved in SQL++; unquoted it fails to parse on a real cluster."""
+    assert "d.`language`" in read.SUMMARY_SELECT
+    assert "d.language" not in read.SUMMARY_SELECT
+
+
+# feedback -------------------------------------------------------------------
+
+
+def _fb(env, user, rid, **kw):
+    return env.call("recipes_add_feedback", user, recipe_id=rid, **kw)
+
+
+def test_add_feedback_appears_in_get_and_summaries(env):
+    rid = env.call("recipes_save", "alice", **CAKE)["id"]
+    assert env.call("recipes_get", "alice", recipe_id=rid)["feedback"] == []
+
+    first = _fb(env, "alice", rid, rating=4, comment="Great, less sugar next time",
+                cooked_on="2026-10-30")
+    second = _fb(env, "alice", rid, rating=5)
+    assert first["added"] is True and second["feedback_count"] == 2
+    assert second["rating_avg"] == 4.5
+
+    got = env.call("recipes_get", "alice", recipe_id=rid)
+    assert [f["rating"] for f in got["feedback"]] == [4, 5]
+    assert got["feedback"][0]["comment"] == "Great, less sugar next time"
+    assert got["feedback"][0]["cooked_on"] == "2026-10-30"
+    assert got["feedback"][1]["comment"] is None
+    assert got["rating_avg"] == 4.5 and got["feedback_count"] == 2
+
+    summary = env.call("recipes_list", "alice")["items"][0]
+    assert summary["rating_avg"] == 4.5 and summary["feedback_count"] == 2
+    assert "feedback" not in summary and "comment" not in str(summary)
+
+
+def test_feedback_does_not_change_recipe_and_survives_updates(env):
+    saved = env.call("recipes_save", "alice", **CAKE)
+    rid = saved["id"]
+    before = env.call("recipes_get", "alice", recipe_id=rid)
+    _fb(env, "alice", rid, rating=3, comment="ok")
+    after_fb = env.call("recipes_get", "alice", recipe_id=rid)
+    assert after_fb["updated_at"] == before["updated_at"]
+    assert after_fb["title"] == before["title"]
+
+    env.call("recipes_update", "alice", recipe_id=rid, version=after_fb["version"], servings=9)
+    final = env.call("recipes_get", "alice", recipe_id=rid)
+    assert final["servings"] == 9
+    assert [f["comment"] for f in final["feedback"]] == ["ok"]
+    assert final["feedback_count"] == 1
+
+
+def test_feedback_idempotency_key_prevents_duplicates(env):
+    rid = env.call("recipes_save", "alice", **CAKE)["id"]
+    a = _fb(env, "alice", rid, rating=5, idempotency_key="k1")
+    b = _fb(env, "alice", rid, rating=5, idempotency_key="k1")
+    assert a["added"] is True and b["added"] is False
+    assert a["feedback_id"] == b["feedback_id"] and b["feedback_count"] == 1
+
+
+def test_feedback_validation(env):
+    rid = env.call("recipes_save", "alice", **CAKE)["id"]
+    for bad in ({"rating": 0}, {"rating": 6}, {"rating": 3, "comment": "x" * 2001},
+                {"rating": 3, "cooked_on": "yesterday"}, {"rating": 3, "owner_user_id": "x"}):
+        assert _err(env, "recipes_add_feedback", "alice", recipe_id=rid, **bad).error_code == \
+            "invalid_input"
+
+
+def test_feedback_limited_per_recipe(env):
+    rid = env.call("recipes_save", "alice", **CAKE)["id"]
+    key = f"user::{env.users['alice']}::recipe::{rid}"
+    env.cluster.collection_.bump(
+        key, feedback=[{"id": str(uuid.uuid4()), "rating": 3} for _ in range(100)]
+    )
+    assert _err(env, "recipes_add_feedback", "alice", recipe_id=rid, rating=3).error_code == \
+        "invalid_input"
+
+
+def test_feedback_is_owner_scoped(env):
+    rid = env.call("recipes_save", "alice", **CAKE)["id"]
+    fid = _fb(env, "alice", rid, rating=5)["feedback_id"]
+    assert _err(env, "recipes_add_feedback", "bob", recipe_id=rid, rating=1).error_code == \
+        "not_found"
+    pending = env.call("recipes_delete_feedback", "bob", recipe_id=rid, feedback_id=fid)
+    err = _err(env, "recipes_delete_feedback", "bob", recipe_id=rid, feedback_id=fid,
+               confirmation_token=pending["confirmation_token"])
+    assert err.error_code == "not_found"
+    assert env.call("recipes_get", "alice", recipe_id=rid)["feedback_count"] == 1
+
+
+def test_delete_feedback_requires_confirmation(env):
+    rid = env.call("recipes_save", "alice", **CAKE)["id"]
+    keep = _fb(env, "alice", rid, rating=2)["feedback_id"]
+    drop = _fb(env, "alice", rid, rating=5)["feedback_id"]
+
+    first = env.call("recipes_delete_feedback", "alice", recipe_id=rid, feedback_id=drop)
+    assert first["status"] == "confirmation_required"
+    assert env.call("recipes_get", "alice", recipe_id=rid)["feedback_count"] == 2
+
+    done = env.call("recipes_delete_feedback", "alice", recipe_id=rid, feedback_id=drop,
+                    confirmation_token=first["confirmation_token"])
+    assert done["deleted"] is True and done["feedback_count"] == 1 and done["rating_avg"] == 2.0
+    assert [f["id"] for f in env.call("recipes_get", "alice", recipe_id=rid)["feedback"]] == [keep]
+
+    missing = env.call("recipes_delete_feedback", "alice", recipe_id=rid, feedback_id=drop)
+    err = _err(env, "recipes_delete_feedback", "alice", recipe_id=rid, feedback_id=drop,
+               confirmation_token=missing["confirmation_token"])
+    assert err.error_code == "not_found"
+
+
+def test_feedback_retries_on_concurrent_change(env, monkeypatch):
+    rid = env.call("recipes_save", "alice", **CAKE)["id"]
+    key = f"user::{env.users['alice']}::recipe::{rid}"
+    coll = env.cluster.collection_
+    real, raced = coll.replace, []
+
+    def racing(k, value, options=None):
+        if not raced:
+            raced.append(1)
+            coll.bump(k, servings=77)  # someone edits between our read and write
+        return real(k, value, options)
+
+    monkeypatch.setattr(coll, "replace", racing)
+    assert _fb(env, "alice", rid, rating=4)["added"] is True
+    doc = coll.docs[key][0]
+    assert doc["servings"] == 77 and len(doc["feedback"]) == 1  # neither write was lost
+
+
+def test_audit_excludes_feedback_comment(env):
+    rid = env.call("recipes_save", "alice", **CAKE)["id"]
+    _fb(env, "alice", rid, rating=4, comment="SECRET-COMMENT", idempotency_key="secret-k")
+    blob = " ".join(r.input_summary for r in env.audits)
+    assert "SECRET" not in blob and "secret-k" not in blob and "rating=4" in blob

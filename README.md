@@ -167,8 +167,9 @@ Private Telegram settings routes use the same trusted headers as MCP:
 - `POST` / `DELETE /api/telegram/destinations/{alias}`
 
 Recipes (`/mcp/recipes`) exposes `system_get_current_time` plus `recipes_get`,
-`recipes_list`, `recipes_search`, `recipes_save`, `recipes_update`, and
-`recipes_delete` (delete requires confirmation). Recipes are stored per user in
+`recipes_list`, `recipes_search`, `recipes_save`, `recipes_update`,
+`recipes_delete`, `recipes_add_feedback`, and `recipes_delete_feedback` (deletes require
+confirmation). Recipes are stored per user in
 Couchbase Capella; Capella is optional — without `CAPELLA_*` settings the gateway
 starts normally and the recipe tools return `storage_not_configured`. See
 [`docs/recipes-capella.md`](docs/recipes-capella.md) for Capella Free Tier setup,

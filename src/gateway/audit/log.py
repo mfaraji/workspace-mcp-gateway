@@ -61,6 +61,9 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "recipes_save": {"language"},
     "recipes_update": {"recipe_id"},
     "recipes_delete": {"recipe_id"},
+    # Feedback: id and rating only — never the comment.
+    "recipes_add_feedback": {"recipe_id", "rating"},
+    "recipes_delete_feedback": {"recipe_id", "feedback_id"},
     "telegram_list_destinations": set(),
     "telegram_send_message": {"destination", "parse_mode", "disable_notification"},
 }

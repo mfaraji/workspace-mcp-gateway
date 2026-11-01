@@ -23,8 +23,10 @@ MAX_LIMIT = 50
 MAX_TERMS = 5
 MAX_INGREDIENT_FILTERS = 5
 
+# ``language`` is a reserved word in SQL++, so it must be backtick-quoted.
 SUMMARY_SELECT = (
-    "d.id, d.title, d.language, d.cuisine, d.category, d.tags, d.servings, d.updated_at"
+    "d.id, d.title, d.`language`, d.cuisine, d.category, d.tags, d.servings, d.updated_at, "
+    "d.rating_avg, d.feedback_count"
 )
 RECENT_ORDER = "d.updated_at DESC, d.id ASC"
 

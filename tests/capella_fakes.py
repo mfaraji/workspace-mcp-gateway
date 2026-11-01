@@ -99,7 +99,8 @@ class _Result:
         return iter(self._rows)
 
 
-_SUMMARY = ("id", "title", "language", "cuisine", "category", "tags", "servings", "updated_at")
+_SUMMARY = ("id", "title", "language", "cuisine", "category", "tags", "servings", "updated_at",
+            "rating_avg", "feedback_count")
 
 
 def _score(doc: dict[str, Any], q: str) -> int:
