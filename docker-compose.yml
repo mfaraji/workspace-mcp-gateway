@@ -25,6 +25,9 @@ services:
       CLERK_LINK_CLIENT_ID: ${CLERK_LINK_CLIENT_ID:-}
       CLERK_LINK_CLIENT_SECRET: ${CLERK_LINK_CLIENT_SECRET:-}
       CLERK_LINK_SCOPE: ${CLERK_LINK_SCOPE:-openid profile mcp:tools}
+      APEX_BASE_URL: ${APEX_BASE_URL:-http://localhost:3010}
+      # Empty disables Clerk act-as; per-user keys (apex_set_api_key) keep working.
+      APEX_GATEWAY_API_KEY: ${APEX_GATEWAY_API_KEY:-}
       CAPELLA_CONNECTION_STRING: ${CAPELLA_CONNECTION_STRING:-}
       CAPELLA_USERNAME: ${CAPELLA_USERNAME:-}
       CAPELLA_PASSWORD: ${CAPELLA_PASSWORD:-}
