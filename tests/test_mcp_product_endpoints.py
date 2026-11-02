@@ -74,6 +74,8 @@ def test_apex_filter_registers_expected_apex_tools():
         "apex_create_timesheet",
         "apex_update_timesheet",
         "apex_set_api_key",
+        "apex_list_workspaces",
+        "apex_set_workspace",
     }
 
 
@@ -89,6 +91,8 @@ def test_apex_wealth_filter_registers_only_wealth_tools():
         "apex_wealth_list_manual_holdings",
         "apex_wealth_get_net_worth_history",
         "apex_wealth_set_api_key",
+        "apex_wealth_list_workspaces",
+        "apex_wealth_set_workspace",
     }
 
 

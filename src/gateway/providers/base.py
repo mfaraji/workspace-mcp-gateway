@@ -34,6 +34,9 @@ class CallContext:
     chat_id: str | None = None
     message_id: str | None = None
     automation_id: str | None = None
+    # Clerk subject of the caller, when known. Upstream strategies that act on
+    # the user's behalf (Apex act-as) key only on this, not on how they signed in.
+    clerk_subject: str | None = None
 
 
 # A handler receives validated input, the call context, and an open DB session,

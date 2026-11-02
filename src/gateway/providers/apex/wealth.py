@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
-from gateway.providers.apex.client import APEX_WEALTH_API_KEY, WEALTH_PROVIDER, apex_request
+from gateway.providers.apex.client import APEX_WEALTH_API_KEY, WEALTH_PROVIDER, apex_call
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
 _AMOUNTS = "Amounts are in the account's native currency; summaries also include CAD totals."
@@ -36,8 +36,8 @@ class GetNetWorthHistoryInput(BaseModel):
 
 def _get(ctx: CallContext, session: Session, path: str, params: dict[str, Any] | None = None):
     settings = get_settings()
-    api_key = APEX_WEALTH_API_KEY.get_credentials(session, ctx, settings)
-    return apex_request(settings, api_key, "GET", path, params=params or None)
+    creds = APEX_WEALTH_API_KEY.get_credentials(session, ctx, settings)
+    return apex_call(settings, creds, "GET", path, params=params or None)
 
 
 def list_accounts(_args: NoInput, ctx: CallContext, session: Session) -> Any:

@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # files still parse); per-user keys, and later Clerk act-as via
     # APEX_GATEWAY_API_KEY, replace them.
     apex_base_url: str = "http://localhost:3010"
+    # System API key (Apex consumer GATEWAY, minted with scripts/create-gateway-api-key.ts)
+    # that lets the gateway call Apex as a Clerk user via X-Act-As-Subject. Unset
+    # disables act-as. Secret: never log it.
+    apex_gateway_api_key: str | None = None
     apex_api_key: str | None = None
     # Wealth endpoints need a key for a PERSONAL workspace. DEPRECATED and ignored.
     apex_wealth_api_key: str | None = None

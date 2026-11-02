@@ -49,16 +49,18 @@ def _ctx() -> CallContext:
 def captured(monkeypatch):
     calls: list[dict] = []
 
-    def fake_apex_request(settings, api_key, method, path, params=None, json=None):
+    def fake_apex_request(
+        settings, api_key, method, path, params=None, json=None, extra_headers=None
+    ):
         calls.append(dict(api_key=api_key, method=method, path=path, params=params))
         return {"ok": True}
 
-    monkeypatch.setattr(wealth, "apex_request", fake_apex_request)
+    monkeypatch.setattr(apex_client, "apex_request", fake_apex_request)
     monkeypatch.setattr(wealth, "get_settings", lambda: _settings())
     monkeypatch.setattr(
         apex_client.APEX_WEALTH_API_KEY,
         "get_credentials",
-        lambda session, ctx, settings: "pk_live_wealth",
+        lambda session, ctx, settings: apex_client.ApexCredentials("pk_live_wealth"),
     )
     return calls
 
@@ -129,7 +131,11 @@ def test_all_tools_registered_read_only_with_wealth_connector():
     wealth.register(registry)
     auth.register_wealth(registry)
     specs = {s.name: s for s in registry._specs}
-    assert set(specs) == EXPECTED_TOOLS | {"apex_wealth_set_api_key"}
+    assert set(specs) == EXPECTED_TOOLS | {
+        "apex_wealth_set_api_key",
+        "apex_wealth_list_workspaces",
+        "apex_wealth_set_workspace",
+    }
     assert all(s.risk is RiskLevel.READ for s in specs.values())
     assert {by_spec(s).slug for s in specs.values()} == {"apex-wealth"}
 

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
-from gateway.providers.apex.client import APEX_API_KEY, apex_request
+from gateway.providers.apex.client import APEX_API_KEY, apex_call
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
 PROVIDER = "apex"
@@ -140,8 +140,8 @@ def create_invoice(args: CreateInvoiceInput, ctx: CallContext, session: Session)
             ],
         }
     settings = get_settings()
-    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
-    return apex_request(settings, api_key, "POST", "/api/invoices", json=body)
+    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
+    return apex_call(settings, creds, "POST", "/api/invoices", json=body)
 
 
 def create_timesheet(args: CreateTimesheetInput, ctx: CallContext, session: Session) -> Any:
@@ -169,8 +169,8 @@ def create_timesheet(args: CreateTimesheetInput, ctx: CallContext, session: Sess
     if args.status is not None:
         body["status"] = args.status
     settings = get_settings()
-    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
-    return apex_request(settings, api_key, "POST", "/api/invoices", json=body)
+    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
+    return apex_call(settings, creds, "POST", "/api/invoices", json=body)
 
 
 def update_timesheet(args: UpdateTimesheetInput, ctx: CallContext, session: Session) -> Any:
@@ -187,9 +187,9 @@ def update_timesheet(args: UpdateTimesheetInput, ctx: CallContext, session: Sess
             for entry in args.entries
         ]
     settings = get_settings()
-    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
-    return apex_request(
-        settings, api_key, "PUT", f"/api/timesheets/{args.timesheet_id}", json=body
+    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
+    return apex_call(
+        settings, creds, "PUT", f"/api/timesheets/{args.timesheet_id}", json=body
     )
 
 

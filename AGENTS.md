@@ -34,6 +34,15 @@ with Open WebUI's native tool-server UI:
   `apex_wealth_*` tools, and `apex_wealth_set_api_key`. It uses its own per-user
   key (wealth data only exists in PERSONAL workspaces); `/mcp/apex` excludes these
   tools via `Connector.exclude_prefixes`.
+- Apex credentials resolve per call in `ApexAuthStrategy`: stored per-user key, else
+  Clerk act-as (`APEX_GATEWAY_API_KEY` + `X-Act-As-Subject` from `ctx.clerk_subject` +
+  `X-Workspace-Id` from the user's stored default), else `not_connected`. The default
+  workspace is a token-less `ProviderConnection` (account id `clerk`, metadata
+  `workspace_id`/`workspace_name`) set by `apex_set_workspace` (wealth variants:
+  `apex_wealth_list_workspaces`/`apex_wealth_set_workspace`); act-as with none stored
+  raises `workspace_not_set`. The strategy keys only on `ctx.clerk_subject`; the
+  registry fills it from the OAuth token or the `OAuthIdentityLink`, never from an
+  Open WebUI-specific path.
 - `/mcp/finance` registers `system_get_current_time` plus `finance_*` read-only
   exchange-rate tools (public API, no per-user credentials; default quote IRR).
 - `/mcp/recipes` registers `system_get_current_time` plus `recipes_*` tools

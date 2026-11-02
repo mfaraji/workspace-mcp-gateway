@@ -153,6 +153,14 @@ exists in PERSONAL workspaces, so it uses its own key, stored with
 `apex_wealth_set_api_key` or `POST /connectors/apex-wealth/apikey`
 (`APEX_WEALTH_API_KEY` is deprecated and ignored).
 
+**Clerk act-as (no key).** When `APEX_GATEWAY_API_KEY` (an Apex system key, consumer
+`GATEWAY`) and `CLERK_ISSUER` are set, a caller with a Clerk identity reaches Apex as
+themselves: the gateway sends the system key plus `X-Act-As-Subject` and the user's
+default `X-Workspace-Id`. Pick the workspace once with `apex_list_workspaces` then
+`apex_set_workspace(workspace_id)` (wealth: `apex_wealth_list_workspaces` /
+`apex_wealth_set_workspace`); until then tools return `workspace_not_set`. A stored
+personal key, if any, takes precedence over act-as.
+
 Telegram exposes `telegram_list_destinations` and `telegram_send_message`.
 Each Open WebUI user connects one BotFather token through Settings →
 Integrations; the token is validated and encrypted without entering model

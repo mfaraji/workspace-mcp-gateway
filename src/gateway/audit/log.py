@@ -18,6 +18,12 @@ from gateway.db.models import ToolAuditLog
 _SAFE_FIELDS: dict[str, set[str]] = {
     "system_get_current_time": {"time_zone"},
     # Apex wealth tools are read-only; balances live in responses, never inputs.
+    # Workspace tools: the workspace id is safe; keys, headers and the Clerk
+    # subject are never inputs and are never recorded.
+    "apex_list_workspaces": set(),
+    "apex_set_workspace": {"workspace_id"},
+    "apex_wealth_list_workspaces": set(),
+    "apex_wealth_set_workspace": {"workspace_id"},
     "apex_wealth_list_accounts": set(),
     "apex_wealth_get_accounts_summary": set(),
     "apex_wealth_get_investments_summary": set(),

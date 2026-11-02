@@ -19,12 +19,14 @@ from typing import Any
 
 import anyio
 from mcp.server.fastmcp import FastMCP
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from gateway.audit.log import summarize_input, write_audit
 from gateway.config import Settings
 from gateway.connectors.errors import ReauthRequired
 from gateway.db.engine import session_scope
+from gateway.db.models import OAuthIdentityLink
 from gateway.identity.models import IdentityError
 from gateway.identity.resolver import get_or_create_user
 from gateway.mcp.context import require_current_user
@@ -183,6 +185,7 @@ def _execute(
             chat_id=auth.chat_id,
             message_id=auth.message_id,
             automation_id=auth.automation_id,
+            clerk_subject=_clerk_subject(spec, settings, auth, user_id, session),
         )
 
         # Validate input against the declared model.
@@ -240,6 +243,37 @@ def _execute(
             auth_source=auth.source,
         )
         return result
+
+
+_ACT_AS_PROVIDERS = frozenset({"apex", "apex_wealth"})
+
+
+def _clerk_subject(spec: ToolSpec, settings: Settings, auth, user_id, session) -> str | None:
+    """Return the caller's Clerk subject for tools that can act as that user.
+
+    OAuth callers carry it already. Other front doors (``wmcp_`` tokens, trusted
+    headers) look it up from the user's ``OAuthIdentityLink``. No query is made
+    unless Clerk and Apex act-as are both configured and the tool needs it.
+    """
+    if auth.clerk_subject:
+        return auth.clerk_subject
+    if (
+        spec.provider not in _ACT_AS_PROVIDERS
+        or not settings.clerk_issuer
+        or not settings.apex_gateway_api_key
+    ):
+        return None
+    from gateway.oauth.clerk import issuer_url
+
+    try:
+        issuer = issuer_url(settings)
+    except IdentityError:
+        return None
+    return session.scalar(
+        select(OAuthIdentityLink.subject).where(
+            OAuthIdentityLink.user_id == user_id, OAuthIdentityLink.issuer == issuer
+        )
+    )
 
 
 def _audit_error(

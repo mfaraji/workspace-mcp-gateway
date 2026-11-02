@@ -24,6 +24,9 @@ class AuthenticatedUser:
     chat_id: str | None = None
     message_id: str | None = None
     automation_id: str | None = None
+    # Verified Clerk ``sub``. Set directly for OAuth callers; for other front
+    # doors it is resolved from OAuthIdentityLink at tool time (providers/registry).
+    clerk_subject: str | None = None
 
 
 class IdentityError(Exception):

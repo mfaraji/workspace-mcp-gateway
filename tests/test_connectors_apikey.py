@@ -188,8 +188,8 @@ def test_apex_auth_registers_read_risk_tool():
     apex_auth.register(registry)
     specs = {spec.name: spec for spec in registry._specs}
 
-    assert set(specs) == {"apex_set_api_key"}
-    assert specs["apex_set_api_key"].risk is RiskLevel.READ
+    assert set(specs) == {"apex_set_api_key", "apex_list_workspaces", "apex_set_workspace"}
+    assert all(spec.risk is RiskLevel.READ for spec in specs.values())
 
 
 # --- HTTP intake route ---------------------------------------------------------
@@ -313,7 +313,7 @@ async def test_set_api_key_route_stores_wealth_key_under_wealth_provider(monkeyp
 
 @pytest.mark.parametrize("strategy", [apex_client.APEX_API_KEY, apex_client.APEX_WEALTH_API_KEY])
 def test_apex_strategies_ignore_deploy_wide_keys(monkeypatch, strategy):
-    monkeypatch.setattr(upstream, "get_active_connection", lambda _s, _u, _p: None)
+    monkeypatch.setattr(apex_client, "get_api_key_connection", lambda _s, _u, _p: None)
     settings = _settings()  # apex_api_key="pk_live_fallback" is set but must be ignored
 
     with pytest.raises(ToolError) as exc_info:

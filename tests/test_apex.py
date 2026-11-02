@@ -99,14 +99,18 @@ def test_apex_request_wraps_transport_errors(monkeypatch):
 def test_list_timesheets_passes_client_id_filter(monkeypatch):
     captured = {}
 
-    def fake_apex_request(settings, api_key, method, path, params=None, json=None):
+    def fake_apex_request(
+        settings, api_key, method, path, params=None, json=None, extra_headers=None
+    ):
         captured.update(method=method, path=path, params=params)
         return {"timesheets": []}
 
-    monkeypatch.setattr(read, "apex_request", fake_apex_request)
+    monkeypatch.setattr(apex_client, "apex_request", fake_apex_request)
     monkeypatch.setattr(read, "get_settings", lambda: _settings())
     monkeypatch.setattr(
-        apex_client.APEX_API_KEY, "get_credentials", lambda session, ctx, settings: "pk_live_test"
+        apex_client.APEX_API_KEY,
+        "get_credentials",
+        lambda session, ctx, settings: apex_client.ApexCredentials("pk_live_test"),
     )
 
     args = read.ListTimesheetsInput(client_id="c1")
@@ -136,14 +140,18 @@ def test_create_invoice_requires_exactly_one_billing_payload():
 def test_create_invoice_builds_timesheet_body(monkeypatch):
     captured = {}
 
-    def fake_apex_request(settings, api_key, method, path, params=None, json=None):
+    def fake_apex_request(
+        settings, api_key, method, path, params=None, json=None, extra_headers=None
+    ):
         captured.update(method=method, path=path, json=json)
         return {"id": "inv1"}
 
-    monkeypatch.setattr(write, "apex_request", fake_apex_request)
+    monkeypatch.setattr(apex_client, "apex_request", fake_apex_request)
     monkeypatch.setattr(write, "get_settings", lambda: _settings())
     monkeypatch.setattr(
-        apex_client.APEX_API_KEY, "get_credentials", lambda session, ctx, settings: "pk_live_test"
+        apex_client.APEX_API_KEY,
+        "get_credentials",
+        lambda session, ctx, settings: apex_client.ApexCredentials("pk_live_test"),
     )
 
     args = write.CreateInvoiceInput(
@@ -181,14 +189,18 @@ def test_create_invoice_builds_timesheet_body(monkeypatch):
 def test_update_timesheet_builds_partial_body(monkeypatch):
     captured = {}
 
-    def fake_apex_request(settings, api_key, method, path, params=None, json=None):
+    def fake_apex_request(
+        settings, api_key, method, path, params=None, json=None, extra_headers=None
+    ):
         captured.update(method=method, path=path, json=json)
         return {"id": "ts1"}
 
-    monkeypatch.setattr(write, "apex_request", fake_apex_request)
+    monkeypatch.setattr(apex_client, "apex_request", fake_apex_request)
     monkeypatch.setattr(write, "get_settings", lambda: _settings())
     monkeypatch.setattr(
-        apex_client.APEX_API_KEY, "get_credentials", lambda session, ctx, settings: "pk_live_test"
+        apex_client.APEX_API_KEY,
+        "get_credentials",
+        lambda session, ctx, settings: apex_client.ApexCredentials("pk_live_test"),
     )
 
     args = write.UpdateTimesheetInput(timesheet_id="ts1", notes="Updated")

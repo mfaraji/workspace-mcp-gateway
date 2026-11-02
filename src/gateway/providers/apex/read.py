@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
-from gateway.providers.apex.client import APEX_API_KEY, apex_request
+from gateway.providers.apex.client import APEX_API_KEY, apex_call
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
 PROVIDER = "apex"
@@ -30,22 +30,22 @@ class GetLastTimesheetInput(BaseModel):
 
 def list_clients(_args: ListClientsInput, ctx: CallContext, session: Session) -> Any:
     settings = get_settings()
-    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
-    return apex_request(settings, api_key, "GET", "/api/clients")
+    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
+    return apex_call(settings, creds, "GET", "/api/clients")
 
 
 def list_timesheets(args: ListTimesheetsInput, ctx: CallContext, session: Session) -> Any:
     settings = get_settings()
-    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
+    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
     params = {"clientId": args.client_id} if args.client_id else None
-    return apex_request(settings, api_key, "GET", "/api/timesheets", params=params)
+    return apex_call(settings, creds, "GET", "/api/timesheets", params=params)
 
 
 def get_last_timesheet(args: GetLastTimesheetInput, ctx: CallContext, session: Session) -> Any:
     settings = get_settings()
-    api_key = APEX_API_KEY.get_credentials(session, ctx, settings)
-    return apex_request(
-        settings, api_key, "GET", "/api/timesheets/last", params={"clientId": args.client_id}
+    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
+    return apex_call(
+        settings, creds, "GET", "/api/timesheets/last", params={"clientId": args.client_id}
     )
 
 

@@ -127,13 +127,16 @@ def _resolve_oauth(
         # The immutable issuer and subject, rather than the OAuth client ID or
         # mutable email, determine identity. Keep the legacy external ID short.
         digest = hashlib.sha256(f"{issuer}\0{subject}".encode()).hexdigest()
-        return AuthenticatedUser(external_user_id=f"oauth:{digest}", source="oauth")
+        return AuthenticatedUser(
+            external_user_id=f"oauth:{digest}", source="oauth", clerk_subject=subject
+        )
     user = link.user
     return AuthenticatedUser(
         external_user_id=user.external_user_id,
         email=user.email,
         display_name=user.display_name,
         source="oauth",
+        clerk_subject=subject,
     )
 
 
