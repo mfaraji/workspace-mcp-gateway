@@ -140,8 +140,8 @@ exposes `system_get_current_time`, `google_drive_search_files`, and
 `apex_create_invoice`, `apex_create_timesheet`, `apex_update_timesheet`) against the
 [Apex invoicing/timesheet REST API](../apex/docs/api/invoice-rest.openapi.yaml),
 authenticated with a per-user, workspace-scoped Apex API key (stored with
-`apex_set_api_key` or `POST /connectors/apex/apikey`; `APEX_API_KEY` is only an
-optional deploy-wide fallback) rather than per-user OAuth.
+`apex_set_api_key` or `POST /connectors/apex/apikey`; `APEX_API_KEY` is deprecated
+and ignored; there is no deploy-wide fallback) rather than per-user OAuth.
 
 Apex Wealth (`/mcp/apex-wealth`) exposes `system_get_current_time` plus read-only
 `apex_wealth_*` tools: `apex_wealth_list_accounts`, `apex_wealth_get_accounts_summary`
@@ -151,7 +151,7 @@ Apex Wealth (`/mcp/apex-wealth`) exposes `system_get_current_time` plus read-onl
 [Apex wealth REST API](../apex/docs/api/wealth-rest.openapi.yaml). Wealth data only
 exists in PERSONAL workspaces, so it uses its own key, stored with
 `apex_wealth_set_api_key` or `POST /connectors/apex-wealth/apikey`
-(`APEX_WEALTH_API_KEY` is an optional fallback).
+(`APEX_WEALTH_API_KEY` is deprecated and ignored).
 
 Telegram exposes `telegram_list_destinations` and `telegram_send_message`.
 Each Open WebUI user connects one BotFather token through Settings →

@@ -23,12 +23,13 @@ class Settings(BaseSettings):
 
     # Apex invoicing/timesheet API. Each user stores their own key (via the
     # apex_set_api_key tool or POST /connectors/apex/apikey) — see
-    # docs/api/invoice-rest.openapi.yaml in the apex repo. apex_api_key is an
-    # optional deploy-wide fallback for users who haven't set a personal key
-    # yet; it is not required once every user has one.
+    # docs/api/invoice-rest.openapi.yaml in the apex repo. apex_api_key and
+    # apex_wealth_api_key are DEPRECATED and ignored (kept only so existing .env
+    # files still parse); per-user keys, and later Clerk act-as via
+    # APEX_GATEWAY_API_KEY, replace them.
     apex_base_url: str = "http://localhost:3010"
     apex_api_key: str | None = None
-    # Wealth endpoints need a key for a PERSONAL workspace; optional deploy-wide fallback.
+    # Wealth endpoints need a key for a PERSONAL workspace. DEPRECATED and ignored.
     apex_wealth_api_key: str | None = None
 
     token_encryption_key: str

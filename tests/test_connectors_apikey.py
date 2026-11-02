@@ -14,6 +14,7 @@ from gateway.connectors import apikey, upstream
 from gateway.connectors import routes as connectors_routes
 from gateway.identity.models import AuthenticatedUser
 from gateway.providers.apex import auth as apex_auth
+from gateway.providers.apex import client as apex_client
 from gateway.providers.base import CallContext
 from gateway.providers.registry import ToolError
 
@@ -308,3 +309,14 @@ async def test_set_api_key_route_stores_wealth_key_under_wealth_provider(monkeyp
     assert response.status_code == 200
     assert _body(response) == {"connected": True, "connector": "apex-wealth"}
     assert stored == {"user_id": user.id, "provider": "apex_wealth", "api_key": "pk_live_w"}
+
+
+@pytest.mark.parametrize("strategy", [apex_client.APEX_API_KEY, apex_client.APEX_WEALTH_API_KEY])
+def test_apex_strategies_ignore_deploy_wide_keys(monkeypatch, strategy):
+    monkeypatch.setattr(upstream, "get_active_connection", lambda _s, _u, _p: None)
+    settings = _settings()  # apex_api_key="pk_live_fallback" is set but must be ignored
+
+    with pytest.raises(ToolError) as exc_info:
+        strategy.get_credentials(None, _ctx(), settings)
+
+    assert exc_info.value.error_code == "not_connected"

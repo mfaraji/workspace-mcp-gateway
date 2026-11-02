@@ -26,13 +26,12 @@ _STATUS_ERROR_CODES = {
     429: "rate_limited",
 }
 
-# Falls back to the deploy-wide APEX_API_KEY setting until a user stores
-# their own personal key with the apex_set_api_key tool.
+# Per-user keys only: no deploy-wide fallback (apex_api_key is deprecated and
+# ignored). Users without a stored key get ToolError not_connected.
 APEX_API_KEY = ApiKeyStrategy(
     upstream_provider=PROVIDER,
     display_name="Apex",
     set_key_tool="apex_set_api_key",
-    fallback_key=lambda settings: settings.apex_api_key,
 )
 
 # Wealth data only exists in PERSONAL workspaces, whereas the invoicing key is
@@ -42,7 +41,6 @@ APEX_WEALTH_API_KEY = ApiKeyStrategy(
     upstream_provider=WEALTH_PROVIDER,
     display_name="Apex Wealth",
     set_key_tool="apex_wealth_set_api_key",
-    fallback_key=lambda settings: settings.apex_wealth_api_key,
 )
 
 

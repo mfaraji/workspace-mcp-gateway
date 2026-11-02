@@ -120,10 +120,8 @@ def _raise_not_connected(session, ctx, settings):
     raise ToolError("not_connected", "apex_wealth_set_api_key")
 
 
-def test_fallback_key_uses_wealth_setting_not_invoicing_key():
-    strategy = apex_client.APEX_WEALTH_API_KEY
-    settings = _settings(apex_api_key="invoice", apex_wealth_api_key="wealth")
-    assert strategy.fallback_key(settings) == "wealth"
+def test_no_deploy_wide_fallback_key():
+    assert apex_client.APEX_WEALTH_API_KEY.fallback_key is None
 
 
 def test_all_tools_registered_read_only_with_wealth_connector():
