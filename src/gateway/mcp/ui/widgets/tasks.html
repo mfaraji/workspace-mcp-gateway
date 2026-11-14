@@ -6,7 +6,7 @@
 <title>Google Tasks</title>
 <style>
 {{SHARED_CSS}}
-.add { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.add { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); }
 .progress { height: 3px; background: var(--surface-2); }
 .progress > div { height: 100%; background: var(--ok); transition: width .25s; }
 ul { list-style: none; margin: 0; padding: 0; }
@@ -217,9 +217,9 @@ li.task:last-child { border-bottom: 0; }
     var card = h('div', { class: 'card' + (state.adding ? ' busy' : '') }, [
       h('div', { class: 'card-head' }, [h('h1', {}, t('title')), h('span', { class: 'muted' }, summary), refresh]),
       state.showDone && total ? h('div', { class: 'progress', 'aria-hidden': 'true' }, h('div', { style: 'width:' + pct + '%' })) : null,
-      h('div', { class: 'add' }, [addInput, addBtn]),
       state.error ? h('div', { class: 'error', role: 'alert' }, state.error) : null,
       visible.length ? list : h('div', { class: 'empty' }, total ? t('allDone') : t('empty')),
+      h('div', { class: 'add' }, [addInput, addBtn]),
       footer
     ]);
     root.replaceChildren(card);
