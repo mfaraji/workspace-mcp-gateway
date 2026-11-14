@@ -8,7 +8,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
-from gateway.providers.google.tasks.common import PROVIDER, tasks_service, trim_task
+from gateway.providers.google.tasks.common import (
+    PROVIDER,
+    TASKS_UI,
+    UI_NOTE,
+    tasks_service,
+    trim_task,
+)
 
 TaskStatus = Literal["needsAction", "completed"]
 
@@ -83,17 +89,11 @@ def update_task(args: UpdateTaskInput, ctx: CallContext, session: Session) -> di
     if args.status is not None:
         body["status"] = args.status
 
-    task = (
-        service.tasks()
-        .patch(tasklist=args.tasklist_id, task=args.task_id, body=body)
-        .execute()
-    )
+    task = service.tasks().patch(tasklist=args.tasklist_id, task=args.task_id, body=body).execute()
     return {**trim_task(task), "status": "updated"}
 
 
-def complete_task(
-    args: CompleteTaskInput, ctx: CallContext, session: Session
-) -> dict[str, Any]:
+def complete_task(args: CompleteTaskInput, ctx: CallContext, session: Session) -> dict[str, Any]:
     service = tasks_service(session, ctx)
     task = (
         service.tasks()
@@ -133,12 +133,15 @@ def register(registry) -> None:
             provider=PROVIDER,
             risk=RiskLevel.MUTATING,
             description=(
-                "Create a Google Tasks task. Requires confirmation. Google Tasks due "
-                "dates only preserve date information; due times are discarded."
+                "Create a Google Tasks task. Google Tasks due dates only preserve date "
+                "information; due times are discarded. " + UI_NOTE
             ),
             input_model=CreateTaskInput,
             handler=create_task,
             preview_builder=_create_preview,
+            requires_confirmation=False,
+            ui_resource=TASKS_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -146,10 +149,16 @@ def register(registry) -> None:
             name="google_tasks_update_task",
             provider=PROVIDER,
             risk=RiskLevel.MUTATING,
-            description="Update fields of a Google Tasks task. Requires confirmation.",
+            description=(
+                "Update fields of a Google Tasks task (set status to 'needsAction' to "
+                "reopen it). " + UI_NOTE
+            ),
             input_model=UpdateTaskInput,
             handler=update_task,
             preview_builder=_update_preview,
+            requires_confirmation=False,
+            ui_resource=TASKS_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -157,10 +166,13 @@ def register(registry) -> None:
             name="google_tasks_complete_task",
             provider=PROVIDER,
             risk=RiskLevel.MUTATING,
-            description="Mark a Google Tasks task completed. Requires confirmation.",
+            description="Mark a Google Tasks task completed. " + UI_NOTE,
             input_model=CompleteTaskInput,
             handler=complete_task,
             preview_builder=_complete_preview,
+            requires_confirmation=False,
+            ui_resource=TASKS_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -172,5 +184,6 @@ def register(registry) -> None:
             input_model=DeleteTaskInput,
             handler=delete_task,
             preview_builder=_delete_preview,
+            ui_app_callable=True,
         )
     )

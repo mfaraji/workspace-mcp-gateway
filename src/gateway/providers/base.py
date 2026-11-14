@@ -61,3 +61,23 @@ class ToolSpec:
     handler: ToolHandler
     preview_builder: PreviewBuilder | None = None
     requires_confirmation: bool | None = None
+    # MCP Apps: ``ui_resource`` is the ``ui://`` widget that renders this tool's result.
+    # ``ui_app_callable`` marks a tool a widget may call without a host-side modal (the
+    # gateway's own preview/token handshake, shown inside the widget, is the confirmation).
+    ui_resource: str | None = None
+    ui_app_callable: bool = False
+
+    @property
+    def tool_meta(self) -> dict | None:
+        """The MCP ``_meta`` block advertising this tool's widget, or None."""
+        if not (self.ui_resource or self.ui_app_callable):
+            return None
+        ui: dict = {}
+        if self.ui_resource:
+            ui["resourceUri"] = self.ui_resource
+        if self.ui_app_callable:
+            ui["autoApprove"] = True
+        meta: dict = {"ui": ui}
+        if self.ui_resource:
+            meta["ui/resourceUri"] = self.ui_resource  # legacy key used by older hosts
+        return meta

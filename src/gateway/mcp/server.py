@@ -49,11 +49,7 @@ class GatewayFastMCP(FastMCP):
 
         names = await anyio.to_thread.run_sync(permitted)
         specs = {spec.name: spec for spec in self.gateway_specs}
-        tools = [
-            t.model_copy(deep=True)
-            for t in tools
-            if tool_allowed(specs[t.name], auth, names)
-        ]
+        tools = [t.model_copy(deep=True) for t in tools if tool_allowed(specs[t.name], auth, names)]
         has_personal = any(
             c.access_mode is AccessMode.PERSONAL
             and any(c.matches(spec) and self.gateway_filter(spec) for spec in self.gateway_specs)
@@ -70,6 +66,38 @@ class GatewayFastMCP(FastMCP):
                     {"type": "oauth2", "scopes": ["mcp:tools"]}
                 ]
         return tools
+
+    async def _granted_ui_uris(self) -> set[str]:
+        """Widgets are served only when a tool the caller may use references them."""
+        import anyio
+
+        from gateway.access.policy import allowed_tools, tool_allowed
+        from gateway.db.engine import session_scope
+        from gateway.identity.resolver import get_or_create_user
+        from gateway.mcp.context import require_current_user
+
+        auth = require_current_user()
+
+        def permitted():
+            with session_scope() as session:
+                user = get_or_create_user(session, auth)
+                return allowed_tools(session, user.id, self.gateway_settings, auth)
+
+        names = await anyio.to_thread.run_sync(permitted)
+        return {
+            spec.ui_resource
+            for spec in self.gateway_specs
+            if spec.ui_resource and self.gateway_filter(spec) and tool_allowed(spec, auth, names)
+        }
+
+    async def list_resources(self):
+        uris = await self._granted_ui_uris()
+        return [r for r in await super().list_resources() if str(r.uri) in uris]
+
+    async def read_resource(self, uri):
+        if str(uri) not in await self._granted_ui_uris():
+            raise ValueError(f"Unknown resource: {uri}")
+        return await super().read_resource(uri)
 
 
 def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> FastMCP:
@@ -94,8 +122,7 @@ def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> Fast
 
     for connector in CONNECTORS:
         if connector.access_mode is AccessMode.AUTHENTICATED_SHARED and any(
-            connector.matches(spec) and spec.risk is not RiskLevel.READ
-            for spec in registry._specs
+            connector.matches(spec) and spec.risk is not RiskLevel.READ for spec in registry._specs
         ):
             raise ValueError(f"Shared connector {connector.slug} must contain only read tools")
 
@@ -103,6 +130,17 @@ def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> Fast
     mcp.gateway_settings = settings
     mcp.gateway_specs = registry._specs
     registry.register_all(mcp, settings, predicate=tool_filter)
+
+    from gateway.mcp.ui import register_ui
+
+    register_ui(
+        mcp,
+        {
+            spec.ui_resource
+            for spec in registry._specs
+            if spec.ui_resource and mcp.gateway_filter(spec)
+        },
+    )
     return mcp
 
 
