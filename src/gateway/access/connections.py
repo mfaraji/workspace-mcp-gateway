@@ -10,8 +10,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from gateway.access.routes import browser_user, owner
 from gateway.config import Settings, get_settings
 from gateway.connectors.apikey import get_api_key_connection, get_default_workspace
-from gateway.connectors.base import AccessMode, Connector
-from gateway.connectors.registry import CONNECTORS
+from gateway.connectors.base import AccessMode, Bundle, Connector
+from gateway.connectors.registry import BUNDLES, CONNECTORS, bundle_members
 from gateway.connectors.upstream import ApiKeyStrategy, OAuthStrategy
 from gateway.db.engine import session_scope
 from gateway.identity.models import AuthenticatedUser, IdentityError
@@ -76,6 +76,26 @@ def connection_status(
     return base
 
 
+def bundle_status(bundle: Bundle, session, user_id) -> dict:
+    """Status of a bundle: connected only when the account covers every member's scopes."""
+    members = bundle_members(bundle)
+    needed = {
+        scope
+        for c in members
+        if isinstance(c.upstream, OAuthStrategy)
+        for scope in c.upstream.required_scopes
+    }
+    conn = get_active_connection(session, user_id, bundle.upstream_provider)
+    if conn is None:
+        return {"status": "not_connected", "account": None, "action": "oauth"}
+    missing = needed - set(conn.scopes or [])
+    return {
+        "status": "reauth_required" if missing else "connected",
+        "account": conn.provider_email,
+        "action": "oauth",
+    }
+
+
 @router.get("/connections")
 def page(request: Request):
     try:
@@ -127,6 +147,21 @@ def connections(request: Request):
                 **connection_status(c, session, user.id, auth, settings),
             }
             for c in CONNECTORS
+        ]
+        # Overarching endpoints that serve several connectors' tools in one registration.
+        items += [
+            {
+                "slug": b.slug,
+                "name": f"{b.display_name} (all tools)",
+                "provider": b.upstream_provider,
+                "scope": "user",
+                "bundle": True,
+                "oauth_product": "all",
+                "mcp_url": f"{root}/mcp/{b.slug}",
+                "tool_count": sum(tool_counts.get(c.slug, 0) for c in bundle_members(b)),
+                **bundle_status(b, session, user.id),
+            }
+            for b in BUNDLES
         ]
     # One-time message queued by the OAuth callback (e.g. Gmail label instructions).
     return {

@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from gateway.access.policy import grant_for, personal_tool_names
 from gateway.config import get_settings
-from gateway.connectors.registry import by_slug
+from gateway.connectors.registry import connector_slugs_for
 from gateway.db.engine import session_scope
 from gateway.db.models import ClientGrant
 from gateway.identity.models import AuthenticatedUser, IdentityError
@@ -207,9 +207,17 @@ def resource_connector(resource: str | None) -> str | None:
         return None
     if isinstance(resource, str) and resource.startswith(root + "/"):
         slug = resource[len(root) + 1 :]
-        if by_slug(slug) is not None:
+        if connector_slugs_for(slug) is not None:
             return slug
     raise ValueError("Reopen a fresh permissions link from the MCP client")
+
+
+def catalog_for_resource(catalog: list[dict], slug: str | None) -> list[dict]:
+    """Catalog entries served at one resource: every connector, one, or a bundle's members."""
+    if slug is None:
+        return catalog
+    members = connector_slugs_for(slug) or set()
+    return [c for c in catalog if c["slug"] in members]
 
 
 def scoped_catalog(request: Request, auth: AuthenticatedUser, client_id: str | None = None):
@@ -225,7 +233,7 @@ def scoped_catalog(request: Request, auth: AuthenticatedUser, client_id: str | N
         slug = resource_connector(target.get("resource"))
     except ValueError:
         raise HTTPException(400, "Reopen a fresh permissions link from the MCP client") from None
-    return [c for c in catalog if slug is None or c["slug"] == slug]
+    return catalog_for_resource(catalog, slug)
 
 
 @router.get("/api/access")

@@ -18,7 +18,7 @@ from mcp.types import Tool as MCPTool
 
 from gateway.config import Settings
 from gateway.connectors.base import AccessMode
-from gateway.connectors.registry import CONNECTORS, by_slug
+from gateway.connectors.registry import CONNECTORS, by_slug, connector_slugs_for
 from gateway.providers.base import RiskLevel, ToolSpec
 
 ToolFilter = Callable[[ToolSpec], bool]
@@ -107,13 +107,14 @@ def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> Fast
 
 
 def product_tool_filter(product: str) -> ToolFilter:
-    """Return a predicate for one connector's Open WebUI tool-server endpoint."""
-    connector = by_slug(product)
-    if connector is None:
+    """Return a predicate for one connector's (or bundle's) tool-server endpoint."""
+    slugs = connector_slugs_for(product)
+    if slugs is None:
         raise ValueError(f"unknown connector: {product}")
+    members = [c for c in (by_slug(slug) for slug in sorted(slugs)) if c is not None]
 
     def allow(spec: ToolSpec) -> bool:
-        return spec.name == "system_get_current_time" or connector.matches(spec)
+        return spec.name == "system_get_current_time" or any(c.matches(spec) for c in members)
 
     return allow
 

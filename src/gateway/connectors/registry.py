@@ -11,7 +11,7 @@ all derive from this list — nothing else needs to change.
 from __future__ import annotations
 
 from gateway.config import Settings
-from gateway.connectors.base import AccessMode, Connector
+from gateway.connectors.base import AccessMode, Bundle, Connector
 from gateway.providers.apex import auth as apex_auth
 from gateway.providers.apex import read as apex_read
 from gateway.providers.apex import wealth as apex_wealth
@@ -188,3 +188,36 @@ def by_slug(slug: str) -> Connector | None:
 def by_spec(spec: ToolSpec) -> Connector | None:
     """Return the connector that owns a tool spec, by name-prefix match, or ``None``."""
     return next((c for c in CONNECTORS if c.matches(spec)), None)
+
+
+# Overarching endpoints that combine the tools of several connectors. The per-connector
+# endpoints stay as they are; these are optional conveniences.
+BUNDLES: list[Bundle] = [
+    Bundle(slug="google", display_name="Google Workspace", upstream_provider="google"),
+]
+
+if {b.slug for b in BUNDLES} & {c.slug for c in CONNECTORS}:  # pragma: no cover
+    raise ValueError("a bundle slug collides with a connector slug")
+
+
+def bundle_by_slug(slug: str) -> Bundle | None:
+    """Return the bundle mounted at ``/mcp/<slug>``, or ``None``."""
+    return next((b for b in BUNDLES if b.slug == slug), None)
+
+
+def bundle_members(bundle: Bundle) -> list[Connector]:
+    """The connectors a bundle serves, in registry order."""
+    return [c for c in CONNECTORS if c.upstream_provider == bundle.upstream_provider]
+
+
+def connector_slugs_for(slug: str) -> set[str] | None:
+    """Connector slugs served at ``/mcp/<slug>``: itself, or a bundle's members.
+
+    ``None`` means no endpoint exists at that slug.
+    """
+    if by_slug(slug) is not None:
+        return {slug}
+    bundle = bundle_by_slug(slug)
+    if bundle is not None:
+        return {c.slug for c in bundle_members(bundle)}
+    return None

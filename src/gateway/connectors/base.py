@@ -32,6 +32,21 @@ if TYPE_CHECKING:
 ErrorClassifier = Callable[[Exception], "str | None"]
 
 
+@dataclass(frozen=True)
+class Bundle:
+    """An extra ``/mcp/<slug>`` endpoint that serves several connectors' tools at once.
+
+    A bundle owns no tools and no credentials: it advertises the union of its member
+    connectors' tools, and every call is still granted, audited and authorized per tool
+    and per member connector. Members are all connectors stored under ``upstream_provider``
+    (so a new Google connector joins the Google bundle automatically).
+    """
+
+    slug: str
+    display_name: str
+    upstream_provider: str
+
+
 class AccessMode(StrEnum):
     """Explicit access policy, independent of upstream credentials."""
 

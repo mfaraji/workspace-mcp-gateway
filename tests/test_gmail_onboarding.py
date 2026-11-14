@@ -121,6 +121,11 @@ def test_connections_api_returns_the_notice_exactly_once(monkeypatch):
         "connection_status",
         lambda *_: {"status": "not_connected", "account": None, "action": None},
     )
+    monkeypatch.setattr(
+        connections,
+        "bundle_status",
+        lambda *_: {"status": "not_connected", "account": None, "action": "oauth"},
+    )
     request = _request()
     request.session["notice"] = onboarding.build_notice("created", NAME)
 

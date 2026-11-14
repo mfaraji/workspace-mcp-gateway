@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from gateway.access.policy import grant_for, personal_tool_names
-from gateway.access.routes import resource_connector
+from gateway.access.routes import catalog_for_resource, resource_connector
 from gateway.config import Settings, get_settings
 from gateway.db.engine import session_scope
 from gateway.db.models import ClientGrant, OAuthIdentityLink, User
@@ -73,7 +73,7 @@ def consent_tools(request: Request, resource: str) -> list[dict]:
         slug = resource_connector(resource)
     except ValueError:
         raise HTTPException(400, "Invalid connector resource") from None
-    return [c for c in request.app.state.access_catalog if slug is None or c["slug"] == slug]
+    return catalog_for_resource(request.app.state.access_catalog, slug)
 
 
 def registered_client(settings: Settings, client_id: str, redirect_uri: str, scope: str) -> None:

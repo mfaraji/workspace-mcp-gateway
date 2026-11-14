@@ -63,7 +63,7 @@ function actions(c, card) {
   if (c.action === 'oauth') {
     box.append(el('a', {
       className: 'primary link-button',
-      href: `/oauth/google/start?product=${encodeURIComponent(c.slug)}`,
+      href: `/oauth/google/start?product=${encodeURIComponent(c.oauth_product || c.slug)}`,
       textContent: connected ? 'Reconnect' : c.status === 'reauth_required' ? 'Reauthorize' : 'Connect'
     }));
     if (connected || c.status === 'reauth_required') {

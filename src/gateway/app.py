@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from gateway.config import get_settings
-from gateway.connectors.registry import CONNECTORS
+from gateway.connectors.registry import BUNDLES, CONNECTORS
 from gateway.db.engine import check_database
 from gateway.logging import configure_logging
 from gateway.mcp.context import IdentityMiddleware
@@ -36,6 +36,8 @@ def create_app() -> FastAPI:
     mcp_servers = {"all": build_mcp(settings)}
     for connector in CONNECTORS:
         mcp_servers[connector.slug] = build_mcp(settings, product_tool_filter(connector.slug))
+    for bundle in BUNDLES:
+        mcp_servers[bundle.slug] = build_mcp(settings, product_tool_filter(bundle.slug))
     # Accessing streamable_http_app() lazily creates each session manager.
     mcp_apps = {name: mcp.streamable_http_app() for name, mcp in mcp_servers.items()}
 
@@ -113,7 +115,7 @@ def create_app() -> FastAPI:
             return JSONResponse({"status": "ready"})
         return JSONResponse({"status": "not_ready"}, status_code=503)
 
-    connector_slugs = {connector.slug for connector in CONNECTORS}
+    connector_slugs = {connector.slug for connector in CONNECTORS} | {b.slug for b in BUNDLES}
 
     @app.api_route("/mcp/{product}", methods=["GET", "POST", "DELETE"])
     async def redirect_product_mcp_root(product: str, request: Request) -> RedirectResponse:
@@ -126,9 +128,9 @@ def create_app() -> FastAPI:
     # Mount MCP Streamable HTTP apps behind identity enforcement: every request
     # must carry a trustworthy Open WebUI user identity. Connector-specific
     # mounts are registered before the backward-compatible /mcp catch-all.
-    for connector in CONNECTORS:
-        path = f"/mcp/{connector.slug}"
-        app.mount(path, IdentityMiddleware(mcp_apps[connector.slug], settings, path))
+    for slug in [*(c.slug for c in CONNECTORS), *(b.slug for b in BUNDLES)]:
+        path = f"/mcp/{slug}"
+        app.mount(path, IdentityMiddleware(mcp_apps[slug], settings, path))
     app.mount("/mcp", IdentityMiddleware(mcp_apps["all"], settings))
 
     return app

@@ -81,11 +81,23 @@ def test_api_lists_every_connector_without_secrets(monkeypatch):
         "connection_status",
         lambda *_: {"status": "not_connected", "account": None, "action": None},
     )
+    monkeypatch.setattr(
+        connections,
+        "bundle_status",
+        lambda *_: {"status": "not_connected", "account": None, "action": "oauth"},
+    )
     data = connections.connections(_request())
-    assert [c["slug"] for c in data["connectors"]] == [c.slug for c in CONNECTORS]
+    bundles = [c for c in data["connectors"] if c.get("bundle")]
+    assert [b["slug"] for b in bundles] == ["google"]
+    assert bundles[0]["oauth_product"] == "all"
+    assert [c["slug"] for c in data["connectors"] if not c.get("bundle")] == [
+        c.slug for c in CONNECTORS
+    ]
     assert data["csrf"] == "csrf"
     assert all(c["mcp_url"].endswith(f"/mcp/{c['slug']}") for c in data["connectors"])
-    assert all(c["tool_count"] == 1 for c in data["connectors"])
+    assert all(c["tool_count"] == 1 for c in data["connectors"] if not c.get("bundle"))
+    # The Google bundle serves every Google connector's tools.
+    assert bundles[0]["tool_count"] == 4
     scopes = {c["slug"]: c["scope"] for c in data["connectors"]}
     assert scopes["finance"] == "universal"
     assert {v for k, v in scopes.items() if k != "finance"} == {"user"}

@@ -36,6 +36,17 @@ provider APIs now require the gateway browser session; cookie-authenticated
 writes require X-CSRF-Token from GET /api/access. They do not accept client MCP
 tokens, preventing provider API calls from bypassing tool grants.
 
+## Overarching endpoints
+
+Besides the per-connector endpoints, `/mcp/google` serves every Google connector (Calendar,
+Drive, Tasks, Gmail) from one registration. It owns no tools or credentials: it advertises
+the union of its members' tools, and grants, audit and Gmail's label/draft-only limits work
+exactly as on the separate endpoints. New Google connectors join it automatically. Register
+`{BASE_URL}/mcp/google` as a resource in Clerk like the other product resources; the consent
+page for it lists all member tools. The separate `/mcp/<slug>` endpoints are unchanged, and
+`/mcp` remains the everything-endpoint. Prefer a separate endpoint when you want one service
+(for example Gmail) switched on or off on its own, or to keep fewer tools in the model's context.
+
 ## User flow
 
 1. Connect a product MCP endpoint through the client's normal OAuth control.
