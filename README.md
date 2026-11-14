@@ -1,3 +1,7 @@
+> Authentication change: client access is now OAuth-only. Shared keys, forwarded
+> user identity, and `wmcp_` tokens are rejected. See [OAuth client permissions](docs/client-permissions.md)
+> for the current setup; legacy examples below are historical and must not be used.
+
 # Workspace MCP Gateway
 
 A multi-user MCP gateway for [Open WebUI](https://github.com/open-webui/open-webui).

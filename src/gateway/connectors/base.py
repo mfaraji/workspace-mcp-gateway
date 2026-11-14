@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,6 +32,13 @@ if TYPE_CHECKING:
 ErrorClassifier = Callable[[Exception], "str | None"]
 
 
+class AccessMode(StrEnum):
+    """Explicit access policy, independent of upstream credentials."""
+
+    PERSONAL = "personal"
+    AUTHENTICATED_SHARED = "authenticated_shared"
+
+
 @dataclass(frozen=True)
 class Connector:
     """Describes one connector: its tools, mount, and upstream identity."""
@@ -40,6 +48,7 @@ class Connector:
     display_name: str
     upstream_provider: str
     register: Callable[[ToolRegistry, Settings], None]
+    access_mode: AccessMode = AccessMode.PERSONAL
     upstream: UpstreamAuthStrategy | None = None
     error_classifier: ErrorClassifier | None = None
     # Tool-name prefixes owned by a sibling connector whose own prefix extends this one

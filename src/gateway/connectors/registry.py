@@ -11,7 +11,7 @@ all derive from this list — nothing else needs to change.
 from __future__ import annotations
 
 from gateway.config import Settings
-from gateway.connectors.base import Connector
+from gateway.connectors.base import AccessMode, Connector
 from gateway.providers.apex import auth as apex_auth
 from gateway.providers.apex import read as apex_read
 from gateway.providers.apex import wealth as apex_wealth
@@ -150,6 +150,7 @@ CONNECTORS: list[Connector] = [
         display_name="Finance",
         upstream_provider="finance",
         register=_register_finance,
+        access_mode=AccessMode.AUTHENTICATED_SHARED,
     ),
     Connector(
         slug="recipes",

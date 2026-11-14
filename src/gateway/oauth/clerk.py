@@ -66,9 +66,9 @@ def token_endpoint(settings: Settings) -> str:
     return _issuer_endpoint(settings, "token_endpoint")
 
 
-def verify_access_token(
+def verify_access_claims(
     token: str, settings: Settings, resource: str, *, required_scope: str | None = "mcp:tools"
-) -> str:
+) -> dict:
     """Verify Clerk signature, issuer, expiry, resource audience, scope and subject."""
     if len(token) > 16384:
         raise IdentityError("OAuth access token too large")
@@ -107,4 +107,9 @@ def verify_access_token(
     if required_scope and required_scope not in scope_set:
         logger.info("OAuth access token rejected: insufficient scope")
         raise IdentityError("insufficient OAuth scope")
-    return subject
+    return claims
+
+
+def verify_access_token(token, settings, resource, *, required_scope="mcp:tools") -> str:
+    """Compatibility helper for flows that need only the verified subject."""
+    return verify_access_claims(token, settings, resource, required_scope=required_scope)["sub"]

@@ -129,7 +129,8 @@ def register(registry) -> None:
         ToolSpec(
             name="apex_set_api_key",
             provider=PROVIDER,
-            risk=RiskLevel.READ,
+            risk=RiskLevel.MUTATING,
+            requires_confirmation=False,
             description=(
                 "Store your personal Apex workspace API key so apex_* tools act as you. "
                 "Get a key from your Apex workspace admin. The key is encrypted at rest and "
@@ -156,7 +157,8 @@ def register(registry) -> None:
         ToolSpec(
             name="apex_set_workspace",
             provider=PROVIDER,
-            risk=RiskLevel.READ,
+            risk=RiskLevel.MUTATING,
+            requires_confirmation=False,
             description=(
                 "Choose the default Apex workspace that apex_* tools act in when you are "
                 "signed in with Clerk (no API key). workspace_id must come from "
@@ -179,7 +181,8 @@ def register_wealth(registry) -> None:
         ToolSpec(
             name="apex_wealth_set_api_key",
             provider=WEALTH_PROVIDER,
-            risk=RiskLevel.READ,
+            risk=RiskLevel.MUTATING,
+            requires_confirmation=False,
             description=(
                 "Store your personal Apex API key for a PERSONAL workspace so apex_wealth_* "
                 "tools act as you. This is separate from the invoicing key set by "
@@ -206,7 +209,8 @@ def register_wealth(registry) -> None:
         ToolSpec(
             name="apex_wealth_set_workspace",
             provider=WEALTH_PROVIDER,
-            risk=RiskLevel.READ,
+            risk=RiskLevel.MUTATING,
+            requires_confirmation=False,
             description=(
                 "Choose the default Apex workspace that apex_wealth_* tools act in when you "
                 "are signed in with Clerk (no API key). workspace_id must come from "

@@ -9,10 +9,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from gateway.access.routes import request_user
 from gateway.config import get_settings
 from gateway.db.engine import session_scope
 from gateway.identity.models import AuthenticatedUser, IdentityError
-from gateway.identity.resolver import get_or_create_user, resolve_identity
+from gateway.identity.resolver import get_or_create_user
 from gateway.providers.base import CallContext
 from gateway.providers.registry import ToolError
 from gateway.providers.telegram.service import (
@@ -38,7 +39,7 @@ class DestinationBody(BaseModel):
 
 def _authenticate(request: Request) -> tuple[AuthenticatedUser, uuid.UUID] | JSONResponse:
     try:
-        auth = resolve_identity(dict(request.headers), get_settings())
+        auth = request_user(request)
     except IdentityError as exc:
         return _error("unauthorized", str(exc), 401)
     try:

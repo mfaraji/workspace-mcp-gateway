@@ -10,11 +10,12 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
 
+from gateway.access.routes import request_user
 from gateway.audit.log import write_audit
 from gateway.config import get_settings
 from gateway.db.engine import session_scope
 from gateway.identity.models import AuthenticatedUser, IdentityError
-from gateway.identity.resolver import get_or_create_user, resolve_identity
+from gateway.identity.resolver import get_or_create_user
 from gateway.oauth.google import build_start_url
 from gateway.providers.google.connections import get_active_connection
 from gateway.providers.google.drive.common import (
@@ -29,9 +30,8 @@ router = APIRouter(prefix="/api/drive", tags=["drive-integration"])
 
 
 def _authenticate(request: Request) -> tuple[AuthenticatedUser, uuid.UUID] | JSONResponse:
-    settings = get_settings()
     try:
-        auth = resolve_identity(dict(request.headers), settings)
+        auth = request_user(request)
     except IdentityError as exc:
         return JSONResponse(
             {"error": "unauthorized", "detail": str(exc)},
@@ -101,7 +101,6 @@ def status(request: Request):
     if isinstance(resolved, JSONResponse):
         return resolved
     auth, user_id = resolved
-    settings = get_settings()
 
     try:
         with session_scope() as session:
@@ -123,7 +122,7 @@ def status(request: Request):
                     "connection_state": state,
                     "account_email": conn.provider_email if conn is not None else None,
                     "authorization_url": build_start_url(
-                        settings, auth.external_user_id, product="drive"
+                        get_settings(), auth.external_user_id, product="drive"
                     ),
                 },
                 headers={"Cache-Control": "no-store"},

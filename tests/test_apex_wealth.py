@@ -126,7 +126,7 @@ def test_no_deploy_wide_fallback_key():
     assert apex_client.APEX_WEALTH_API_KEY.fallback_key is None
 
 
-def test_all_tools_registered_read_only_with_wealth_connector():
+def test_wealth_data_reads_and_settings_writes_are_classified():
     registry = ToolRegistry()
     wealth.register(registry)
     auth.register_wealth(registry)
@@ -136,7 +136,10 @@ def test_all_tools_registered_read_only_with_wealth_connector():
         "apex_wealth_list_workspaces",
         "apex_wealth_set_workspace",
     }
-    assert all(s.risk is RiskLevel.READ for s in specs.values())
+    assert all(
+        s.risk is (RiskLevel.MUTATING if "_set_" in s.name else RiskLevel.READ)
+        for s in specs.values()
+    )
     assert {by_spec(s).slug for s in specs.values()} == {"apex-wealth"}
 
 

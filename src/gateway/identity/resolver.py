@@ -1,121 +1,41 @@
-"""Identity resolution and the request trust boundary.
-
-This module is the single chokepoint for deciding *who* is making a request.
-There are three front doors, resolved here and nowhere else:
-
-* **Bearer token** (``Authorization: Bearer wmcp_...``) — a self-contained
-  per-user secret used by native MCP clients (Cursor, Claude Desktop). Works from
-  any network path, including the public reverse proxy.
-* **OAuth token** — a Clerk-signed, resource-bound access token. Its subject
-  identifies one gateway user across OAuth clients, or an existing user when
-  explicitly linked. Accepted only on MCP mounts.
-* **Trusted header identity** (``X-Open-WebUI-*``) — used by the on-host Open
-  WebUI deployment. Only honored when the request also presents the
-  ``X-Gateway-Auth`` shared secret, which the public reverse proxy strips. The
-  caller-controlled ``Origin`` header is *not* trusted for this.
-"""
+"""OAuth-only identity resolution with stable issuer/subject ownership."""
 
 from __future__ import annotations
 
 import hashlib
-import hmac
 from collections.abc import Mapping
-from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from gateway.config import Settings
-from gateway.crypto.tokens import hash_token
 from gateway.db.engine import session_scope
-from gateway.db.models import ClientToken, OAuthIdentityLink, User
+from gateway.db.models import OAuthIdentityLink, User
 from gateway.identity.models import AuthenticatedUser, IdentityError
-
-# Open WebUI forwards identity under "X-OpenWebUI-User-*" (one word) when
-# ENABLE_FORWARD_USER_INFO_HEADERS is set; the spec/older configs use the
-# hyphenated "X-Open-WebUI-User-*". Accept both spellings, preferring the first
-# present in each tuple.
-HEADER_USER_ID = ("x-openwebui-user-id", "x-open-webui-user-id")
-HEADER_USER_EMAIL = ("x-openwebui-user-email", "x-open-webui-user-email")
-HEADER_USER_NAME = ("x-openwebui-user-name", "x-open-webui-user-name")
-HEADER_CHAT_ID = ("x-openwebui-chat-id", "x-open-webui-chat-id")
-HEADER_MESSAGE_ID = ("x-openwebui-message-id", "x-open-webui-message-id")
-HEADER_AUTOMATION_ID = ("x-openwebui-automation-id", "x-open-webui-automation-id")
-HEADER_GATEWAY_AUTH = "x-gateway-auth"
-HEADER_AUTHORIZATION = "authorization"
-
-
-def _first_header(norm: dict[str, str], names: tuple[str, ...]) -> str:
-    """Return the first non-empty value among the given (lower-cased) header names."""
-    for name in names:
-        value = (norm.get(name) or "").strip()
-        if value:
-            return value
-    return ""
-
-
-def _normalize(headers: Mapping[str, str]) -> dict[str, str]:
-    """Lower-case header keys for case-insensitive lookup."""
-    return {k.lower(): v for k, v in headers.items()}
-
-
-def _gateway_secret_ok(headers: Mapping[str, str], settings: Settings) -> bool:
-    """Return True if the request proves it comes from the trusted Open WebUI.
-
-    The proof is the ``X-Gateway-Auth`` shared secret, compared in constant time.
-    The public reverse proxy strips this header, so a public caller can never
-    present it. ``DEV_TRUST_ALL_ORIGINS`` bypasses the check for local dev only.
-    """
-    if settings.dev_trust_all_origins:
-        return True
-
-    presented = headers.get(HEADER_GATEWAY_AUTH, "")
-    expected = settings.gateway_shared_secret
-    if not presented or not expected:
-        return False
-    return hmac.compare_digest(presented, expected)
 
 
 def _extract_bearer(headers: Mapping[str, str]) -> str | None:
     """Return the bearer token from the Authorization header, if present."""
-    value = headers.get(HEADER_AUTHORIZATION, "")
+    value = headers.get("authorization", "")
     scheme, _, token = value.partition(" ")
     if scheme.lower() == "bearer" and token.strip():
         return token.strip()
     return None
 
 
-def _resolve_bearer(token: str, session: Session) -> AuthenticatedUser:
-    """Resolve a native-client bearer token to its user, or raise.
-
-    Looks up the un-revoked ``ClientToken`` by hash and bumps ``last_used_at``.
-    """
-    row = session.scalar(
-        select(ClientToken).where(
-            ClientToken.token_hash == hash_token(token),
-            ClientToken.revoked_at.is_(None),
-        )
-    )
-    if row is None:
-        raise IdentityError("invalid or revoked bearer token")
-
-    row.last_used_at = datetime.now(UTC)
-    user = row.user
-    return AuthenticatedUser(
-        external_user_id=user.external_user_id,
-        email=user.email,
-        display_name=user.display_name,
-        source="token",
-    )
-
-
 def _resolve_oauth(
     token: str, settings: Settings, resource: str, session: Session
 ) -> AuthenticatedUser:
     """Map a Clerk subject to a stable gateway user, honoring explicit links."""
-    from gateway.oauth.clerk import issuer_url, verify_access_token
+    from gateway.oauth.clerk import issuer_url, verify_access_claims
 
-    subject = verify_access_token(token, settings, resource)
+    claims = verify_access_claims(token, settings, resource)
+    subject = claims["sub"]
+    client_id = claims.get("client_id") or claims.get("azp")
+    if not isinstance(client_id, str) or not client_id or len(client_id) > 255:
+        raise IdentityError("missing verified OAuth client identifier")
+    if claims.get("client_id") and claims.get("azp") and claims["client_id"] != claims["azp"]:
+        raise IdentityError("ambiguous OAuth client identifier")
     issuer = issuer_url(settings)
     link = session.scalar(
         select(OAuthIdentityLink).where(
@@ -128,7 +48,11 @@ def _resolve_oauth(
         # mutable email, determine identity. Keep the legacy external ID short.
         digest = hashlib.sha256(f"{issuer}\0{subject}".encode()).hexdigest()
         return AuthenticatedUser(
-            external_user_id=f"oauth:{digest}", source="oauth", clerk_subject=subject
+            external_user_id=f"oauth:{digest}",
+            source="oauth",
+            clerk_subject=subject,
+            oauth_client_id=client_id,
+            oauth_resource=resource,
         )
     user = link.user
     return AuthenticatedUser(
@@ -137,6 +61,8 @@ def _resolve_oauth(
         display_name=user.display_name,
         source="oauth",
         clerk_subject=subject,
+        oauth_client_id=client_id,
+        oauth_resource=resource,
     )
 
 
@@ -147,51 +73,16 @@ def resolve_identity(
     *,
     oauth_resource: str | None = None,
 ) -> AuthenticatedUser:
-    """Resolve the authenticated user from request headers, or raise.
-
-    Dispatches between three front doors:
-
-    1. ``Authorization: Bearer <token>`` — a native-client token, valid from any
-       network path. Requires a DB session; one is opened if not supplied.
-    2. ``Authorization: Bearer <OAuth JWT>`` on an MCP resource — verified
-       against Clerk and mapped to a stable user. Explicit links take precedence
-       for users with existing Open WebUI connections.
-    3. ``X-Open-WebUI-*`` identity — trusted only when the ``X-Gateway-Auth``
-       shared secret is presented.
-
-    Raises:
-        IdentityError: if the request is not authorized or carries no user id.
-    """
-    norm = _normalize(headers)
-
+    """Require a verified resource-bound OAuth token; legacy credentials are rejected."""
+    norm = {k.lower(): v for k, v in headers.items()}
     bearer = _extract_bearer(norm)
-    if bearer is not None:
-        if session is not None:
-            if oauth_resource and not bearer.startswith("wmcp_") and settings.clerk_issuer:
-                return _resolve_oauth(bearer, settings, oauth_resource, session)
-            return _resolve_bearer(bearer, session)
-        with session_scope() as owned:
-            if oauth_resource and not bearer.startswith("wmcp_") and settings.clerk_issuer:
-                return _resolve_oauth(bearer, settings, oauth_resource, owned)
-            return _resolve_bearer(bearer, owned)
-
-    if not _gateway_secret_ok(norm, settings):
-        raise IdentityError("request not authorized for header-based identity")
-
-    external_user_id = _first_header(norm, HEADER_USER_ID)
-    if not external_user_id:
-        raise IdentityError("missing X-OpenWebUI-User-Id")
-
-    email = _first_header(norm, HEADER_USER_EMAIL) or None
-    display_name = _first_header(norm, HEADER_USER_NAME) or None
-    return AuthenticatedUser(
-        external_user_id=external_user_id,
-        email=email,
-        display_name=display_name,
-        chat_id=_first_header(norm, HEADER_CHAT_ID) or None,
-        message_id=_first_header(norm, HEADER_MESSAGE_ID) or None,
-        automation_id=_first_header(norm, HEADER_AUTOMATION_ID) or None,
-    )
+    if not bearer or bearer.startswith("wmcp_"):
+        raise IdentityError("OAuth authentication required")
+    resource = oauth_resource or f"{settings.base_url.rstrip('/')}/mcp"
+    if session is not None:
+        return _resolve_oauth(bearer, settings, resource, session)
+    with session_scope() as owned:
+        return _resolve_oauth(bearer, settings, resource, owned)
 
 
 def get_or_create_user(session: Session, auth: AuthenticatedUser) -> User:

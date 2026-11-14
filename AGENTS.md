@@ -51,8 +51,8 @@ with Open WebUI's native tool-server UI:
   `storage_not_configured` and nothing else is affected. See
   `docs/recipes-capella.md`.
 
-Mount every MCP app behind `IdentityMiddleware`, using the same Open WebUI
-forwarded-user headers and `X-Gateway-Auth` shared secret. Do not create separate
+Mount every MCP app behind `IdentityMiddleware`, requiring verified Clerk OAuth
+with resource audience and client identifier. Legacy headers and static tokens are rejected. Do not create separate
 backend services for Calendar/Drive/Tasks just to support product selection.
 
 ## Layout
@@ -158,3 +158,19 @@ Run the server locally: `uv run uvicorn gateway.app:create_app --factory --reloa
 - Keep ruff clean and tests green before considering work done.
 - Never log or persist raw tokens, file contents, or free-text event fields.
 - Use Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`, `docs:`, ...).
+
+## OAuth client permissions
+
+Client grants are owner-scoped and OAuth-client-scoped explicit tool allowlists.
+Every connector keeps its own `/mcp/<slug>` mount; `/mcp` remains compatible.
+Filter discovery and enforce grants in the uniform pipeline before confirmation.
+Only the interactive browser session may manage grants (with CSRF protection).
+New tools are denied until selected. Never reintroduce key/header authentication.
+
+## Connector access modes
+
+`Connector.access_mode` defaults to `AccessMode.PERSONAL`: keep explicit tool grants
+for user-owned data, including Recipes. Finance explicitly uses
+`AccessMode.AUTHENTICATED_SHARED` for generic read-only data available to all signed-in
+OAuth users. Never infer shared access from absent upstream credentials. Shared
+connectors must contain only READ tools; MCP construction validates this invariant.

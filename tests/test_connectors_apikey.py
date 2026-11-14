@@ -58,9 +58,7 @@ class _Session:
 
 
 def _ctx(user_id=None) -> CallContext:
-    return CallContext(
-        user_id=user_id or uuid.uuid4(), external_user_id="alice", request_id="r1"
-    )
+    return CallContext(user_id=user_id or uuid.uuid4(), external_user_id="alice", request_id="r1")
 
 
 def _request(headers: dict[str, str] | None = None) -> Request:
@@ -98,9 +96,7 @@ def test_store_api_key_creates_connection_and_token(monkeypatch):
 def test_store_api_key_overwrites_existing_key(monkeypatch):
     monkeypatch.setattr(apikey, "get_cipher", lambda: _Cipher())
     existing_token = SimpleNamespace(encrypted_access_token=b"encrypted:old", expires_at=None)
-    existing_conn = SimpleNamespace(
-        id=uuid.uuid4(), status="active", token=existing_token
-    )
+    existing_conn = SimpleNamespace(id=uuid.uuid4(), status="active", token=existing_token)
     session = _Session(existing=existing_conn)
 
     conn = apikey.store_api_key(session, uuid.uuid4(), "apex", "pk_live_rotated")
@@ -180,7 +176,7 @@ def test_apex_set_api_key_tool_stores_the_key(monkeypatch):
     assert stored == {"user_id": ctx.user_id, "provider": "apex", "api_key": "pk_live_x"}
 
 
-def test_apex_auth_registers_read_risk_tool():
+def test_apex_auth_classifies_settings_as_writes():
     from gateway.providers.base import RiskLevel
     from gateway.providers.registry import ToolRegistry
 
@@ -189,14 +185,15 @@ def test_apex_auth_registers_read_risk_tool():
     specs = {spec.name: spec for spec in registry._specs}
 
     assert set(specs) == {"apex_set_api_key", "apex_list_workspaces", "apex_set_workspace"}
-    assert all(spec.risk is RiskLevel.READ for spec in specs.values())
+    assert specs["apex_list_workspaces"].risk is RiskLevel.READ
+    assert specs["apex_set_api_key"].risk is RiskLevel.MUTATING
+    assert specs["apex_set_workspace"].risk is RiskLevel.MUTATING
 
 
 # --- HTTP intake route ---------------------------------------------------------
 
 
 async def test_set_api_key_route_rejects_unauthenticated(monkeypatch):
-    monkeypatch.setattr(connectors_routes, "get_settings", _settings)
 
     response = await connectors_routes.set_api_key(
         "apex", connectors_routes.SetApiKeyBody(api_key="pk_live_x"), _request()
@@ -207,11 +204,10 @@ async def test_set_api_key_route_rejects_unauthenticated(monkeypatch):
 
 
 async def test_set_api_key_route_rejects_unknown_slug(monkeypatch):
-    monkeypatch.setattr(connectors_routes, "get_settings", _settings)
     monkeypatch.setattr(
         connectors_routes,
-        "resolve_identity",
-        lambda _headers, _settings: AuthenticatedUser("alice", "alice@example.com"),
+        "request_user",
+        lambda _request: AuthenticatedUser("alice", "alice@example.com"),
     )
 
     response = await connectors_routes.set_api_key(
@@ -224,11 +220,10 @@ async def test_set_api_key_route_rejects_unknown_slug(monkeypatch):
 
 
 async def test_set_api_key_route_rejects_oauth_connector(monkeypatch):
-    monkeypatch.setattr(connectors_routes, "get_settings", _settings)
     monkeypatch.setattr(
         connectors_routes,
-        "resolve_identity",
-        lambda _headers, _settings: AuthenticatedUser("alice", "alice@example.com"),
+        "request_user",
+        lambda _request: AuthenticatedUser("alice", "alice@example.com"),
     )
 
     response = await connectors_routes.set_api_key(
@@ -239,11 +234,10 @@ async def test_set_api_key_route_rejects_oauth_connector(monkeypatch):
 
 
 async def test_set_api_key_route_stores_key_for_apex(monkeypatch):
-    monkeypatch.setattr(connectors_routes, "get_settings", _settings)
     monkeypatch.setattr(
         connectors_routes,
-        "resolve_identity",
-        lambda _headers, _settings: AuthenticatedUser("alice", "alice@example.com"),
+        "request_user",
+        lambda _request: AuthenticatedUser("alice", "alice@example.com"),
     )
 
     from contextlib import contextmanager
@@ -274,13 +268,11 @@ async def test_set_api_key_route_stores_key_for_apex(monkeypatch):
     assert stored == {"user_id": user.id, "provider": "apex", "api_key": "pk_live_x"}
 
 
-
 async def test_set_api_key_route_stores_wealth_key_under_wealth_provider(monkeypatch):
-    monkeypatch.setattr(connectors_routes, "get_settings", _settings)
     monkeypatch.setattr(
         connectors_routes,
-        "resolve_identity",
-        lambda _headers, _settings: AuthenticatedUser("alice", "alice@example.com"),
+        "request_user",
+        lambda _request: AuthenticatedUser("alice", "alice@example.com"),
     )
 
     from contextlib import contextmanager

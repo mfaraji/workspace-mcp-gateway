@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     ForeignKey,
@@ -236,3 +237,18 @@ class TelegramDelivery(Base, TimestampMixin):
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     destination: Mapped[TelegramDestination] = relationship(back_populates="deliveries")
+
+
+class ClientGrant(Base, TimestampMixin):
+    """Explicit tool allowlist for one user's OAuth application."""
+
+    __tablename__ = "client_grants"
+    __table_args__ = (UniqueConstraint("user_id", "issuer", "client_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    issuer: Mapped[str] = mapped_column(String(512))
+    client_id: Mapped[str] = mapped_column(String(255))
+    tools: Mapped[list[str]] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), default=list)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)

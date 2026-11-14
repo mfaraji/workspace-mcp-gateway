@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Connector permissions · Workspace</title>
+  <link rel="stylesheet" href="/access/page.css?v=2">
+  <script src="/access/page.js?v=4" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="brand"><span class="brand-mark" aria-hidden="true">W</span> Workspace <span class="brand-detail">Connector access</span></header>
+    <div class="layout">
+      <section class="intro">
+        <span class="eyebrow">YOU'RE IN CONTROL</span>
+        <h1 id="title">Choose what your client can do.</h1>
+        <p id="intro">Give your client access to the tools you need. You can change these permissions at any time.</p>
+        <ol class="steps"><li><span class="step-icon">✓</span><div><strong>Account connected</strong><small>Your sign-in is complete.</small></div></li><li aria-current="step"><span class="step-icon active">2</span><div><strong>Choose permissions</strong><small>Read access first. Writes are your choice.</small></div></li></ol>
+        <div class="privacy-note"><strong>Your account stays yours.</strong><p>Access applies to this client. Your provider credentials stay protected on the gateway.</p></div>
+      </section>
+      <section class="panel" aria-label="Tool permissions">
+        <div class="panel-header"><div><span class="eyebrow">CLIENT ACCESS</span><h2 id="connection-name">Connector permissions</h2></div><span class="badge">OAuth connected</span></div>
+        <div class="client-field"><label for="client">Connected client</label><select id="client" disabled></select><p id="scope-note">Loading available tools…</p></div>
+        <div id="tools" aria-busy="true"><p class="loading">Loading your permissions…</p></div>
+        <div class="summary" id="summary" aria-live="polite"></div>
+        <div class="actions"><button class="primary" id="save" disabled>Save permissions <span aria-hidden="true">→</span></button><button class="text-button" id="revoke" disabled>Remove access</button></div>
+        <p id="status" role="status" aria-live="polite"></p>
+      </section>
+    </div>
+    <footer>Workspace MCP Gateway <span>Permissions can be updated or revoked at any time.</span></footer>
+  </main>
+</body>
+</html>

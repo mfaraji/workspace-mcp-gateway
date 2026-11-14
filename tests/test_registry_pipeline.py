@@ -10,6 +10,8 @@ a real database, since rollback semantics can't be observed without one.
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel, Field
@@ -46,17 +48,22 @@ def _spec(name: str, handler) -> ToolSpec:
 def _audit_rows(tool_name: str) -> list[ToolAuditLog]:
     with session_scope() as session:
         return list(
-            session.scalars(
-                select(ToolAuditLog).where(ToolAuditLog.tool_name == tool_name)
-            )
+            session.scalars(select(ToolAuditLog).where(ToolAuditLog.tool_name == tool_name))
         )
 
 
 def _run_as(external_user_id: str, spec: ToolSpec, args: dict):
     """Drive the pipeline with a current user set in the request context var."""
-    token = mcp_context._current_user.set(AuthenticatedUser(external_user_id))
+    token = mcp_context._current_user.set(
+        AuthenticatedUser(external_user_id, source="oauth", oauth_client_id="test-client")
+    )
     try:
-        return _run_pipeline(spec, get_settings(), args, None)
+        # Keep these audit transaction tests independent of the grants migration.
+        with patch(
+            "gateway.access.policy.grant_for",
+            return_value=SimpleNamespace(tools=[spec.name], revoked=False),
+        ):
+            return _run_pipeline(spec, get_settings(), args, None)
     finally:
         mcp_context._current_user.reset(token)
 

@@ -16,10 +16,11 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from oauthlib.oauth2 import OAuth2Error
 
+from gateway.access.routes import request_user
 from gateway.config import get_settings
 from gateway.db.engine import session_scope
 from gateway.identity.models import IdentityError
-from gateway.identity.resolver import get_or_create_user, resolve_identity
+from gateway.identity.resolver import get_or_create_user
 from gateway.logging import get_logger
 from gateway.oauth import google as goog
 from gateway.providers.google.connections import (
@@ -49,22 +50,23 @@ def _relax_oauthlib_scope_check() -> Iterator[None]:
 
 def _resolve(request: Request):
     """Resolve the authenticated user for an OAuth route, or raise IdentityError."""
-    return resolve_identity(dict(request.headers), get_settings())
+    return request_user(request)
 
 
 def _resolve_start_user(request: Request, settings) -> str | None:
     """Resolve the external user id for the start route from identity or ticket."""
     try:
-        return _resolve(request).external_user_id
+        auth = _resolve(request)
     except IdentityError:
-        pass
+        return None
     ticket = request.query_params.get("ticket")
     if ticket:
         try:
-            return goog.verify_connect_ticket(settings, ticket)
+            if goog.verify_connect_ticket(settings, ticket) != auth.external_user_id:
+                return None
         except ValueError:
             return None
-    return None
+    return auth.external_user_id
 
 
 @router.get("/start")
@@ -79,10 +81,10 @@ async def start(request: Request):
 
     external_user_id = _resolve_start_user(request, settings)
     if external_user_id is None:
-        return JSONResponse(
-            {"error": "unauthorized", "detail": "no identity or valid connect ticket"},
-            status_code=401,
+        request.session["return_to"] = str(request.url.path) + (
+            "?" + request.url.query if request.url.query else ""
         )
+        return RedirectResponse("/access/login", status_code=303)
     product = request.query_params.get("product")
     try:
         scopes = goog.scopes_for_product(product)

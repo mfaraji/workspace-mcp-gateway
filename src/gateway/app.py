@@ -29,6 +29,9 @@ def create_app() -> FastAPI:
     """Construct and return the FastAPI application."""
     configure_logging()
     settings = get_settings()
+    from gateway.oauth.clerk import issuer_url
+
+    issuer_url(settings)  # OAuth is mandatory; never fall back to legacy identity.
 
     mcp_servers = {"all": build_mcp(settings)}
     for connector in CONNECTORS:
@@ -48,7 +51,32 @@ def create_app() -> FastAPI:
             close_capella()
 
     app = FastAPI(title="workspace-mcp-gateway", lifespan=lifespan)
-    app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.session_secret,
+        https_only=True,
+        same_site="lax",
+        max_age=3600,
+    )
+    from gateway.access.routes import router as access_router
+
+    app.include_router(access_router)
+    from gateway.access.consent import router as consent_router
+
+    app.include_router(consent_router)
+    app.state.access_catalog = [
+        {
+            "slug": c.slug,
+            "name": c.display_name,
+            "access_mode": c.access_mode.value,
+            "tools": [
+                {"name": t.name, "description": t.description, "risk": t.risk.value}
+                for t in mcp_servers["all"].gateway_specs
+                if c.matches(t)
+            ],
+        }
+        for c in CONNECTORS
+    ]
 
     from gateway.api.drive import router as drive_api_router
     from gateway.api.telegram import router as telegram_api_router

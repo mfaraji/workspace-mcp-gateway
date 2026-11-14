@@ -12,13 +12,13 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from gateway.config import get_settings
+from gateway.access.routes import request_user
 from gateway.connectors.apikey import store_api_key
 from gateway.connectors.registry import by_slug
 from gateway.connectors.upstream import ApiKeyStrategy
 from gateway.db.engine import session_scope
 from gateway.identity.models import IdentityError
-from gateway.identity.resolver import get_or_create_user, resolve_identity
+from gateway.identity.resolver import get_or_create_user
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
 
@@ -30,9 +30,8 @@ class SetApiKeyBody(BaseModel):
 @router.post("/{slug}/apikey")
 async def set_api_key(slug: str, body: SetApiKeyBody, request: Request) -> JSONResponse:
     """Store the calling user's API key for one API-key-based connector."""
-    settings = get_settings()
     try:
-        auth = resolve_identity(dict(request.headers), settings)
+        auth = request_user(request)
     except IdentityError as exc:
         return JSONResponse({"error": "unauthorized", "detail": str(exc)}, status_code=401)
 

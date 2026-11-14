@@ -95,9 +95,16 @@ def env(monkeypatch):
     read.register(registry)
     write.register(registry)
     specs = {spec.name: spec for spec in registry._specs}
+    # Provider tests supply a grant; grant storage and isolation are tested separately.
+    monkeypatch.setattr(
+        "gateway.access.policy.grant_for",
+        lambda *_: SimpleNamespace(tools=list(specs), revoked=False),
+    )
 
     def call(tool: str, user: str, confirmation_token: str | None = None, **args):
-        token = mcp_context._current_user.set(AuthenticatedUser(user))
+        token = mcp_context._current_user.set(
+            AuthenticatedUser(user, source="oauth", oauth_client_id="test-client")
+        )
         try:
             return _run_pipeline(specs[tool], settings, args, confirmation_token)
         finally:
@@ -193,8 +200,9 @@ def test_update_with_stale_version_conflicts(env):
     key = f"user::{env.users['alice']}::recipe::{saved['id']}"
     env.cluster.collection_.bump(key, servings=10)  # concurrent writer
 
-    err = _err(env, "recipes_update", "alice", recipe_id=saved["id"],
-               version=saved["version"], servings=2)
+    err = _err(
+        env, "recipes_update", "alice", recipe_id=saved["id"], version=saved["version"], servings=2
+    )
     assert err.error_code == "version_conflict"
     assert env.call("recipes_get", "alice", recipe_id=saved["id"])["servings"] == 10
 
@@ -210,8 +218,9 @@ def test_update_cas_race_between_read_and_replace(env, monkeypatch):
         return real_replace(k, value, options)
 
     monkeypatch.setattr(coll, "replace", racing_replace)
-    err = _err(env, "recipes_update", "alice", recipe_id=saved["id"],
-               version=saved["version"], servings=2)
+    err = _err(
+        env, "recipes_update", "alice", recipe_id=saved["id"], version=saved["version"], servings=2
+    )
     assert err.error_code == "version_conflict"
     assert coll.docs[key][0]["servings"] == 99
 
@@ -247,13 +256,17 @@ def test_delete_requires_confirmation(env):
     other = _err(env, "recipes_get", "alice", recipe_id=str(uuid.uuid4()))
     assert other.error_code == "not_found"
     replay = env.call(
-        "recipes_delete", "bob", confirmation_token=first["confirmation_token"],
+        "recipes_delete",
+        "bob",
+        confirmation_token=first["confirmation_token"],
         recipe_id=saved["id"],
     )
     assert replay["status"] == "confirmation_required"
 
     done = env.call(
-        "recipes_delete", "alice", confirmation_token=first["confirmation_token"],
+        "recipes_delete",
+        "alice",
+        confirmation_token=first["confirmation_token"],
         recipe_id=saved["id"],
     )
     assert done == {"deleted": True, "id": saved["id"], "title": "Chocolate Cake"}
@@ -304,17 +317,23 @@ def test_list_paginates_deterministically_and_only_own(env):
 
 def test_list_filters_by_category_and_tag(env):
     env.call("recipes_save", "alice", **CAKE)
-    env.call("recipes_save", "alice", **{**CAKE, "title": "Soup", "category": "Main",
-                                         "tags": ["winter"]})
-    assert [r["title"] for r in env.call("recipes_list", "alice", category="dessert")["items"]] \
-        == ["Chocolate Cake"]
-    assert [r["title"] for r in env.call("recipes_list", "alice", tag="WINTER")["items"]] \
-        == ["Soup"]
+    env.call(
+        "recipes_save", "alice", **{**CAKE, "title": "Soup", "category": "Main", "tags": ["winter"]}
+    )
+    assert [r["title"] for r in env.call("recipes_list", "alice", category="dessert")["items"]] == [
+        "Chocolate Cake"
+    ]
+    assert [r["title"] for r in env.call("recipes_list", "alice", tag="WINTER")["items"]] == [
+        "Soup"
+    ]
 
 
 def test_search_by_title_ingredient_cuisine_tag_with_ranking(env):
-    env.call("recipes_save", "alice", **{**CAKE, "title": "Banana Bread", "tags": ["cake"],
-                                         "ingredients": [{"name": "banana"}]})
+    env.call(
+        "recipes_save",
+        "alice",
+        **{**CAKE, "title": "Banana Bread", "tags": ["cake"], "ingredients": [{"name": "banana"}]},
+    )
     env.call("recipes_save", "alice", **CAKE)
     env.call("recipes_save", "alice", **{**CAKE, "title": "Cake", "tags": []})
 
@@ -380,8 +399,7 @@ def test_client_cannot_supply_owner_or_id(env):
 
 
 def test_missing_and_malformed_ids(env):
-    assert _err(env, "recipes_get", "alice", recipe_id=str(uuid.uuid4())).error_code == \
-        "not_found"
+    assert _err(env, "recipes_get", "alice", recipe_id=str(uuid.uuid4())).error_code == "not_found"
     assert _err(env, "recipes_get", "alice", recipe_id="user::x").error_code == "invalid_input"
 
 
@@ -446,8 +464,20 @@ def test_persian_recipe_roundtrip_and_normalized_search(env):
 
 @pytest.mark.parametrize(
     ("text", "value"),
-    [("2", 2.0), ("1.5", 1.5), ("1,5", 1.5), ("1/2", 0.5), ("1 1/2", 1.5), ("½", 0.5),
-     ("1½", 1.5), ("۱/۲", 0.5), ("۲٫۵", 2.5), ("a pinch", None), ("2-3", None), ("1/0", None)],
+    [
+        ("2", 2.0),
+        ("1.5", 1.5),
+        ("1,5", 1.5),
+        ("1/2", 0.5),
+        ("1 1/2", 1.5),
+        ("½", 0.5),
+        ("1½", 1.5),
+        ("۱/۲", 0.5),
+        ("۲٫۵", 2.5),
+        ("a pinch", None),
+        ("2-3", None),
+        ("1/0", None),
+    ],
 )
 def test_parse_quantity(text, value):
     assert parse_quantity(text) == value
@@ -471,8 +501,10 @@ def test_capella_not_configured_returns_stable_error(env, monkeypatch):
 
 def test_capella_unavailable_and_misconfigured(env):
     env.cluster.collection_.fail_with = cbx.UnAmbiguousTimeoutException()
-    assert _err(env, "recipes_get", "alice", recipe_id=str(uuid.uuid4())).error_code == \
-        "storage_unavailable"
+    assert (
+        _err(env, "recipes_get", "alice", recipe_id=str(uuid.uuid4())).error_code
+        == "storage_unavailable"
+    )
     env.cluster.collection_.fail_with = cbx.AmbiguousTimeoutException()
     assert _err(env, "recipes_save", "alice", **CAKE).error_code == "storage_outcome_unknown"
     env.cluster.query_fail_with = cbx.QueryIndexNotFoundException()
@@ -502,15 +534,25 @@ def test_error_classifier_maps_raw_sdk_exceptions():
 
 def test_audit_rows_exclude_recipe_contents(env):
     saved = env.call("recipes_save", "alice", **CAKE, idempotency_key="secret-key")
-    env.call("recipes_update", "alice", recipe_id=saved["id"], version=saved["version"],
-             personal_notes="SECRET-NOTE-2", ingredients=[{"name": "SECRET-INGREDIENT"}])
+    env.call(
+        "recipes_update",
+        "alice",
+        recipe_id=saved["id"],
+        version=saved["version"],
+        personal_notes="SECRET-NOTE-2",
+        ingredients=[{"name": "SECRET-INGREDIENT"}],
+    )
     env.call("recipes_search", "alice", query="SECRET-QUERY", ingredients=["SECRET-ING"])
     env.call("recipes_list", "alice", tag="SECRET-TAG")
     _delete(env, "alice", saved["id"])
 
     summaries = [row.input_summary for row in env.audits]
     assert {row.tool_name for row in env.audits} >= {
-        "recipes_save", "recipes_update", "recipes_search", "recipes_list", "recipes_delete"
+        "recipes_save",
+        "recipes_update",
+        "recipes_search",
+        "recipes_list",
+        "recipes_delete",
     }
     blob = " ".join(summaries)
     for secret in ("SECRET", "Chocolate", "Melt", "grandma", "baking", "secret-key", "Flour"):
@@ -521,8 +563,10 @@ def test_audit_rows_exclude_recipe_contents(env):
 
 def test_audit_summary_for_each_recipe_tool():
     assert summarize_input("recipes_save", {**CAKE}) == "language='en'"
-    assert summarize_input("recipes_list", {"limit": 5, "offset": 0, "tag": "t"}) == \
-        "limit=5, offset=0"
+    assert (
+        summarize_input("recipes_list", {"limit": 5, "offset": 0, "tag": "t"})
+        == "limit=5, offset=0"
+    )
 
 
 # 13. discovery ----------------------------------------------------------------
@@ -533,9 +577,14 @@ def test_recipe_tools_belong_to_recipes_connector():
     read.register(registry)
     write.register(registry)
     assert {s.name for s in registry._specs} == {
-        "recipes_get", "recipes_list", "recipes_search",
-        "recipes_save", "recipes_update", "recipes_delete",
-        "recipes_add_feedback", "recipes_delete_feedback",
+        "recipes_get",
+        "recipes_list",
+        "recipes_search",
+        "recipes_save",
+        "recipes_update",
+        "recipes_delete",
+        "recipes_add_feedback",
+        "recipes_delete_feedback",
     }
     for spec in registry._specs:
         assert by_spec(spec).slug == "recipes"
@@ -559,13 +608,22 @@ def test_ingredient_brand_is_optional_and_roundtrips(env):
 
     # Updating the ingredient list can add/change a brand.
     env.call(
-        "recipes_update", "alice", recipe_id=saved["id"], version=got["version"],
+        "recipes_update",
+        "alice",
+        recipe_id=saved["id"],
+        version=got["version"],
         ingredients=[{"name": "Ketchup", "brand": "Hunt's"}],
     )
     after = env.call("recipes_get", "alice", recipe_id=saved["id"])
     assert after["ingredients"] == [
-        {"name": "Ketchup", "quantity": None, "quantity_text": None, "unit": None,
-         "brand": "Hunt's", "notes": None}
+        {
+            "name": "Ketchup",
+            "quantity": None,
+            "quantity_text": None,
+            "unit": None,
+            "brand": "Hunt's",
+            "notes": None,
+        }
     ]
 
 
@@ -591,8 +649,9 @@ def test_add_feedback_appears_in_get_and_summaries(env):
     rid = env.call("recipes_save", "alice", **CAKE)["id"]
     assert env.call("recipes_get", "alice", recipe_id=rid)["feedback"] == []
 
-    first = _fb(env, "alice", rid, rating=4, comment="Great, less sugar next time",
-                cooked_on="2026-10-30")
+    first = _fb(
+        env, "alice", rid, rating=4, comment="Great, less sugar next time", cooked_on="2026-10-30"
+    )
     second = _fb(env, "alice", rid, rating=5)
     assert first["added"] is True and second["feedback_count"] == 2
     assert second["rating_avg"] == 4.5
@@ -635,10 +694,17 @@ def test_feedback_idempotency_key_prevents_duplicates(env):
 
 def test_feedback_validation(env):
     rid = env.call("recipes_save", "alice", **CAKE)["id"]
-    for bad in ({"rating": 0}, {"rating": 6}, {"rating": 3, "comment": "x" * 2001},
-                {"rating": 3, "cooked_on": "yesterday"}, {"rating": 3, "owner_user_id": "x"}):
-        assert _err(env, "recipes_add_feedback", "alice", recipe_id=rid, **bad).error_code == \
-            "invalid_input"
+    for bad in (
+        {"rating": 0},
+        {"rating": 6},
+        {"rating": 3, "comment": "x" * 2001},
+        {"rating": 3, "cooked_on": "yesterday"},
+        {"rating": 3, "owner_user_id": "x"},
+    ):
+        assert (
+            _err(env, "recipes_add_feedback", "alice", recipe_id=rid, **bad).error_code
+            == "invalid_input"
+        )
 
 
 def test_feedback_limited_per_recipe(env):
@@ -647,18 +713,27 @@ def test_feedback_limited_per_recipe(env):
     env.cluster.collection_.bump(
         key, feedback=[{"id": str(uuid.uuid4()), "rating": 3} for _ in range(100)]
     )
-    assert _err(env, "recipes_add_feedback", "alice", recipe_id=rid, rating=3).error_code == \
-        "invalid_input"
+    assert (
+        _err(env, "recipes_add_feedback", "alice", recipe_id=rid, rating=3).error_code
+        == "invalid_input"
+    )
 
 
 def test_feedback_is_owner_scoped(env):
     rid = env.call("recipes_save", "alice", **CAKE)["id"]
     fid = _fb(env, "alice", rid, rating=5)["feedback_id"]
-    assert _err(env, "recipes_add_feedback", "bob", recipe_id=rid, rating=1).error_code == \
-        "not_found"
+    assert (
+        _err(env, "recipes_add_feedback", "bob", recipe_id=rid, rating=1).error_code == "not_found"
+    )
     pending = env.call("recipes_delete_feedback", "bob", recipe_id=rid, feedback_id=fid)
-    err = _err(env, "recipes_delete_feedback", "bob", recipe_id=rid, feedback_id=fid,
-               confirmation_token=pending["confirmation_token"])
+    err = _err(
+        env,
+        "recipes_delete_feedback",
+        "bob",
+        recipe_id=rid,
+        feedback_id=fid,
+        confirmation_token=pending["confirmation_token"],
+    )
     assert err.error_code == "not_found"
     assert env.call("recipes_get", "alice", recipe_id=rid)["feedback_count"] == 1
 
@@ -672,14 +747,25 @@ def test_delete_feedback_requires_confirmation(env):
     assert first["status"] == "confirmation_required"
     assert env.call("recipes_get", "alice", recipe_id=rid)["feedback_count"] == 2
 
-    done = env.call("recipes_delete_feedback", "alice", recipe_id=rid, feedback_id=drop,
-                    confirmation_token=first["confirmation_token"])
+    done = env.call(
+        "recipes_delete_feedback",
+        "alice",
+        recipe_id=rid,
+        feedback_id=drop,
+        confirmation_token=first["confirmation_token"],
+    )
     assert done["deleted"] is True and done["feedback_count"] == 1 and done["rating_avg"] == 2.0
     assert [f["id"] for f in env.call("recipes_get", "alice", recipe_id=rid)["feedback"]] == [keep]
 
     missing = env.call("recipes_delete_feedback", "alice", recipe_id=rid, feedback_id=drop)
-    err = _err(env, "recipes_delete_feedback", "alice", recipe_id=rid, feedback_id=drop,
-               confirmation_token=missing["confirmation_token"])
+    err = _err(
+        env,
+        "recipes_delete_feedback",
+        "alice",
+        recipe_id=rid,
+        feedback_id=drop,
+        confirmation_token=missing["confirmation_token"],
+    )
     assert err.error_code == "not_found"
 
 

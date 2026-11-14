@@ -178,6 +178,9 @@ def _execute(
     committed-path audits (``ok`` and ``needs_confirmation``).
     """
     with session_scope() as session:
+        from gateway.access.policy import enforce
+
+        enforce(session, user_id, settings, auth, spec)
         ctx = CallContext(
             user_id=user_id,
             external_user_id=auth.external_user_id,

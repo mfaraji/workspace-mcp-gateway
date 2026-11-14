@@ -54,47 +54,17 @@ def test_rejects_wrong_shared_secret():
         )
 
 
-def test_accepts_with_shared_secret():
-    settings = _settings()
-    auth = resolve_identity(
-        {
-            "X-Gateway-Auth": SECRET,
-            "X-Open-WebUI-User-Id": "alice",
-            "X-Open-WebUI-User-Email": "alice@example.com",
-            "X-Open-WebUI-User-Name": "Alice",
-        },
-        settings,
-    )
-    assert auth.external_user_id == "alice"
-    assert auth.email == "alice@example.com"
-    assert auth.display_name == "Alice"
-
-
-def test_accepts_openwebui_oneword_header_spelling():
-    """Open WebUI forwards X-OpenWebUI-User-* (one word); accept that too."""
-    settings = _settings()
-    auth = resolve_identity(
-        {
-            "X-Gateway-Auth": SECRET,
-            "X-OpenWebUI-User-Id": "dave",
-            "X-OpenWebUI-User-Email": "dave@example.com",
-        },
-        settings,
-    )
-    assert auth.external_user_id == "dave"
-    assert auth.email == "dave@example.com"
-
-
-def test_secret_present_but_missing_user_id():
-    settings = _settings()
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"X-Gateway-Auth": SECRET, "X-OpenWebUI-User-Id": "alice"},
+        {"X-Gateway-Auth": SECRET, "X-Open-WebUI-User-Id": "alice"},
+        {"Authorization": "Bearer wmcp_oldtoken"},
+    ],
+)
+def test_legacy_credentials_rejected_even_with_dev_bypass(headers):
     with pytest.raises(IdentityError):
-        resolve_identity({"x-gateway-auth": SECRET}, settings)
-
-
-def test_dev_trust_all_origins_bypasses_secret_check():
-    settings = _settings(dev_trust_all_origins=True)
-    auth = resolve_identity({"x-open-webui-user-id": "carol"}, settings)
-    assert auth.external_user_id == "carol"
+        resolve_identity(headers, _settings(dev_trust_all_origins=True))
 
 
 def test_token_cipher_roundtrip():

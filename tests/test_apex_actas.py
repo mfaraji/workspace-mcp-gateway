@@ -295,7 +295,9 @@ def _db():
 
 
 def test_oauth_unlinked_and_linked_carry_subject(monkeypatch):
-    monkeypatch.setattr(clerk, "verify_access_token", lambda *_a, **_k: "user_abc")
+    monkeypatch.setattr(
+        clerk, "verify_access_claims", lambda *_a, **_k: {"sub": "user_abc", "azp": "client"}
+    )
     engine = _db()
     headers = {"Authorization": "Bearer t"}
     with Session(engine) as session:
@@ -337,9 +339,7 @@ def test_subject_passthrough_for_future_clerk_login():
     # A front door that already knows the subject needs no lookup at all.
     auth_user = AuthenticatedUser(external_user_id="x", clerk_subject="user_zzz")
     session = SimpleNamespace(scalar=lambda *_: pytest.fail("queried"))
-    assert (
-        registry_mod._clerk_subject(_spec(), _settings(), auth_user, None, session) == "user_zzz"
-    )
+    assert registry_mod._clerk_subject(_spec(), _settings(), auth_user, None, session) == "user_zzz"
 
 
 @pytest.mark.parametrize(

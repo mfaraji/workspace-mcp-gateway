@@ -19,6 +19,7 @@ def _settings() -> Settings:
         gateway_shared_secret="shared-secret-value",
         trusted_open_webui_origin="https://openwebui.internal",
         session_secret="sess",
+        clerk_issuer="https://clerk.example.test",
     )
 
 
@@ -34,8 +35,7 @@ def test_product_filters_register_expected_calendar_tools():
     assert "google_calendar_list_events" in names
     assert "google_calendar_create_event" in names
     assert all(
-        name == "system_get_current_time" or name.startswith("google_calendar_")
-        for name in names
+        name == "system_get_current_time" or name.startswith("google_calendar_") for name in names
     )
 
 
@@ -57,8 +57,7 @@ def test_tasks_filter_registers_expected_tasks_tools():
     assert "google_tasks_create_task" in names
     assert "google_tasks_delete_task" in names
     assert all(
-        name == "system_get_current_time" or name.startswith("google_tasks_")
-        for name in names
+        name == "system_get_current_time" or name.startswith("google_tasks_") for name in names
     )
 
 
@@ -173,7 +172,7 @@ def test_every_mcp_mount_is_behind_identity_middleware(monkeypatch):
     get_settings.cache_clear()
 
 
-def test_app_starts_without_capella_and_lists_recipe_tools(monkeypatch):
+def test_app_starts_without_capella_and_rejects_legacy_headers(monkeypatch):
     """The app boots with Capella unset and /mcp/recipes/ serves tool discovery."""
     from fastapi.testclient import TestClient
 
@@ -195,11 +194,8 @@ def test_app_starts_without_capella_and_lists_recipe_tools(monkeypatch):
             headers=headers,
             json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
         )
-    assert response.status_code == 200, response.text
-    body = response.text
-    for name in ("recipes_get", "recipes_search", "recipes_delete", "system_get_current_time"):
-        assert name in body
-    assert "google_calendar" not in body
+    assert response.status_code == 401
+    assert "OAuth authentication required" in response.text
 
     get_settings.cache_clear()
 

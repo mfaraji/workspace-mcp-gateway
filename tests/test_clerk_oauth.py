@@ -6,7 +6,6 @@ import json
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from urllib.parse import parse_qs, urlparse
 
 import jwt
 import pytest
@@ -16,12 +15,12 @@ from sqlalchemy.orm import Session
 
 from gateway.app import create_app
 from gateway.config import Settings
-from gateway.db.models import OAuthIdentityLink, OAuthLinkIntent, User
+from gateway.db.models import OAuthIdentityLink, User
 from gateway.identity.models import IdentityError
 from gateway.identity.resolver import get_or_create_user, resolve_identity
 from gateway.mcp.context import _send_401
 from gateway.mcp.server import build_mcp, product_tool_filter
-from gateway.oauth import clerk, clerk_routes
+from gateway.oauth import clerk
 from gateway.oauth.clerk_routes import protected_resource_metadata
 
 
@@ -61,9 +60,30 @@ async def test_resource_metadata_on_all_and_product_mounts(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_tools_advertise_oauth_when_enabled():
+async def test_tools_advertise_oauth_when_enabled(monkeypatch):
     mcp = build_mcp(_settings(), product_tool_filter("telegram"))
-    tools = await mcp.list_tools()
+    from gateway.identity.models import AuthenticatedUser
+    from gateway.mcp.context import _current_user
+
+    @contextmanager
+    def scope():
+        yield object()
+
+    monkeypatch.setattr("gateway.db.engine.session_scope", scope)
+    monkeypatch.setattr(
+        "gateway.identity.resolver.get_or_create_user", lambda *_: SimpleNamespace(id="u")
+    )
+    monkeypatch.setattr(
+        "gateway.access.policy.allowed_tools",
+        lambda *_: {"telegram_list_destinations", "telegram_send_message"},
+    )
+    token = _current_user.set(
+        AuthenticatedUser("u", source="oauth", clerk_subject="s", oauth_client_id="c")
+    )
+    try:
+        tools = await mcp.list_tools()
+    finally:
+        _current_user.reset(token)
     assert {tool.name for tool in tools} == {
         "system_get_current_time",
         "telegram_list_destinations",
@@ -124,102 +144,16 @@ async def test_oauth_disabled_metadata_is_not_advertised(monkeypatch):
     assert response.status_code == 404
 
 
-def test_link_flow_is_single_use_and_unlink_revokes_mapping(monkeypatch):
-    settings = _settings(clerk_link_client_id="link-client", clerk_link_client_secret="secret")
-    engine = create_engine("sqlite+pysqlite:///:memory:")
-    User.__table__.create(engine)
-    OAuthIdentityLink.__table__.create(engine)
-    OAuthLinkIntent.__table__.create(engine)
-
-    @contextmanager
-    def test_session_scope():
-        with Session(engine) as session:
-            yield session
-            session.commit()
-
-    monkeypatch.setattr(clerk_routes, "get_settings", lambda: settings)
-    monkeypatch.setattr(clerk_routes, "session_scope", test_session_scope)
-    monkeypatch.setattr(
-        clerk_routes,
-        "authorization_endpoint",
-        lambda _: "https://clerk.example.test/oauth/authorize",
-    )
-    monkeypatch.setattr(
-        clerk_routes, "token_endpoint", lambda _: "https://clerk.example.test/oauth/token"
-    )
-    monkeypatch.setattr(
-        clerk_routes, "verify_access_token", lambda *_args, **_kwargs: "clerk-user-1"
-    )
-    monkeypatch.setattr(
-        clerk_routes.httpx,
-        "post",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            raise_for_status=lambda: None,
-            json=lambda: {"access_token": "test-token"},
-        ),
-    )
-    request = SimpleNamespace(
-        headers={"x-gateway-auth": "shared-secret", "x-openwebui-user-id": "alice"}
-    )
-
-    started = clerk_routes.link_start(request)
-    url = json.loads(started.body)["url"]
-    query = parse_qs(urlparse(url).query)
-    state = query["state"][0]
-    assert query["resource"] == ["https://mcp.example.test/mcp"]
-    assert query["code_challenge_method"] == ["S256"]
-    assert clerk_routes.link_callback("code-1", state).status_code == 200
-    assert json.loads(clerk_routes.link_status(request).body)["linked"] is True
-    assert clerk_routes.link_callback("code-1", state).status_code == 400
-    with Session(engine) as session:
-        link = session.scalar(select(OAuthIdentityLink))
-        assert link.subject == "clerk-user-1"
-        assert link.user.external_user_id == "alice"
-        monkeypatch.setattr(clerk, "verify_access_token", lambda *_args, **_kwargs: "clerk-user-1")
-        auth = resolve_identity(
-            {"Authorization": "Bearer oauth-token"},
-            settings,
-            session,
-            oauth_resource="https://mcp.example.test/mcp",
-        )
-        assert auth.external_user_id == "alice"
-        assert auth.source == "oauth"
-    assert json.loads(clerk_routes.link_remove(request).body)["linked"] is False
-    assert json.loads(clerk_routes.link_status(request).body)["linked"] is False
-    with Session(engine) as session:
-        unlinked = resolve_identity(
-            {"Authorization": "Bearer oauth-token"},
-            settings,
-            session,
-            oauth_resource="https://mcp.example.test/mcp",
-        )
-        assert unlinked.external_user_id.startswith("oauth:")
-        assert unlinked.external_user_id != "alice"
-        get_or_create_user(session, unlinked)
-        session.commit()
-    with Session(engine) as session:
-        assert session.scalar(select(User).where(User.external_user_id == "alice")) is not None
-        direct_user = session.scalar(
-            select(User).where(User.external_user_id == unlinked.external_user_id)
-        )
-        assert direct_user is not None
-    pending_url = json.loads(clerk_routes.link_start(request).body)["url"]
-    pending_state = parse_qs(urlparse(pending_url).query)["state"][0]
-    clerk_routes.link_remove(request)
-    assert clerk_routes.link_callback("code-2", pending_state).status_code == 400
-
-
-def test_link_start_rejects_untrusted_public_request():
-    request = SimpleNamespace(headers={"x-openwebui-user-id": "alice"})
-    assert clerk_routes.link_start(request).status_code == 401
-
-
 def test_clerk_subject_maps_to_same_user_across_oauth_clients(monkeypatch):
     settings = _settings()
     engine = create_engine("sqlite+pysqlite:///:memory:")
     User.__table__.create(engine)
     OAuthIdentityLink.__table__.create(engine)
-    monkeypatch.setattr(clerk, "verify_access_token", lambda *_args, **_kwargs: "clerk-user-1")
+    monkeypatch.setattr(
+        clerk,
+        "verify_access_claims",
+        lambda *_a, **_k: {"sub": "clerk-user-1", "client_id": "client"},
+    )
 
     with Session(engine) as session:
         chatgpt = resolve_identity(

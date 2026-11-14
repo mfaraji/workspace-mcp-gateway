@@ -45,13 +45,19 @@ def test_two_users_are_isolated_and_tokens_encrypted():
         bob = get_or_create_user(session, AuthenticatedUser("itest-bob"))
 
         upsert_connection(
-            session, user=alice, provider_account_id="alice-google",
-            provider_email="alice@gmail.com", scopes=["scope"],
+            session,
+            user=alice,
+            provider_account_id="alice-google",
+            provider_email="alice@gmail.com",
+            scopes=["scope"],
             creds=StoredCredentials("alice-access", "alice-refresh", None),
         )
         upsert_connection(
-            session, user=bob, provider_account_id="bob-google",
-            provider_email="bob@gmail.com", scopes=["scope"],
+            session,
+            user=bob,
+            provider_account_id="bob-google",
+            provider_email="bob@gmail.com",
+            scopes=["scope"],
             creds=StoredCredentials("bob-access", "bob-refresh", None),
         )
 
@@ -87,16 +93,13 @@ def _mint(session, external_user_id: str, token: str, *, revoked: bool = False) 
     session.flush()
 
 
-def test_bearer_token_resolves_from_untrusted_origin():
+def test_previously_valid_static_token_is_rejected():
     """A valid bearer token authenticates with no gateway secret / origin."""
     settings = get_settings()
     with session_scope() as session:
         _mint(session, "itest-token-user", "wmcp_validtoken123")
-        auth = resolve_identity(
-            {"authorization": "Bearer wmcp_validtoken123"}, settings, session
-        )
-        assert auth.external_user_id == "itest-token-user"
-        assert auth.source == "token"
+        with pytest.raises(IdentityError):
+            resolve_identity({"authorization": "Bearer wmcp_validtoken123"}, settings, session)
 
 
 def test_revoked_bearer_token_rejected():
@@ -104,15 +107,11 @@ def test_revoked_bearer_token_rejected():
     with session_scope() as session:
         _mint(session, "itest-token-revoked", "wmcp_revoked123", revoked=True)
         with pytest.raises(IdentityError):
-            resolve_identity(
-                {"authorization": "Bearer wmcp_revoked123"}, settings, session
-            )
+            resolve_identity({"authorization": "Bearer wmcp_revoked123"}, settings, session)
 
 
 def test_unknown_bearer_token_rejected():
     settings = get_settings()
     with session_scope() as session:
         with pytest.raises(IdentityError):
-            resolve_identity(
-                {"authorization": "Bearer wmcp_doesnotexist"}, settings, session
-            )
+            resolve_identity({"authorization": "Bearer wmcp_doesnotexist"}, settings, session)

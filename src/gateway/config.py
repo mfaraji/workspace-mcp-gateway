@@ -38,25 +38,25 @@ class Settings(BaseSettings):
 
     token_encryption_key: str
 
-    # Shared secret proving a request originates from the trusted Open WebUI
-    # deployment. Open WebUI sends it as the ``X-Gateway-Auth`` header; the public
-    # reverse proxy strips that header, so only the trusted (loopback) path can
-    # present it. This is the primary gate for header-based identity.
-    gateway_shared_secret: str
+    # Compatibility-only inputs: legacy keys/dev bypass are ignored by authentication.
+    gateway_shared_secret: str = ""
 
-    # Defense-in-depth only: the expected Open WebUI origin. No longer the trust
-    # gate (a client can spoof Origin); retained for optional logging/checks.
+    # Allowed MCP transport origin (not an authentication mechanism).
     trusted_open_webui_origin: str
     session_secret: str
 
-    # Clerk OAuth authorization server. Unset means the existing header/static
-    # token paths remain the only authentication methods.
+    # Clerk OAuth is mandatory at application startup.
     clerk_issuer: str | None = None
+    clerk_publishable_key: str | None = None
+    clerk_backend_api_key: SecretStr | None = None
+    clerk_session_audience: str | None = None
+    clerk_browser_client_id: str | None = None
+    clerk_browser_client_secret: str | None = None
     clerk_link_client_id: str | None = None
     clerk_link_client_secret: str | None = None
     clerk_link_scope: str = "openid profile mcp:tools"
 
-    # Local-dev escape hatch: trust identity headers from any origin.
+    # Deprecated and ignored; development also requires OAuth.
     dev_trust_all_origins: bool = False
 
     # Couchbase Capella document storage (optional). Unset means storage-backed

@@ -17,14 +17,15 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import Tool as MCPTool
 
 from gateway.config import Settings
+from gateway.connectors.base import AccessMode
 from gateway.connectors.registry import CONNECTORS, by_slug
-from gateway.providers.base import ToolSpec
+from gateway.providers.base import RiskLevel, ToolSpec
 
 ToolFilter = Callable[[ToolSpec], bool]
 
 
 class GatewayFastMCP(FastMCP):
-    """Advertise OAuth on tools while retaining header and static-token access."""
+    """Advertise only the tools granted to this OAuth user and application."""
 
     def __init__(self, *args, oauth_enabled: bool = False, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -32,6 +33,37 @@ class GatewayFastMCP(FastMCP):
 
     async def list_tools(self) -> list[MCPTool]:
         tools = await super().list_tools()
+        import anyio
+
+        from gateway.access.policy import allowed_tools, setup_url, tool_allowed
+        from gateway.db.engine import session_scope
+        from gateway.identity.resolver import get_or_create_user
+        from gateway.mcp.context import require_current_user
+
+        auth = require_current_user()
+
+        def permitted():
+            with session_scope() as session:
+                user = get_or_create_user(session, auth)
+                return allowed_tools(session, user.id, self.gateway_settings, auth)
+
+        names = await anyio.to_thread.run_sync(permitted)
+        specs = {spec.name: spec for spec in self.gateway_specs}
+        tools = [
+            t.model_copy(deep=True)
+            for t in tools
+            if tool_allowed(specs[t.name], auth, names)
+        ]
+        has_personal = any(
+            c.access_mode is AccessMode.PERSONAL
+            and any(c.matches(spec) and self.gateway_filter(spec) for spec in self.gateway_specs)
+            for c in CONNECTORS
+        )
+        for tool in tools:
+            if tool.name == "system_get_current_time" and has_personal:
+                tool.description += " Manage this client's connector permissions: " + setup_url(
+                    self.gateway_settings, auth
+                )
         if self.oauth_enabled:
             for tool in tools:
                 tool.__pydantic_extra__["securitySchemes"] = [
@@ -60,6 +92,16 @@ def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> Fast
     for connector in CONNECTORS:
         connector.register(registry, settings)
 
+    for connector in CONNECTORS:
+        if connector.access_mode is AccessMode.AUTHENTICATED_SHARED and any(
+            connector.matches(spec) and spec.risk is not RiskLevel.READ
+            for spec in registry._specs
+        ):
+            raise ValueError(f"Shared connector {connector.slug} must contain only read tools")
+
+    mcp.gateway_filter = tool_filter or (lambda _: True)
+    mcp.gateway_settings = settings
+    mcp.gateway_specs = registry._specs
     registry.register_all(mcp, settings, predicate=tool_filter)
     return mcp
 

@@ -27,6 +27,8 @@ class AuthenticatedUser:
     # Verified Clerk ``sub``. Set directly for OAuth callers; for other front
     # doors it is resolved from OAuthIdentityLink at tool time (providers/registry).
     clerk_subject: str | None = None
+    oauth_client_id: str | None = None
+    oauth_resource: str | None = None
 
 
 class IdentityError(Exception):
