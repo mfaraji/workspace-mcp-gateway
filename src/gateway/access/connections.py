@@ -119,6 +119,9 @@ def connections(request: Request):
                 "slug": c.slug,
                 "name": c.display_name,
                 "provider": c.upstream_provider,
+                "scope": "universal"
+                if c.access_mode is AccessMode.AUTHENTICATED_SHARED
+                else "user",
                 "mcp_url": f"{root}/mcp/{c.slug}",
                 "tool_count": tool_counts.get(c.slug, 0),
                 **connection_status(c, session, user.id, auth, settings),

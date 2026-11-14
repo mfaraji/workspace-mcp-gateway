@@ -62,14 +62,14 @@ function actions(c, card) {
   if (c.action === 'oauth') {
     box.append(el('a', {
       className: 'primary link-button',
-      href: `/oauth/start?product=${encodeURIComponent(c.slug)}`,
+      href: `/oauth/google/start?product=${encodeURIComponent(c.slug)}`,
       textContent: connected ? 'Reconnect' : c.status === 'reauth_required' ? 'Reauthorize' : 'Connect'
     }));
     if (connected || c.status === 'reauth_required') {
       box.append(el('button', {
         className: 'text-button', textContent: 'Disconnect Google',
         onclick: () => confirm('This disconnects Calendar, Drive and Tasks, which share one Google account. Continue?')
-          && act('Disconnecting Google', () => call('POST', '/oauth/disconnect'))
+          && act('Disconnecting Google', () => call('POST', '/oauth/google/disconnect'))
       }));
     }
   } else if (c.action === 'api_key') {
@@ -100,6 +100,13 @@ function card(c) {
     el('div', { className: 'card-top' },
       el('h2', { textContent: c.name }),
       el('span', { className: `pill ${c.status}`, textContent: labels[c.status] || c.status })),
+    el('span', {
+      className: `scope ${c.scope}`,
+      textContent: c.scope === 'universal' ? 'Universal · same data for everyone' : 'Personal · your own account',
+      title: c.scope === 'universal'
+        ? 'Shared connector: no per-user credentials, available to every signed-in user.'
+        : 'Uses your own connected account or data.'
+    }),
     el('p', { className: 'muted', textContent: c.account ? `Account: ${c.account}` : ' ' }),
     el('p', { className: 'muted', textContent: `${c.tool_count} ${c.tool_count === 1 ? 'tool' : 'tools'}` }),
     el('div', { className: 'url-row' },

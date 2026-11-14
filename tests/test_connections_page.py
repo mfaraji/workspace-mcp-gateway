@@ -86,6 +86,9 @@ def test_api_lists_every_connector_without_secrets(monkeypatch):
     assert data["csrf"] == "csrf"
     assert all(c["mcp_url"].endswith(f"/mcp/{c['slug']}") for c in data["connectors"])
     assert all(c["tool_count"] == 1 for c in data["connectors"])
+    scopes = {c["slug"]: c["scope"] for c in data["connectors"]}
+    assert scopes["finance"] == "universal"
+    assert {v for k, v in scopes.items() if k != "finance"} == {"user"}
     assert not any("token" in k or "key" in k for c in data["connectors"] for k in c)
 
 
