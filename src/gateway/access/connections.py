@@ -128,4 +128,9 @@ def connections(request: Request):
             }
             for c in CONNECTORS
         ]
-    return {"csrf": request.session["csrf"], "connectors": items}
+    # One-time message queued by the OAuth callback (e.g. Gmail label instructions).
+    return {
+        "csrf": request.session["csrf"],
+        "connectors": items,
+        "notice": request.session.pop("notice", None),
+    }

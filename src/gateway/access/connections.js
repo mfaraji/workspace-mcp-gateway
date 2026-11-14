@@ -1,6 +1,7 @@
 let csrf = '';
 const cards = document.querySelector('#cards');
 const statusLine = document.querySelector('#status');
+const noticeLine = document.querySelector('#notice');
 const labels = {
   connected: 'Connected',
   not_connected: 'Not connected',
@@ -68,7 +69,7 @@ function actions(c, card) {
     if (connected || c.status === 'reauth_required') {
       box.append(el('button', {
         className: 'text-button', textContent: 'Disconnect Google',
-        onclick: () => confirm('This disconnects Calendar, Drive and Tasks, which share one Google account. Continue?')
+        onclick: () => confirm('This disconnects Calendar, Drive, Tasks and Gmail, which share one Google account. Continue?')
           && act('Disconnecting Google', () => call('POST', '/oauth/google/disconnect'))
       }));
     }
@@ -129,6 +130,10 @@ async function load() {
   if (!response.ok) { message('Could not load connections.', true); return; }
   const data = await response.json();
   csrf = data.csrf;
+  if (data.notice?.message) {
+    noticeLine.textContent = data.notice.message;
+    noticeLine.hidden = false;
+  }
   cards.replaceChildren(...data.connectors.map(card));
   cards.setAttribute('aria-busy', 'false');
 }

@@ -37,10 +37,16 @@ TASKS_SCOPES = [
 
 # Gmail: readonly for label-scoped search/read; compose for drafts. ``gmail.compose``
 # technically allows sending, so the gateway exposes no send tool (enforced by tests).
-GMAIL_SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
+GMAIL_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+GMAIL_TOOL_SCOPES = [
+    GMAIL_READ_SCOPE,
     "https://www.googleapis.com/auth/gmail.compose",
 ]
+# ``gmail.labels`` only manages labels (no message access). It lets the callback create
+# the access label for the user. Tools do not require it, so connections made before it
+# existed keep working and are never forced to reauthorize.
+GMAIL_LABEL_SCOPE = "https://www.googleapis.com/auth/gmail.labels"
+GMAIL_SCOPES = [*GMAIL_TOOL_SCOPES, GMAIL_LABEL_SCOPE]
 
 # Scopes requested by the current build. Drive is read-only: ``drive.file`` is
 # intentionally excluded until a Drive write tool exists.

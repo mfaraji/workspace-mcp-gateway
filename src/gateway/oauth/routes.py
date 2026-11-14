@@ -23,12 +23,14 @@ from gateway.identity.models import IdentityError
 from gateway.identity.resolver import get_or_create_user
 from gateway.logging import get_logger
 from gateway.oauth import google as goog
+from gateway.providers.google import client as google_client
 from gateway.providers.google.connections import (
     AccountConflict,
     StoredCredentials,
     disconnect,
     upsert_connection,
 )
+from gateway.providers.google.gmail import onboarding as gmail_onboarding
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/oauth/google", tags=["oauth"])
@@ -165,7 +167,7 @@ async def callback(request: Request):
             ),
         )
         try:
-            upsert_connection(
+            conn = upsert_connection(
                 session,
                 user=user,
                 provider_account_id=account["sub"],
@@ -177,9 +179,37 @@ async def callback(request: Request):
             return JSONResponse(
                 {"error": "account_conflict", "detail": str(exc)}, status_code=409
             )
+        connection_id = conn.id
+        granted_scopes = list(conn.scopes or [])
+        onboard_gmail = gmail_onboarding.needs_onboarding(granted_scopes, conn.connection_metadata)
 
     logger.info("google account connected for user %s", external_user_id)
+    if onboard_gmail:
+        _onboard_gmail(request, settings, creds, connection_id, granted_scopes)
     return RedirectResponse(f"{settings.base_url.rstrip('/')}/?connected=google", status_code=302)
+
+
+def _onboard_gmail(request: Request, settings, creds, connection_id, granted_scopes) -> None:
+    """Create the Gmail access label and queue the one-time instruction for the user.
+
+    Runs after the connection is committed, so it can never fail or delay the connect
+    itself. The "already onboarded" flag is only written once the label is known to exist.
+    """
+    from gateway.db.models import ProviderConnection
+
+    name = settings.gmail_access_label
+    status = gmail_onboarding.provision_label(
+        lambda: google_client.build_gmail_service(creds), granted_scopes, name
+    )
+    if status != "manual":
+        with session_scope() as session:
+            conn = session.get(ProviderConnection, connection_id)
+            if conn is not None:
+                conn.connection_metadata = {
+                    **(conn.connection_metadata or {}),
+                    gmail_onboarding.ONBOARDED_KEY: True,
+                }
+    request.session["notice"] = gmail_onboarding.build_notice(status, name)
 
 
 @router.post("/disconnect")

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
 from gateway.connectors.upstream import OAuthStrategy
-from gateway.oauth.google import GMAIL_SCOPES
+from gateway.oauth.google import GMAIL_TOOL_SCOPES
 from gateway.providers.base import CallContext
 from gateway.providers.google.client import build_gmail_service
 from gateway.providers.registry import ToolError
@@ -23,7 +23,7 @@ MAX_RECIPIENTS = 50
 
 GMAIL_OAUTH = OAuthStrategy(
     upstream_provider=PROVIDER,
-    required_scopes=GMAIL_SCOPES,
+    required_scopes=GMAIL_TOOL_SCOPES,
     display_name="Gmail",
     product="gmail",
 )
