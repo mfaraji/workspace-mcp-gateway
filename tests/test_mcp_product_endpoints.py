@@ -61,6 +61,21 @@ def test_tasks_filter_registers_expected_tasks_tools():
     )
 
 
+def test_gmail_filter_registers_read_and_draft_tools_only():
+    names = _tool_names(_settings(), "gmail")
+
+    assert names == {
+        "system_get_current_time",
+        "google_gmail_search_messages",
+        "google_gmail_get_message",
+        "google_gmail_get_thread",
+        "google_gmail_list_drafts",
+        "google_gmail_create_draft",
+        "google_gmail_update_draft",
+        "google_gmail_delete_draft",
+    }
+
+
 def test_apex_filter_registers_expected_apex_tools():
     names = _tool_names(_settings(), "apex")
 
@@ -163,6 +178,7 @@ def test_every_mcp_mount_is_behind_identity_middleware(monkeypatch):
         "/mcp/calendar",
         "/mcp/drive",
         "/mcp/tasks",
+        "/mcp/gmail",
         "/mcp/apex",
         "/mcp/telegram",
         "/mcp/recipes",

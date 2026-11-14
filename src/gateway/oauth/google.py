@@ -15,7 +15,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from gateway.config import Settings
 
-GoogleProduct = Literal["calendar", "drive", "tasks"]
+GoogleProduct = Literal["calendar", "drive", "tasks", "gmail"]
 
 # OpenID scopes — required to learn the Google account id (sub) and email.
 OPENID_SCOPES = ["openid", "email", "profile"]
@@ -35,16 +35,24 @@ TASKS_SCOPES = [
     "https://www.googleapis.com/auth/tasks",
 ]
 
+# Gmail: readonly for label-scoped search/read; compose for drafts. ``gmail.compose``
+# technically allows sending, so the gateway exposes no send tool (enforced by tests).
+GMAIL_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.compose",
+]
+
 # Scopes requested by the current build. Drive is read-only: ``drive.file`` is
 # intentionally excluded until a Drive write tool exists.
-DEFAULT_SCOPES = OPENID_SCOPES + CALENDAR_SCOPES + DRIVE_SCOPES + TASKS_SCOPES
+DEFAULT_SCOPES = OPENID_SCOPES + CALENDAR_SCOPES + DRIVE_SCOPES + TASKS_SCOPES + GMAIL_SCOPES
 
 PRODUCT_SCOPES: dict[GoogleProduct, list[str]] = {
     "calendar": CALENDAR_SCOPES,
     "drive": DRIVE_SCOPES,
     "tasks": TASKS_SCOPES,
+    "gmail": GMAIL_SCOPES,
 }
-OAUTH_ENABLED_PRODUCTS: set[GoogleProduct] = {"calendar", "drive", "tasks"}
+OAUTH_ENABLED_PRODUCTS: set[GoogleProduct] = {"calendar", "drive", "tasks", "gmail"}
 
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"

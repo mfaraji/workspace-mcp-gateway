@@ -9,6 +9,7 @@ from gateway.oauth.google import (
     CALENDAR_SCOPES,
     DEFAULT_SCOPES,
     DRIVE_SCOPES,
+    GMAIL_SCOPES,
     TASKS_SCOPES,
     build_flow,
     build_start_url,
@@ -50,10 +51,12 @@ def test_product_scopes_include_enabled_read_only_drive():
         *CALENDAR_SCOPES,
         *DRIVE_SCOPES,
         *TASKS_SCOPES,
+        *GMAIL_SCOPES,
     ]
     assert scopes_for_product("calendar") == ["openid", "email", "profile", *CALENDAR_SCOPES]
     assert scopes_for_product("drive") == ["openid", "email", "profile", *DRIVE_SCOPES]
     assert scopes_for_product("tasks") == ["openid", "email", "profile", *TASKS_SCOPES]
+    assert scopes_for_product("gmail") == ["openid", "email", "profile", *GMAIL_SCOPES]
     assert "https://www.googleapis.com/auth/drive.file" not in DEFAULT_SCOPES
 
 

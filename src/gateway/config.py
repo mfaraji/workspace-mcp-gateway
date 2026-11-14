@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Wealth endpoints need a key for a PERSONAL workspace. DEPRECATED and ignored.
     apex_wealth_api_key: str | None = None
 
+    # Only Gmail messages carrying this label are visible to the Gmail tools.
+    gmail_access_label: str = "agent-access"
+
     token_encryption_key: str
 
     # Compatibility-only inputs: legacy keys/dev bypass are ignored by authentication.

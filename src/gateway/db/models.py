@@ -252,3 +252,18 @@ class ClientGrant(Base, TimestampMixin):
     client_id: Mapped[str] = mapped_column(String(255))
     tools: Mapped[list[str]] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), default=list)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class GmailAgentDraft(Base, TimestampMixin):
+    """A Gmail draft created through the gateway; only these may be edited/deleted."""
+
+    __tablename__ = "gmail_agent_drafts"
+    __table_args__ = (UniqueConstraint("user_id", "draft_id", name="gmail_agent_draft"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    google_account_id: Mapped[str] = mapped_column(String(255))
+    draft_id: Mapped[str] = mapped_column(String(255))
+    thread_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

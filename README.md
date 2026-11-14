@@ -130,6 +130,14 @@ also register product-specific tool servers on the same backend:
 - `http://127.0.0.1:8000/mcp/calendar`
 - `http://127.0.0.1:8000/mcp/drive`
 - `http://127.0.0.1:8000/mcp/tasks`
+- `http://127.0.0.1:8000/mcp/gmail`
+
+Gmail: create a Gmail label named `agent-access` (override with `GMAIL_ACCESS_LABEL`)
+and apply it to the messages the agent may see. Search/read only return labelled
+messages; the agent can create, update and delete HTML/text **drafts** but can never
+send. Existing users must re-authorize Google (`product=gmail`) to grant the
+`gmail.readonly` and `gmail.compose` scopes. These are restricted scopes: keep the
+Google OAuth app in testing mode until it passes Google verification.
 - `http://127.0.0.1:8000/mcp/apex`
 - `http://127.0.0.1:8000/mcp/apex-wealth`
 - `http://127.0.0.1:8000/mcp/telegram`
