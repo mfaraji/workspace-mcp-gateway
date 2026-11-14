@@ -1,0 +1,192 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telegram</title>
+<style>
+{{SHARED_CSS}}
+.form { padding: 12px 14px; display: grid; gap: 10px; }
+.dests { display: flex; flex-wrap: wrap; gap: 8px; }
+.dest { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer; text-align: start; }
+.dest[aria-checked="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); font-weight: 600; }
+.dest small { color: var(--muted); margin-inline-start: 6px; font-weight: 400; }
+textarea { min-height: 120px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); resize: vertical; width: 100%; unicode-bidi: plaintext; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.row .grow { flex: 1; }
+.count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.count.over { color: var(--danger); }
+.silent { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; cursor: pointer; }
+.receipt { margin: 0 14px 12px; padding: 12px; border-radius: 10px; border: 1px solid var(--border); }
+.receipt.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); border-color: var(--ok); }
+.receipt.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); border-color: var(--warn); }
+.receipt strong { display: block; }
+.preview { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); max-height: 120px; overflow: auto; unicode-bidi: plaintext; }
+.busy { opacity: .55; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="card" id="root"><div class="skeleton"></div><div class="skeleton" style="width:60%"></div></div>
+<script>
+{{SHARED_JS}}
+</script>
+<script>
+(function () {
+  'use strict';
+  var MAX = 4096;
+  var STRINGS = {
+    en: { title: 'Telegram', to: 'Send to', message: 'Message', send: 'Send', silent: 'Send silently', none: 'No verified destinations. Connect Telegram and verify a channel first.',
+      confirm: 'Send this message to “%s”? It is posted immediately and cannot be recalled.', ok: 'Send', cancel: 'Cancel',
+      sentTo: 'Sent to “%s”', duplicate: 'This exact message had already been sent, so it was not posted again.',
+      unconfirmed: 'Delivery not confirmed', unconfirmedBody: 'Telegram did not confirm whether the message arrived. It may or may not be in the channel. Check the channel before trying again; sending the same text again will be refused.',
+      notSent: 'Not sent', another: 'Write another', edit: 'Edit message', failed: 'Could not load destinations: ', refresh: 'Refresh', sending: 'Sending…' },
+    fa: { title: 'تلگرام', to: 'ارسال به', message: 'پیام', send: 'ارسال', silent: 'ارسال بی‌صدا', none: 'مقصد تاییدشده‌ای نیست. ابتدا تلگرام را وصل و یک کانال را تایید کنید.',
+      confirm: 'این پیام به «%s» ارسال شود؟ فوراً منتشر می‌شود و قابل بازگشت نیست.', ok: 'ارسال', cancel: 'انصراف',
+      sentTo: 'به «%s» ارسال شد', duplicate: 'همین پیام قبلاً ارسال شده بود، پس دوباره منتشر نشد.',
+      unconfirmed: 'تحویل تایید نشد', unconfirmedBody: 'تلگرام تایید نکرد که پیام رسیده است یا نه. ممکن است در کانال باشد یا نباشد. پیش از تلاش دوباره کانال را بررسی کنید؛ ارسال دوباره همین متن رد می‌شود.',
+      notSent: 'ارسال نشد', another: 'پیام تازه', edit: 'ویرایش پیام', failed: 'بارگذاری مقصدها ممکن نشد: ', refresh: 'تازه‌سازی', sending: 'در حال ارسال…' }
+  };
+  var lang = 'en';
+  function t(key, arg) {
+    var s = (STRINGS[lang] || STRINGS.en)[key] || STRINGS.en[key] || key;
+    return arg === undefined ? s : s.replace('%s', arg);
+  }
+
+  // The gateway reports "delivery unknown" / "already attempted" as errors with these texts
+  // (providers/telegram/client.py and write.py); everything else means nothing was posted.
+  var UNCONFIRMED = /did not confirm|already attempted|already running/i;
+
+  var state = { loaded: false, dests: [], alias: null, text: '', silent: false, phase: 'compose', result: null, error: '', sending: false };
+  var root = document.getElementById('root');
+  var app;
+
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (v === false || v == null) return;
+      if (k === 'class') el.className = v;
+      else if (k === 'value') el.value = v;
+      else if (k === 'checked') el.checked = !!v;
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    });
+    [].concat(kids || []).forEach(function (kid) {
+      if (kid == null || kid === false) return;
+      el.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid);
+    });
+    return el;
+  }
+  var REFRESH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg>';
+  function icon(svg) { var s = document.createElement('span'); s.style.display = 'contents'; s.innerHTML = svg; return s; } // static literals only
+
+  function dest() { return state.dests.filter(function (d) { return d.alias === state.alias; })[0] || null; }
+  function label(d) { return d.title || (d.username ? '@' + d.username : d.alias); }
+  function cleanError(message) { return String(message || '').replace(/^Error executing tool \S+:\s*/, ''); }
+
+  function load() {
+    return app.callTool('telegram_list_destinations', {}).then(function (data) {
+      setDests(data.destinations || []);
+      state.loaded = true; state.error = ''; render();
+    }).catch(function (e) { state.loaded = true; state.error = t('failed') + cleanError(e.message); render(); });
+  }
+  function setDests(list) {
+    state.dests = list;
+    if (!dest()) state.alias = list.length ? list[0].alias : null;
+  }
+
+  function send() {
+    var d = dest();
+    var text = state.text.trim();
+    if (state.sending || !d || !text || text.length > MAX) return;
+    app.confirm(t('confirm', label(d)), { ok: t('ok'), cancel: t('cancel') }).then(function (yes) {
+      if (!yes) return;
+      state.sending = true; state.error = ''; render();
+      var args = { destination: d.alias, text: text };
+      if (state.silent) args.disable_notification = true;
+      app.callTool('telegram_send_message', args).then(function (res) {
+        state.sending = false;
+        if (res && res.status === 'sent') { state.phase = 'sent'; state.result = { dest: label(d), duplicate: !!res.duplicate, text: text }; }
+        else { state.phase = 'failed'; state.result = { kind: 'unconfirmed', text: text }; }
+        render();
+      }).catch(function (e) {
+        state.sending = false;
+        var msg = cleanError(e.message);
+        state.phase = 'failed';
+        state.result = UNCONFIRMED.test(msg) ? { kind: 'unconfirmed', text: text } : { kind: 'notsent', message: msg, text: text };
+        render();
+      });
+    });
+  }
+
+  function receipt() {
+    var r = state.result;
+    if (state.phase === 'sent') {
+      return h('div', { class: 'receipt ok', role: 'status' }, [
+        h('strong', {}, t('sentTo', r.dest)),
+        r.duplicate ? h('div', {}, t('duplicate')) : null,
+        h('div', { class: 'preview', dir: 'auto' }, r.text),
+        h('div', { class: 'row', style: 'margin-top:10px' }, h('button', { class: 'btn', type: 'button', onclick: function () { state.phase = 'compose'; state.text = ''; state.result = null; render(); } }, t('another')))
+      ]);
+    }
+    var unconfirmed = r.kind === 'unconfirmed';
+    return h('div', { class: 'receipt warn', role: 'alert' }, [
+      h('strong', {}, unconfirmed ? t('unconfirmed') : t('notSent')),
+      h('div', {}, unconfirmed ? t('unconfirmedBody') : r.message),
+      h('div', { class: 'row', style: 'margin-top:10px' }, h('button', { class: 'btn', type: 'button', onclick: function () { state.phase = 'compose'; state.text = r.text; state.result = null; render(); } }, t('edit')))
+    ]);
+  }
+
+  function render() {
+    if (!state.loaded) return;
+    var body;
+    if (state.phase !== 'compose') {
+      body = receipt();
+    } else if (!state.dests.length) {
+      body = h('div', { class: 'empty' }, t('none'));
+    } else {
+      var area = h('textarea', { dir: 'auto', 'aria-label': t('message'), maxlength: String(MAX) });
+      area.value = state.text;
+      var count = h('span', { class: 'count' + (state.text.length > MAX ? ' over' : '') }, state.text.length + ' / ' + MAX);
+      var sendBtn = h('button', { class: 'btn btn-primary', type: 'button', onclick: send }, state.sending ? t('sending') : t('send'));
+      function sync() {
+        state.text = area.value;
+        count.textContent = state.text.length + ' / ' + MAX;
+        sendBtn.disabled = !state.text.trim() || state.text.length > MAX;
+      }
+      area.addEventListener('input', sync);
+      sendBtn.disabled = !state.text.trim() || state.text.length > MAX;
+      var silent = h('input', { type: 'checkbox', checked: state.silent });
+      silent.addEventListener('change', function () { state.silent = silent.checked; });
+      body = h('div', { class: 'form' + (state.sending ? ' busy' : '') }, [
+        h('div', { class: 'muted' }, t('to')),
+        h('div', { class: 'dests', role: 'radiogroup', 'aria-label': t('to') }, state.dests.map(function (d) {
+          return h('button', { class: 'dest', type: 'button', role: 'radio', 'aria-checked': String(d.alias === state.alias), onclick: function () { state.alias = d.alias; render(); } },
+            [label(d), d.title && d.username ? h('small', {}, '@' + d.username) : null]);
+        })),
+        area,
+        h('div', { class: 'row' }, [h('label', { class: 'silent' }, [silent, t('silent')]), h('span', { class: 'grow' }), count, sendBtn])
+      ]);
+    }
+    var card = h('div', { class: 'card' }, [
+      h('div', { class: 'card-head' }, [h('h1', {}, t('title')),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('refresh'), title: t('refresh'), onclick: function () { load(); } }, icon(REFRESH))]),
+      state.error ? h('div', { class: 'error', role: 'alert' }, state.error) : null,
+      body
+    ]);
+    root.replaceChildren(card);
+    if (app) app.reportSize();
+  }
+
+  app = GatewayApp({
+    onContext: function (ctx) { lang = /^fa/i.test(ctx.locale || '') ? 'fa' : 'en'; render(); },
+    onResult: function (data) {
+      if (Array.isArray(data.destinations)) { setDests(data.destinations); state.loaded = true; state.error = ''; render(); }
+      else load();
+    },
+    onError: function (e) { state.loaded = true; state.error = t('failed') + cleanError(e.message); render(); }
+  });
+})();
+</script>
+</body>
+</html>

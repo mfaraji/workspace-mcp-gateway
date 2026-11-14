@@ -1,0 +1,191 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Google Drive</title>
+<style>
+{{SHARED_CSS}}
+.search { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+ul { list-style: none; margin: 0; padding: 0; }
+li.file { border-bottom: 1px solid var(--border); }
+li.file:last-child { border-bottom: 0; }
+.row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: start; padding: 10px 14px; background: none; border: 0; cursor: pointer; min-height: 52px; }
+.row:hover { background: var(--surface-2); }
+.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.badge { flex: none; width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; font-size: 10px; font-weight: 700; letter-spacing: .02em; color: #fff; background: var(--muted); }
+.badge.doc { background: #4285f4; } .badge.sheet { background: #0f9d58; } .badge.slides { background: #f4b400; color: #3b2d00; }
+.badge.pdf { background: #db4437; } .badge.image { background: #a142f4; } .badge.video { background: #e8710a; }
+.badge.audio { background: #12a4af; } .badge.folder { background: #7a8699; font-size: 18px; } .badge.zip { background: #8d6e63; }
+.name { flex: 1; min-width: 0; }
+.name .n { display: block; overflow-wrap: anywhere; }
+.name .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
+.detail { padding: 2px 14px 12px 62px; }
+[dir="rtl"] .detail { padding: 2px 62px 12px 14px; }
+.detail dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 4px 0 8px; font-size: 13px; }
+.detail dt { color: var(--muted); }
+.detail dd { margin: 0; overflow-wrap: anywhere; }
+.busy { opacity: .55; pointer-events: none; }
+.foot { display: flex; padding: 6px 10px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="card" id="root"><div class="skeleton"></div><div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:55%"></div></div>
+<script>
+{{SHARED_JS}}
+</script>
+<script>
+(function () {
+  'use strict';
+  var STRINGS = {
+    en: { title: 'Drive', search: 'Search files', go: 'Search', empty: 'No files found.', more: 'Load more',
+      open: 'Open in Drive', type: 'Type', size: 'Size', modified: 'Modified', shared: 'Shared', owner: 'Owner',
+      yes: 'Yes', no: 'No', me: 'You', other: 'Someone else', folder: 'Folder', refresh: 'Refresh',
+      failed: 'That did not work: ', untitled: 'Untitled', recent: 'Recent files' },
+    fa: { title: 'درایو', search: 'جستجوی فایل', go: 'جستجو', empty: 'فایلی پیدا نشد.', more: 'بیشتر',
+      open: 'باز کردن در درایو', type: 'نوع', size: 'اندازه', modified: 'آخرین تغییر', shared: 'اشتراکی', owner: 'مالک',
+      yes: 'بله', no: 'خیر', me: 'شما', other: 'فرد دیگر', folder: 'پوشه', refresh: 'تازه‌سازی',
+      failed: 'انجام نشد: ', untitled: 'بدون نام', recent: 'فایل‌های اخیر' }
+  };
+  var lang = 'en';
+  function t(key) { return (STRINGS[lang] || STRINGS.en)[key] || STRINGS.en[key] || key; }
+
+  var state = { files: [], next: null, query: '', loaded: false, error: '', expanded: null, loading: false };
+  var root = document.getElementById('root');
+  var app;
+
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (v === false || v == null) return;
+      if (k === 'class') el.className = v;
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    });
+    [].concat(kids || []).forEach(function (kid) {
+      if (kid == null || kid === false) return;
+      el.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid);
+    });
+    return el;
+  }
+  var REFRESH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg>';
+  function icon(svg) { var s = document.createElement('span'); s.style.display = 'contents'; s.innerHTML = svg; return s; } // static literals only
+
+  function locale() { return document.documentElement.lang || 'en'; }
+  function kind(file) {
+    var m = file.source_mime_type || file.mime_type || '';
+    if (m === 'application/vnd.google-apps.folder') return { cls: 'folder', label: '📁' };
+    if (m === 'application/vnd.google-apps.document' || /wordprocessing|msword|opendocument\.text/.test(m)) return { cls: 'doc', label: 'DOC' };
+    if (m === 'application/vnd.google-apps.spreadsheet' || /spreadsheet|ms-excel|csv/.test(m)) return { cls: 'sheet', label: 'XLS' };
+    if (m === 'application/vnd.google-apps.presentation' || /presentation|powerpoint/.test(m)) return { cls: 'slides', label: 'PPT' };
+    if (m === 'application/pdf') return { cls: 'pdf', label: 'PDF' };
+    if (/^image\//.test(m)) return { cls: 'image', label: 'IMG' };
+    if (/^video\//.test(m)) return { cls: 'video', label: 'VID' };
+    if (/^audio\//.test(m)) return { cls: 'audio', label: 'AUD' };
+    if (/zip|compressed|tar|rar/.test(m)) return { cls: 'zip', label: 'ZIP' };
+    return { cls: '', label: 'FILE' };
+  }
+  function fmtSize(bytes) {
+    if (bytes == null) return '';
+    var units = ['B', 'KB', 'MB', 'GB'], i = 0, v = bytes;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    var n;
+    try { n = new Intl.NumberFormat(locale(), { maximumFractionDigits: i ? 1 : 0 }).format(v); } catch (e) { n = String(Math.round(v)); }
+    return n + ' ' + units[i];
+  }
+  function fmtDate(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d)) return '';
+    try { return new Intl.DateTimeFormat(locale(), { year: 'numeric', month: 'short', day: 'numeric' }).format(d); } catch (e) { return iso.slice(0, 10); }
+  }
+  function sub(file) {
+    return [fmtDate(file.modified_time), fmtSize(file.size)].filter(Boolean).join(' · ');
+  }
+  function normalize(f) { return f; }
+
+  function search(opts) {
+    opts = opts || {};
+    state.loading = true;
+    var args = { query: state.query, page_size: 25 };
+    if (opts.token) args.page_token = opts.token;
+    return app.callTool('google_drive_search_files', args).then(function (data) {
+      var incoming = (data.files || []).map(normalize);
+      state.files = opts.token ? state.files.concat(incoming) : incoming;
+      state.next = data.next_page_token || null;
+      state.loaded = true; state.loading = false; state.error = '';
+      if (!opts.token) state.expanded = null;
+      render();
+    }).catch(function (e) {
+      state.loaded = true; state.loading = false;
+      state.error = t('failed') + e.message;
+      render();
+    });
+  }
+
+  function detail(file) {
+    var rows = [[t('type'), kind(file).cls === 'folder' ? t('folder') : (file.source_mime_type || file.mime_type || '')]];
+    if (file.size != null) rows.push([t('size'), fmtSize(file.size)]);
+    if (file.modified_time) rows.push([t('modified'), fmtDate(file.modified_time)]);
+    if (file.owned_by_me !== undefined && file.owned_by_me !== null) rows.push([t('owner'), file.owned_by_me ? t('me') : t('other')]);
+    if (file.shared !== undefined && file.shared !== null) rows.push([t('shared'), file.shared ? t('yes') : t('no')]);
+    var dl = h('dl', {}, rows.reduce(function (acc, r) { return acc.concat([h('dt', {}, r[0]), h('dd', {}, r[1])]); }, []));
+    return h('div', { class: 'detail' }, [
+      dl,
+      file.web_view_link ? h('button', { class: 'btn', type: 'button', onclick: function () { app.openLink(file.web_view_link); } }, t('open')) : null
+    ]);
+  }
+
+  function row(file) {
+    var k = kind(file), open = state.expanded === file.id;
+    var btn = h('button', { class: 'row', type: 'button', 'aria-expanded': String(open), onclick: function () {
+      state.expanded = open ? null : file.id;
+      render();
+    } }, [
+      h('span', { class: 'badge ' + k.cls, 'aria-hidden': 'true' }, k.label),
+      h('span', { class: 'name' }, [h('span', { class: 'n' }, file.name || file.source_name || t('untitled')), h('span', { class: 'sub' }, sub(file))])
+    ]);
+    return h('li', { class: 'file' }, [btn, open ? detail(file) : null]);
+  }
+
+  function render() {
+    if (!state.loaded) return;
+    var input = h('input', { class: 'field', type: 'search', value: state.query, placeholder: t('search'), 'aria-label': t('search'), maxlength: '200' });
+    function go() { state.query = input.value.trim(); search(); }
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+    var refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('refresh'), title: t('refresh'), onclick: function () { search(); } }, icon(REFRESH));
+    var card = h('div', { class: 'card' + (state.loading ? ' busy' : '') }, [
+      h('div', { class: 'card-head' }, [h('h1', {}, state.query ? state.query : t('recent')), refresh]),
+      h('div', { class: 'search' }, [input, h('button', { class: 'btn btn-primary', type: 'button', onclick: go }, t('go'))]),
+      state.error ? h('div', { class: 'error', role: 'alert' }, state.error) : null,
+      state.files.length ? h('ul', { role: 'list' }, state.files.map(row)) : h('div', { class: 'empty' }, t('empty')),
+      state.next ? h('div', { class: 'foot' }, h('button', { class: 'btn btn-ghost', type: 'button', onclick: function () { search({ token: state.next }); } }, t('more'))) : null
+    ]);
+    root.replaceChildren(card);
+    if (app) app.reportSize();
+  }
+
+  app = GatewayApp({
+    onContext: function (ctx) { lang = /^fa/i.test(ctx.locale || '') ? 'fa' : 'en'; render(); },
+    onInput: function (args) { if (args && typeof args.query === 'string') state.query = args.query; },
+    onResult: function (data) {
+      if (Array.isArray(data.files)) {
+        state.files = data.files.map(normalize);
+        state.next = data.next_page_token || null;
+      } else if (data.id) {
+        // get_file_metadata: one file, opened.
+        state.files = [data];
+        state.next = null;
+        state.expanded = data.id;
+      }
+      state.loaded = true;
+      state.error = '';
+      render();
+    },
+    onError: function (error) { state.loaded = true; state.error = t('failed') + error.message; render(); }
+  });
+})();
+</script>
+</body>
+</html>

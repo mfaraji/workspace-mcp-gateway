@@ -19,6 +19,14 @@ MIME_TYPE = "text/html;profile=mcp-app"
 # ui:// URI -> (widget file, human title)
 WIDGETS: dict[str, tuple[str, str]] = {
     "ui://tasks/list": ("tasks.html", "Google Tasks"),
+    "ui://calendar/agenda": ("calendar.html", "Google Calendar"),
+    "ui://drive/files": ("drive.html", "Google Drive"),
+    "ui://gmail/mail": ("gmail.html", "Gmail"),
+    "ui://telegram/send": ("telegram.html", "Telegram"),
+    "ui://finance/rates": ("finance.html", "Exchange rates"),
+    "ui://recipes/book": ("recipes.html", "Recipes"),
+    "ui://apex/billing": ("apex.html", "Apex billing"),
+    "ui://wealth/overview": ("wealth.html", "Apex Wealth"),
 }
 
 # Empty CSP: widgets need no network, so the host applies its default-deny policy.

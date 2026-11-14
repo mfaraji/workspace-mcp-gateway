@@ -1,0 +1,319 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exchange rates</title>
+<style>
+{{SHARED_CSS}}
+.pair { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.pair select { min-height: 36px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); padding: 0 6px; max-width: 42%; }
+.pair .sep { color: var(--muted); }
+.hero { padding: 14px 14px 4px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.big { font-size: 28px; font-weight: 650; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.unit { color: var(--muted); font-size: 13px; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-variant-numeric: tabular-nums; background: var(--surface-2); color: var(--muted); }
+.badge.up { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.badge.down { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.stats { display: flex; gap: 10px; padding: 6px 14px 10px; flex-wrap: wrap; }
+.stat { flex: 1 1 110px; background: var(--surface-2); border-radius: 10px; padding: 8px 10px; }
+.stat .k { color: var(--muted); font-size: 12px; }
+.stat .v { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.seg button { min-height: 32px; padding: 0 10px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 14px; }
+.chart { padding: 0 8px 4px; direction: ltr; position: relative; }
+.chart svg { width: 100%; height: 170px; display: block; touch-action: none; }
+.chart .tip { position: absolute; top: 2px; left: 12px; font-size: 12px; background: var(--surface-2); border-radius: 8px; padding: 2px 8px; pointer-events: none; font-variant-numeric: tabular-nums; }
+.axis { fill: var(--muted); font-size: 10px; }
+.line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.area { fill: color-mix(in srgb, var(--accent) 14%, transparent); stroke: none; }
+.cursor { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 7px 14px; text-align: start; font-variant-numeric: tabular-nums; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+tr + tr td { border-top: 1px solid var(--border); }
+td.n, th.n { text-align: end; }
+details { border-top: 1px solid var(--border); }
+summary { padding: 10px 14px; cursor: pointer; color: var(--muted); min-height: 40px; }
+.note { padding: 6px 14px 12px; font-size: 12px; color: var(--muted); }
+.loading { opacity: .55; }
+</style>
+</head>
+<body>
+<div class="card" id="root"><div class="skeleton"></div><div class="skeleton" style="width:60%"></div><div class="skeleton" style="width:80%"></div></div>
+<script>
+{{SHARED_JS}}
+</script>
+<script>
+(function () {
+  'use strict';
+  var STRINGS = {
+    en: { rate: 'Rate', buy: 'Buy', sell: 'Sell', sources: 'Sources', source: 'Source', time: 'Updated',
+      excluded: 'Excluded sources', noData: 'No rate data for this pair.', change24: '24h', changeDaily: 'Daily',
+      range: 'Range', w1: '1W', d30: '30D', d90: '90D', y1: '1Y', all: 'All', from: 'From currency', to: 'To currency',
+      swap: 'Swap', refresh: 'Refresh', failed: 'That did not work: ', per: 'per 1', avgOf: 'average of %s sources',
+      noChange: 'No change data', history: 'History', unitsOf: '%s per 1 %t', noHistory: 'No history yet.' },
+    fa: { rate: 'نرخ', buy: 'خرید', sell: 'فروش', sources: 'منابع', source: 'منبع', time: 'به‌روزرسانی',
+      excluded: 'منابع حذف‌شده', noData: 'برای این جفت‌ارز داده‌ای نیست.', change24: '۲۴ ساعت', changeDaily: 'روزانه',
+      range: 'بازه', w1: '۱ هفته', d30: '۳۰ روز', d90: '۹۰ روز', y1: '۱ سال', all: 'همه', from: 'ارز مبدأ', to: 'ارز مقصد',
+      swap: 'جابه‌جایی', refresh: 'تازه‌سازی', failed: 'انجام نشد: ', per: 'برای هر ۱', avgOf: 'میانگین %s منبع',
+      noChange: 'داده‌ای برای تغییر نیست', history: 'تاریخچه', unitsOf: '%s به‌ازای ۱ %t', noHistory: 'هنوز تاریخچه‌ای نیست.' }
+  };
+  var RANGES = [
+    { id: 'w1', view: '1W', limit: 30 }, { id: 'd30', view: 'all', limit: 30 }, { id: 'd90', view: 'all', limit: 90 },
+    { id: 'y1', view: 'all', limit: 365 }, { id: 'all', view: 'all', limit: 5000 }
+  ];
+  var lang = 'en', locale = 'en', timeZone;
+  var app;
+  var root = document.getElementById('root');
+  var state = {
+    from: null, to: null, currencies: [], current: null, change: null, history: null,
+    window: '24h', range: 'd30', loading: true, error: '', tip: null
+  };
+
+  function t(key, a, b) {
+    var s = (STRINGS[lang] || STRINGS.en)[key] || STRINGS.en[key] || key;
+    return s.replace('%s', a == null ? '' : a).replace('%t', b == null ? '' : b);
+  }
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (v === false || v == null) return;
+      if (k === 'class') el.className = v;
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    });
+    [].concat(kids || []).forEach(function (kid) {
+      if (kid == null || kid === false) return;
+      el.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid);
+    });
+    return el;
+  }
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function s(tag, attrs, kids) {
+    var el = document.createElementNS(SVGNS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+    [].concat(kids || []).forEach(function (kid) { if (kid) el.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid); });
+    return el;
+  }
+
+  function fmt(value, opts) {
+    if (value == null || isNaN(value)) return '—';
+    var abs = Math.abs(value);
+    var o = opts || { maximumFractionDigits: abs >= 1000 ? 0 : abs >= 1 ? 2 : 6 };
+    try { return new Intl.NumberFormat(locale, o).format(value); }
+    catch (e) { return String(value); }
+  }
+  function fmtPct(value) {
+    if (value == null || isNaN(value)) return '—';
+    try { return new Intl.NumberFormat(locale, { maximumFractionDigits: 2, signDisplay: 'exceptZero' }).format(value) + '%'; }
+    catch (e) { return value.toFixed(2) + '%'; }
+  }
+  function fmtDate(value, withTime) {
+    var d = new Date(value);
+    if (isNaN(d)) return String(value || '');
+    var o = withTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' };
+    if (timeZone) o.timeZone = timeZone;
+    try { return new Intl.DateTimeFormat(locale, o).format(d); } catch (e) { return d.toISOString().slice(0, 10); }
+  }
+
+  function setError(message) { state.error = message ? t('failed') + message : ''; state.loading = false; render(); }
+
+  function pairArgs() { return { from_currency: state.from, to: state.to }; }
+
+  function rangeDef() { return RANGES.filter(function (r) { return r.id === state.range; })[0] || RANGES[1]; }
+
+  function loadCurrent() {
+    return app.callTool('finance_get_current_rate', pairArgs()).then(function (d) { state.current = d; });
+  }
+  function loadChange() {
+    var args = pairArgs(); args.window = state.window;
+    return app.callTool('finance_get_rate_change', args).then(function (d) { state.change = d; });
+  }
+  function loadHistory() {
+    var r = rangeDef();
+    var args = pairArgs(); args.view = r.view; args.limit = r.limit;
+    return app.callTool('finance_get_rate_history', args).then(function (d) { state.history = d; });
+  }
+  function loadAll(seed) {
+    if (!state.from || !state.to) return;
+    state.loading = true; state.error = ''; render();
+    var jobs = [];
+    if (seed !== 'current') jobs.push(loadCurrent());
+    if (seed !== 'change') jobs.push(loadChange());
+    if (seed !== 'history') jobs.push(loadHistory());
+    return Promise.all(jobs).then(function () { state.loading = false; render(); })
+      .catch(function (e) { setError(e.message); });
+  }
+  function loadCurrencies() {
+    if (state.currencies.length) return;
+    app.callTool('finance_list_currencies', {}).then(function (d) {
+      state.currencies = (d && d.currencies) || [];
+      render();
+    }).catch(function () {});
+  }
+
+  function change(which, value) {
+    state[which] = value;
+    state.current = state.change = state.history = null;
+    loadAll();
+  }
+
+  function pickCurrency(which) {
+    var select = h('select', { 'aria-label': which === 'from' ? t('from') : t('to') });
+    var codes = state.currencies.map(function (c) { return c.abbreviation; });
+    var list = state.currencies.slice();
+    if (codes.indexOf(state[which]) === -1) list.unshift({ abbreviation: state[which], title: '' });
+    list.forEach(function (c) {
+      var o = h('option', { value: c.abbreviation }, c.title ? c.abbreviation + ' — ' + c.title : c.abbreviation);
+      if (c.abbreviation === state[which]) o.selected = true;
+      select.appendChild(o);
+    });
+    select.addEventListener('change', function () { change(which, select.value); });
+    return select;
+  }
+
+  function seg(items, current, onPick, label) {
+    var box = h('div', { class: 'seg', role: 'group', 'aria-label': label });
+    items.forEach(function (it) {
+      box.appendChild(h('button', { type: 'button', 'aria-pressed': String(it.id === current), onclick: function () { onPick(it.id); } }, it.label));
+    });
+    return box;
+  }
+
+  function chart(points) {
+    var wrap = h('div', { class: 'chart' });
+    if (!points || points.length < 2) { wrap.appendChild(h('div', { class: 'empty' }, t('noHistory'))); return wrap; }
+    var W = 600, H = 170, pad = { l: 8, r: 8, t: 12, b: 22 };
+    var xs = points.map(function (p) { return new Date(p.date).getTime(); });
+    var ys = points.map(function (p) { return p.rate; });
+    var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+    if (minY === maxY) { minY -= 1; maxY += 1; }
+    var minX = xs[0], maxX = xs[xs.length - 1] || minX + 1;
+    function X(i) { return pad.l + (maxX === minX ? 0 : (xs[i] - minX) / (maxX - minX)) * (W - pad.l - pad.r); }
+    function Y(v) { return pad.t + (1 - (v - minY) / (maxY - minY)) * (H - pad.t - pad.b); }
+    var d = points.map(function (p, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p.rate).toFixed(1); }).join('');
+    var area = d + 'L' + X(points.length - 1).toFixed(1) + ' ' + (H - pad.b) + 'L' + X(0).toFixed(1) + ' ' + (H - pad.b) + 'Z';
+    var cursor = s('line', { class: 'cursor', y1: pad.t, y2: H - pad.b, visibility: 'hidden' });
+    var dot = s('circle', { class: 'dot', r: 4, visibility: 'hidden' });
+    var svg = s('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none', role: 'img', 'aria-label': state.from + '/' + state.to }, [
+      s('path', { class: 'area', d: area }), s('path', { class: 'line', d: d, 'vector-effect': 'non-scaling-stroke' }),
+      s('text', { class: 'axis', x: pad.l, y: H - 6 }, fmtDate(points[0].date)),
+      s('text', { class: 'axis', x: W - pad.r, y: H - 6, 'text-anchor': 'end' }, fmtDate(points[points.length - 1].date)),
+      s('text', { class: 'axis', x: pad.l, y: 9 }, fmt(maxY)),
+      cursor, dot
+    ]);
+    var tip = h('div', { class: 'tip', hidden: true });
+    function show(clientX) {
+      var rect = svg.getBoundingClientRect();
+      var frac = rect.width && isFinite(clientX) ? (clientX - rect.left) / rect.width : 1;
+      var idx = Math.max(0, Math.min(points.length - 1, Math.round(frac * (points.length - 1))));
+      var cx = X(idx);
+      cursor.setAttribute('x1', cx); cursor.setAttribute('x2', cx); cursor.setAttribute('visibility', 'visible');
+      dot.setAttribute('cx', cx); dot.setAttribute('cy', Y(points[idx].rate)); dot.setAttribute('visibility', 'visible');
+      tip.textContent = fmtDate(points[idx].date, state.range === 'w1') + ' · ' + fmt(points[idx].rate);
+      tip.hidden = false;
+    }
+    svg.addEventListener('pointermove', function (e) { show(e.clientX); });
+    svg.addEventListener('pointerdown', function (e) { show(e.clientX); });
+    svg.addEventListener('pointerleave', function () { tip.hidden = true; cursor.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); });
+    wrap.append(svg, tip);
+    return wrap;
+  }
+
+  function render() {
+    var cur = state.current, chg = state.change, hist = state.history;
+    var kids = [];
+
+    var swap = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('swap'), title: t('swap'), onclick: function () {
+      var f = state.from; state.from = state.to; state.to = f; state.current = state.change = state.history = null; loadAll(); } }, '⇄');
+    var refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('refresh'), title: t('refresh'), onclick: function () { state.current = state.change = state.history = null; loadAll(); } }, '↻');
+    kids.push(h('div', { class: 'card-head' }, [
+      h('div', { class: 'pair' }, [pickCurrency('from'), swap, pickCurrency('to')]), refresh]));
+
+    if (state.error) kids.push(h('div', { class: 'error', role: 'alert' }, state.error));
+
+    if (cur && cur.noData) {
+      kids.push(h('div', { class: 'empty' }, t('noData')));
+    } else if (cur) {
+      var mid = cur.averageRate != null ? cur.averageRate : (cur.averageBuy != null && cur.averageSell != null ? (cur.averageBuy + cur.averageSell) / 2 : null);
+      var badge = null;
+      if (chg && !chg.noData) {
+        var dir = chg.change > 0 ? 'up' : chg.change < 0 ? 'down' : '';
+        badge = h('span', { class: 'badge ' + dir, title: fmt(chg.previous) },
+          [(chg.change > 0 ? '▲ ' : chg.change < 0 ? '▼ ' : ''), fmtPct(chg.changePercent)]);
+      }
+      kids.push(h('div', { class: 'hero' }, [
+        h('span', { class: 'big' }, fmt(mid)), h('span', { class: 'unit' }, t('unitsOf', state.to, state.from)), badge]));
+      kids.push(h('div', { class: 'stats' }, [
+        h('div', { class: 'stat' }, [h('div', { class: 'k' }, t('buy')), h('div', { class: 'v' }, fmt(cur.averageBuy))]),
+        h('div', { class: 'stat' }, [h('div', { class: 'k' }, t('sell')), h('div', { class: 'v' }, fmt(cur.averageSell))]),
+        h('div', { class: 'stat' }, [h('div', { class: 'k' }, t('sources')), h('div', { class: 'v' }, fmt(cur.rowsUsed, { maximumFractionDigits: 0 }))])
+      ]));
+    } else if (state.loading) {
+      kids.push(h('div', { class: 'skeleton' }), h('div', { class: 'skeleton', style: 'width:55%' }));
+    }
+
+    if (cur && !cur.noData || hist) {
+      kids.push(h('div', { class: 'toolbar' }, [
+        seg([{ id: '24h', label: t('change24') }, { id: 'daily', label: t('changeDaily') }], state.window, function (id) { state.window = id; state.change = null; loadChange().then(render).catch(function (e) { setError(e.message); }); }, t('change24')),
+        seg(RANGES.map(function (r) { return { id: r.id, label: t(r.id) }; }), state.range, function (id) { state.range = id; state.history = null; loadHistory().then(render).catch(function (e) { setError(e.message); }); }, t('range'))
+      ]));
+      kids.push(chart(hist && hist.points));
+    }
+
+    if (cur && !cur.noData && cur.sources && cur.sources.length) {
+      var rows = cur.sources.map(function (r) {
+        return h('tr', {}, [h('td', { dir: 'auto' }, r.sourceTitle || '—'), h('td', { class: 'n' }, fmt(r.buy)), h('td', { class: 'n' }, fmt(r.sell)), h('td', { class: 'n' }, r.dateTime ? fmtDate(r.dateTime, true) : '—')]);
+      });
+      kids.push(h('table', {}, [h('thead', {}, h('tr', {}, [h('th', {}, t('source')), h('th', { class: 'n' }, t('buy')), h('th', { class: 'n' }, t('sell')), h('th', { class: 'n' }, t('time'))])), h('tbody', {}, rows)]));
+    }
+    if (cur && cur.excluded && cur.excluded.length) {
+      kids.push(h('details', {}, [h('summary', {}, t('excluded') + ' (' + fmt(cur.excluded.length, { maximumFractionDigits: 0 }) + ')'),
+        h('table', {}, h('tbody', {}, cur.excluded.map(function (r) { return h('tr', {}, [h('td', { dir: 'auto' }, r.sourceTitle || '—'), h('td', { class: 'n muted' }, r.reason || '—')]); })))]));
+    }
+    if (chg && chg.note) kids.push(h('div', { class: 'note' }, chg.note));
+
+    var card = h('div', { class: 'card' + (state.loading && cur ? ' loading' : '') }, kids);
+    root.replaceChildren(card);
+    if (app) app.reportSize();
+  }
+
+  function applyPair(pair) {
+    var parts = String(pair || '').split('/');
+    if (parts.length === 2 && parts[0] && parts[1]) { state.from = parts[0]; state.to = parts[1]; return true; }
+    return false;
+  }
+
+  app = GatewayApp({
+    onContext: function (ctx) {
+      lang = /^fa/i.test(ctx.locale || '') ? 'fa' : 'en';
+      locale = ctx.locale || 'en'; timeZone = ctx.timeZone;
+      render();
+    },
+    onInput: function (args) {
+      if (args && args.from_currency && !state.from) { state.from = String(args.from_currency).toUpperCase(); state.to = String(args.to || 'IRR').toUpperCase(); }
+    },
+    onReady: function () { loadCurrencies(); },
+    onResult: function (data) {
+      if (!applyPair(data.pair) && !state.from) { setError('No currency pair in the result.'); return; }
+      state.current = state.change = state.history = null;
+      var seed = null;
+      if (data.points) { state.history = data; seed = 'history'; state.range = data.view === '1W' ? 'w1' : 'd30'; }
+      else if (data.current !== undefined) { state.change = data; seed = 'change'; if (data.window) state.window = data.window; }
+      else if (data.sources !== undefined) { state.current = data; seed = 'current'; }
+      // A bare noData result could come from any of the three tools: load everything.
+      state.error = '';
+      loadAll(seed);
+    },
+    onError: function (error) { setError(error.message); }
+  });
+})();
+</script>
+</body>
+</html>

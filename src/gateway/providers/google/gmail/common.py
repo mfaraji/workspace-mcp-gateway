@@ -18,6 +18,11 @@ from gateway.providers.google.client import build_gmail_service
 from gateway.providers.registry import ToolError
 
 PROVIDER = "google"
+GMAIL_UI = "ui://gmail/mail"
+UI_NOTE = (
+    "Shows an interactive mail view in the chat (message list, reader, draft editor): do not "
+    "repeat its contents in text; summarise or answer follow-ups instead."
+)
 MAX_BODY_CHARS = 100_000
 MAX_RECIPIENTS = 50
 
@@ -145,6 +150,13 @@ def html_to_text(html: str) -> str:
     parser = _TextExtractor()
     parser.feed(html)
     return re.sub(r"\n{3,}", "\n\n", "".join(parser.parts)).strip()
+
+
+def with_text_fallback(parsed: dict[str, Any]) -> dict[str, Any]:
+    """Give HTML-only messages a plain-text body (widgets and models read ``body_text``)."""
+    if not parsed.get("body_text") and parsed.get("body_html"):
+        parsed = {**parsed, "body_text": html_to_text(parsed["body_html"]), "text_from_html": True}
+    return parsed
 
 
 def build_mime(

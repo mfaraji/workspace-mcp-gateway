@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
 from gateway.providers.apex.client import APEX_WEALTH_API_KEY, WEALTH_PROVIDER, apex_call
+from gateway.providers.apex.ui import WEALTH_NOTE, WEALTH_UI
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
 _AMOUNTS = "Amounts are in the account's native currency; summaries also include CAD totals."
@@ -69,6 +70,10 @@ def get_net_worth_history(args: GetNetWorthHistoryInput, ctx: CallContext, sessi
     return _get(ctx, session, "/api/wealth/net-worth", {"months": args.months})
 
 
+# Manual holdings are not drawn by the widget.
+_NO_WIDGET = {"apex_wealth_list_manual_holdings"}
+
+
 def register(registry) -> None:
     """Register Apex wealth read tools with the tool registry."""
     specs = [
@@ -116,13 +121,16 @@ def register(registry) -> None:
         ),
     ]
     for name, description, input_model, handler in specs:
+        renders = name not in _NO_WIDGET
         registry.add(
             ToolSpec(
                 name=name,
                 provider=WEALTH_PROVIDER,
                 risk=RiskLevel.READ,
-                description=description,
+                description=f"{description} {WEALTH_NOTE}" if renders else description,
                 input_model=input_model,
                 handler=handler,
+                ui_resource=WEALTH_UI if renders else None,
+                ui_app_callable=True,
             )
         )

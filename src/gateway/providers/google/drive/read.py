@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 from gateway.providers.google.drive.common import (
+    DRIVE_UI,
     PROVIDER,
+    UI_NOTE,
     DriveProviderError,
     compact_metadata,
     drive_service,
@@ -68,10 +70,13 @@ def register(registry) -> None:
             risk=RiskLevel.READ,
             description=(
                 "Search filenames across all Google Drive files accessible to the user, "
-                "including shared files and Shared Drives. Empty query returns recent files."
+                "including shared files and Shared Drives. Empty query returns recent files. "
+                + UI_NOTE
             ),
             input_model=SearchFilesInput,
             handler=search_drive_files,
+            ui_resource=DRIVE_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -79,8 +84,13 @@ def register(registry) -> None:
             name="google_drive_get_file_metadata",
             provider=PROVIDER,
             risk=RiskLevel.READ,
-            description="Get metadata and attachment compatibility for one Google Drive file.",
+            description=(
+                "Get metadata and attachment compatibility for one Google Drive file. "
+                + UI_NOTE
+            ),
             input_model=GetFileMetadataInput,
             handler=get_drive_file_metadata,
+            ui_resource=DRIVE_UI,
+            ui_app_callable=True,
         )
     )

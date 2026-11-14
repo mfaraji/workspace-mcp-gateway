@@ -27,7 +27,13 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, ValidationError
 from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
-from gateway.providers.recipes.common import PROVIDER, get_repository, storage_errors
+from gateway.providers.recipes.common import (
+    PROVIDER,
+    RECIPES_UI,
+    UI_NOTE,
+    get_repository,
+    storage_errors,
+)
 from gateway.providers.recipes.models import (
     MAX_FEEDBACK_ENTRIES,
     ClearableField,
@@ -328,11 +334,13 @@ def register(registry) -> None:
                 "Save a new recipe to the user's recipe book (English, Persian or any language). "
                 "Ingredients keep their original units; quantities may be numbers or text like "
                 "'1 1/2'. Returns the new recipe id and version. Pass an idempotency_key to make "
-                "retries safe."
+                "retries safe. " + UI_NOTE
             ),
             input_model=SaveRecipeInput,
             handler=save_recipe,
             requires_confirmation=False,
+            ui_resource=RECIPES_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -344,11 +352,13 @@ def register(registry) -> None:
                 "Update one of the user's recipes. Only the fields you pass change; list fields "
                 "(ingredients, instructions, tags) are replaced whole; use clear_fields to remove "
                 "optional fields. Requires the current `version` from recipes_get; a "
-                "version_conflict means it changed meanwhile — re-read and retry."
+                "version_conflict means it changed meanwhile — re-read and retry. " + UI_NOTE
             ),
             input_model=UpdateRecipeInput,
             handler=update_recipe,
             requires_confirmation=False,
+            ui_resource=RECIPES_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -360,11 +370,13 @@ def register(registry) -> None:
                 "Add the user's feedback on a recipe they cooked: a 1-5 rating, an optional "
                 "comment and the date cooked. A recipe can have several entries over time; "
                 "they appear in recipes_get and the average rating in list/search results. "
-                "Does not change the recipe itself."
+                "Does not change the recipe itself. " + UI_NOTE
             ),
             input_model=AddFeedbackInput,
             handler=add_feedback,
             requires_confirmation=False,
+            ui_resource=RECIPES_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -379,6 +391,7 @@ def register(registry) -> None:
             input_model=DeleteFeedbackInput,
             handler=delete_feedback,
             preview_builder=lambda a: f"Delete feedback {a.feedback_id} on recipe {a.recipe_id}?",
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -393,5 +406,6 @@ def register(registry) -> None:
             input_model=DeleteRecipeInput,
             handler=delete_recipe,
             preview_builder=_delete_preview,
+            ui_app_callable=True,
         )
     )

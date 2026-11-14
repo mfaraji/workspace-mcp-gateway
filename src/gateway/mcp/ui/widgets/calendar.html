@@ -1,0 +1,459 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Google Calendar</title>
+<style>
+{{SHARED_CSS}}
+.nav { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.nav .label { flex: 1; text-align: center; color: var(--muted); font-size: 13px; }
+.day { padding: 8px 14px 4px; font-weight: 600; font-size: 13px; background: var(--surface-2); border-top: 1px solid var(--border); }
+.day:first-child { border-top: 0; }
+.day.today { color: var(--accent); }
+.day .rel { margin-inline-start: 6px; font-weight: 400; color: var(--muted); }
+ul { list-style: none; margin: 0; padding: 0; }
+li.ev { border-bottom: 1px solid var(--border); }
+li.ev:last-child { border-bottom: 0; }
+.row { display: flex; gap: 12px; width: 100%; text-align: start; padding: 10px 14px; background: none; border: 0; cursor: pointer; }
+.row:hover { background: var(--surface-2); }
+.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.when { flex: none; width: 92px; color: var(--muted); font-size: 13px; padding-top: 1px; }
+.what { flex: 1; min-width: 0; }
+.what .t { display: block; overflow-wrap: anywhere; }
+.what .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
+.bar { flex: none; width: 4px; border-radius: 2px; background: var(--accent); }
+.allday .bar { background: var(--warn); }
+.cancelled .t { text-decoration: line-through; color: var(--muted); }
+.detail { padding: 2px 14px 12px 30px; }
+[dir="rtl"] .detail { padding: 2px 30px 12px 14px; }
+.detail .desc { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; }
+.detail .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.add { padding: 10px 14px; border-top: 1px solid var(--border); }
+form.ev-form { display: grid; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--border); }
+form.ev-form .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+form.ev-form label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+form.ev-form label.inline { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); }
+form.ev-form textarea.field { min-height: 70px; padding: 8px 12px; resize: vertical; }
+form.ev-form .actions { display: flex; gap: 8px; justify-content: flex-end; }
+select.field { width: auto; max-width: 45%; }
+.busy { opacity: .55; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="card" id="root"><div class="skeleton"></div><div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:55%"></div></div>
+<script>
+{{SHARED_JS}}
+</script>
+<script>
+(function () {
+  'use strict';
+  var STRINGS = {
+    en: { title: 'Calendar', upcoming: 'Upcoming', empty: 'No events in this period.', allDay: 'All day',
+      earlier: 'Earlier', later: 'Later', today: 'Today', refresh: 'Refresh', newEvent: 'New event',
+      evTitle: 'Title', allDayLabel: 'All day', startDate: 'Start date', startTime: 'Start time', endDate: 'End date',
+      endTime: 'End time', location: 'Location', notes: 'Notes', save: 'Save', cancel: 'Cancel', edit: 'Edit',
+      del: 'Delete', open: 'Open in Calendar', attendees: 'guests', confirmDelete: 'Delete “%s”?',
+      confirmSave: 'Save “%s”?', delOk: 'Delete', saveOk: 'Save', failed: 'That did not work: ',
+      endBeforeStart: 'The end must be after the start.', needTitle: 'Give the event a title.', untitled: '(No title)',
+      loading: 'Loading…', calendar: 'Calendar' },
+    fa: { title: 'تقویم', upcoming: 'پیش رو', empty: 'در این بازه رویدادی نیست.', allDay: 'تمام روز',
+      earlier: 'قبل‌تر', later: 'بعدتر', today: 'امروز', refresh: 'تازه‌سازی', newEvent: 'رویداد جدید',
+      evTitle: 'عنوان', allDayLabel: 'تمام روز', startDate: 'تاریخ شروع', startTime: 'ساعت شروع', endDate: 'تاریخ پایان',
+      endTime: 'ساعت پایان', location: 'مکان', notes: 'یادداشت', save: 'ذخیره', cancel: 'انصراف', edit: 'ویرایش',
+      del: 'حذف', open: 'باز کردن در تقویم', attendees: 'مهمان', confirmDelete: '«%s» حذف شود؟',
+      confirmSave: '«%s» ذخیره شود؟', delOk: 'حذف', saveOk: 'ذخیره', failed: 'انجام نشد: ',
+      endBeforeStart: 'پایان باید بعد از شروع باشد.', needTitle: 'برای رویداد عنوان بنویسید.', untitled: '(بدون عنوان)',
+      loading: 'در حال بارگذاری…', calendar: 'تقویم' }
+  };
+  var lang = 'en';
+  function t(key, arg) {
+    var s = (STRINGS[lang] || STRINGS.en)[key] || STRINGS.en[key] || key;
+    return arg === undefined ? s : s.replace('%s', arg);
+  }
+
+  var state = { calId: 'primary', events: [], loaded: false, error: '', expanded: null, editing: null,
+    calendars: [], weekStart: null, busy: false, saving: false };
+  var root = document.getElementById('root');
+  var app;
+
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (v === false || v == null) return;
+      if (k === 'class') el.className = v;
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    });
+    [].concat(kids || []).forEach(function (kid) {
+      if (kid == null || kid === false) return;
+      el.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid);
+    });
+    return el;
+  }
+  var REFRESH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg>';
+  function icon(svg) { var s = document.createElement('span'); s.style.display = 'contents'; s.innerHTML = svg; return s; } // static literals only
+
+  // ---- time helpers (everything displays in the host's time zone) ----
+  function locale() { return document.documentElement.lang || 'en'; }
+  function tz() {
+    return (app && app.ctx && app.ctx.timeZone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  }
+  function wallParts(iso, zone) {
+    var parts = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(iso));
+    var o = {};
+    parts.forEach(function (p) { o[p.type] = p.value; });
+    return { date: o.year + '-' + o.month + '-' + o.day, time: o.hour + ':' + o.minute };
+  }
+  function zonedMidnight(key, zone) {
+    var p = key.split('-').map(Number);
+    var guess = Date.UTC(p[0], p[1] - 1, p[2]);
+    var w = wallParts(new Date(guess).toISOString(), zone);
+    var wall = Date.parse(w.date + 'T' + w.time + ':00Z');
+    return new Date(guess - (wall - guess));
+  }
+  function addDays(key, n) {
+    var p = key.split('-').map(Number);
+    return new Date(Date.UTC(p[0], p[1] - 1, p[2] + n)).toISOString().slice(0, 10);
+  }
+  function todayKey() { return wallParts(new Date().toISOString(), tz()).date; }
+  function isAllDay(ev) { return !!(ev.start && ev.start.date && !ev.start.dateTime); }
+  function dayKey(ev) {
+    if (!ev.start) return '';
+    return isAllDay(ev) ? ev.start.date : wallParts(ev.start.dateTime, tz()).date;
+  }
+  function fmtTime(iso) {
+    try { return new Intl.DateTimeFormat(locale(), { hour: 'numeric', minute: '2-digit', timeZone: tz() }).format(new Date(iso)); }
+    catch (e) { return wallParts(iso, tz()).time; }
+  }
+  function fmtDay(key) {
+    try { return new Intl.DateTimeFormat(locale(), { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(key + 'T12:00:00Z')); }
+    catch (e) { return key; }
+  }
+  function relDay(key) {
+    var diff = Math.round((Date.parse(key + 'T00:00:00Z') - Date.parse(todayKey() + 'T00:00:00Z')) / 86400000);
+    if (diff < -1 || diff > 1) return '';
+    try { return new Intl.RelativeTimeFormat(locale(), { numeric: 'auto' }).format(diff, 'day'); } catch (e) { return ''; }
+  }
+  function whenLabel(ev) {
+    if (isAllDay(ev)) return t('allDay');
+    var s = ev.start && ev.start.dateTime;
+    if (!s) return '';
+    var e = ev.end && ev.end.dateTime;
+    return fmtTime(s) + (e ? ' – ' + fmtTime(e) : '');
+  }
+  function sortEvents(list) {
+    return list.slice().sort(function (a, b) {
+      var ka = dayKey(a), kb = dayKey(b);
+      if (ka !== kb) return ka < kb ? -1 : 1;
+      if (isAllDay(a) !== isAllDay(b)) return isAllDay(a) ? -1 : 1;
+      var sa = (a.start && a.start.dateTime) || '', sb = (b.start && b.start.dateTime) || '';
+      return Date.parse(sa) - Date.parse(sb) || 0;
+    });
+  }
+
+  function setError(message) { state.error = message ? t('failed') + message : ''; render(); }
+
+  // ---- data ----
+  function fetchEvents() {
+    var args = { calendar_id: state.calId, max_results: 100 };
+    if (state.weekStart) {
+      args.time_min = zonedMidnight(state.weekStart, tz()).toISOString();
+      args.time_max = zonedMidnight(addDays(state.weekStart, 7), tz()).toISOString();
+      args.include_past = true;
+    }
+    return app.callTool('google_calendar_list_events', args).then(function (data) {
+      state.events = sortEvents(data.events || []);
+      state.loaded = true;
+      state.error = '';
+      render();
+    }).catch(function (e) { state.loaded = true; setError(e.message); });
+  }
+  function loadCalendars() {
+    app.callTool('google_calendar_list_calendars', {}).then(function (data) {
+      state.calendars = data.calendars || [];
+      render();
+    }).catch(function () {});
+  }
+  function ensureDetail(ev) {
+    if (ev.detailLoaded) return Promise.resolve(ev);
+    return app.callTool('google_calendar_get_event', { calendar_id: state.calId, event_id: ev.id }).then(function (full) {
+      ev.description = full.description || '';
+      ev.organizer = full.organizer;
+      ev.detailLoaded = true;
+      return ev;
+    });
+  }
+
+  function remove(ev) {
+    app.callTool('google_calendar_delete_event', { calendar_id: state.calId, event_id: ev.id }, {
+      confirm: function () { return app.confirm(t('confirmDelete', ev.summary || t('untitled')), { ok: t('delOk'), cancel: t('cancel') }); }
+    }).then(function () {
+      state.events = state.events.filter(function (x) { return x.id !== ev.id; });
+      state.expanded = null;
+      state.error = '';
+      render();
+    }).catch(function (e) { if (e.cancelled) render(); else setError(e.message); });
+  }
+
+  // ---- form ----
+  function formValues(ev) {
+    var z = tz();
+    if (!ev) {
+      var start = new Date(Date.now() + 3600000);
+      start.setMinutes(0, 0, 0);
+      var s = wallParts(start.toISOString(), z), e = wallParts(new Date(start.getTime() + 3600000).toISOString(), z);
+      return { summary: '', allDay: false, sDate: s.date, sTime: s.time, eDate: e.date, eTime: e.time, location: '', description: '' };
+    }
+    var base = { summary: ev.summary || '', location: ev.location || '', description: ev.description || '' };
+    if (isAllDay(ev)) {
+      var last = ev.end && ev.end.date ? addDays(ev.end.date, -1) : ev.start.date;
+      if (last < ev.start.date) last = ev.start.date;
+      return Object.assign(base, { allDay: true, sDate: ev.start.date, sTime: '09:00', eDate: last, eTime: '10:00' });
+    }
+    var zone = ev.start.timeZone || z;
+    var a = wallParts(ev.start.dateTime, zone), b = wallParts((ev.end && ev.end.dateTime) || ev.start.dateTime, zone);
+    return Object.assign(base, { allDay: false, sDate: a.date, sTime: a.time, eDate: b.date, eTime: b.time });
+  }
+
+  function openForm(ev) { state.editing = { ev: ev || null, values: formValues(ev), error: '' }; render(); }
+
+  function submitForm(form) {
+    var editing = state.editing;
+    function el(name) { return form.elements.namedItem(name); }
+    var v = {
+      summary: el('summary').value.trim(), allDay: el('allDay').checked, sDate: el('sDate').value, sTime: el('sTime').value,
+      eDate: el('eDate').value, eTime: el('eTime').value, location: el('location').value.trim(), description: el('description').value
+    };
+    editing.values = v;
+    if (!v.summary) { editing.error = t('needTitle'); return render(); }
+    var start, end, zone = tz();
+    if (editing.ev && !isAllDay(editing.ev) && editing.ev.start.timeZone && !v.allDay) zone = editing.ev.start.timeZone;
+    if (v.allDay) {
+      if (v.eDate < v.sDate) v.eDate = v.sDate;
+      start = v.sDate; end = addDays(v.eDate, 1);
+    } else {
+      start = v.sDate + 'T' + v.sTime + ':00'; end = v.eDate + 'T' + v.eTime + ':00';
+      if (end <= start) { editing.error = t('endBeforeStart'); return render(); }
+    }
+    var confirm = function () { return app.confirm(t('confirmSave', v.summary), { ok: t('saveOk'), cancel: t('cancel') }); };
+    var ev = editing.ev;
+    state.saving = true;
+    state.editing = null;
+    render();
+    if (!ev) {
+      var args = { calendar_id: state.calId, summary: v.summary, start: start, end: end, allow_past_event: true };
+      if (!v.allDay) args.time_zone = zone;
+      if (v.location) args.location = v.location;
+      if (v.description) args.description = v.description;
+      return app.callTool('google_calendar_create_event', args, { confirm: confirm }).then(function (saved) {
+        saved.description = v.description;
+        saved.detailLoaded = true;
+        state.events = sortEvents(state.events.concat([saved]));
+        state.expanded = saved.id;
+        state.saving = false;
+        state.error = '';
+        render();
+      }).catch(function (e) { state.saving = false; if (e.cancelled) { state.editing = editing; render(); } else setError(e.message); });
+    }
+    var orig = formValues(ev), changes = { calendar_id: state.calId, event_id: ev.id, allow_past_event: true };
+    if (v.summary !== orig.summary) changes.summary = v.summary;
+    if (v.location !== orig.location) changes.location = v.location;
+    if (v.description !== orig.description) changes.description = v.description;
+    if (v.allDay !== orig.allDay || v.sDate !== orig.sDate || v.sTime !== orig.sTime || v.eDate !== orig.eDate || v.eTime !== orig.eTime) {
+      changes.start = start; changes.end = end;
+      if (!v.allDay) changes.time_zone = zone;
+    }
+    var before = JSON.parse(JSON.stringify(ev));
+    ev.summary = v.summary; ev.location = v.location; ev.description = v.description;
+    if (changes.start) {
+      ev.start = v.allDay ? { date: start } : { dateTime: start, timeZone: zone };
+      ev.end = v.allDay ? { date: end } : { dateTime: end, timeZone: zone };
+    }
+    state.saving = false;
+    render();
+    return app.callTool('google_calendar_update_event', changes, { confirm: confirm }).then(function (saved) {
+      ev.summary = saved.summary || ev.summary;
+      ev.start = saved.start || ev.start;
+      ev.end = saved.end || ev.end;
+      ev.location = saved.location !== undefined ? saved.location : ev.location;
+      ev.html_link = saved.html_link || ev.html_link;
+      state.events = sortEvents(state.events);
+      state.error = '';
+      render();
+    }).catch(function (e) {
+      Object.keys(before).forEach(function (k) { ev[k] = before[k]; });
+      if (e.cancelled) render(); else setError(e.message);
+    });
+  }
+
+  function field(label, input, cls) { return h('label', { class: cls || '' }, [label, input]); }
+  function formEl() {
+    var ed = state.editing, v = ed.values;
+    var form = h('form', { class: 'ev-form', novalidate: true });
+    var summary = h('input', { class: 'field', name: 'summary', type: 'text', value: v.summary, maxlength: '1024', 'aria-label': t('evTitle'), placeholder: t('evTitle') });
+    var allDay = h('input', { name: 'allDay', type: 'checkbox', checked: v.allDay });
+    var sDate = h('input', { class: 'field', name: 'sDate', type: 'date', value: v.sDate });
+    var sTime = h('input', { class: 'field', name: 'sTime', type: 'time', value: v.sTime });
+    var eDate = h('input', { class: 'field', name: 'eDate', type: 'date', value: v.eDate });
+    var eTime = h('input', { class: 'field', name: 'eTime', type: 'time', value: v.eTime });
+    var location = h('input', { class: 'field', name: 'location', type: 'text', value: v.location, maxlength: '1024', 'aria-label': t('location'), placeholder: t('location') });
+    var description = h('textarea', { class: 'field', name: 'description', 'aria-label': t('notes'), placeholder: t('notes') });
+    description.value = v.description;
+    var timeCells = [sTime, eTime];
+    function syncAllDay() { timeCells.forEach(function (c) { c.parentNode.hidden = allDay.checked; }); }
+    var row1 = h('div', { class: 'two' }, [field(t('startDate'), sDate), field(t('startTime'), sTime)]);
+    var row2 = h('div', { class: 'two' }, [field(t('endDate'), eDate), field(t('endTime'), eTime)]);
+    allDay.addEventListener('change', function () { syncAllDay(); });
+    var cancel = h('button', { class: 'btn', type: 'button', onclick: function () { state.editing = null; render(); } }, t('cancel'));
+    var save = h('button', { class: 'btn btn-primary', type: 'submit' }, t('save'));
+    form.append(summary, h('label', { class: 'inline' }, [allDay, t('allDayLabel')]), row1, row2, location, description,
+      ed.error ? h('div', { class: 'error', role: 'alert', style: 'margin:0' }, ed.error) : null,
+      h('div', { class: 'actions' }, [cancel, save]));
+    form.addEventListener('submit', function (e) { e.preventDefault(); submitForm(form); });
+    syncAllDay();
+    return form;
+  }
+
+  // ---- render ----
+  function detailEl(ev) {
+    var kids = [];
+    if (ev.location) kids.push(h('div', { class: 'muted' }, ev.location));
+    if (ev.attendees_count) kids.push(h('div', { class: 'muted' }, ev.attendees_count + ' ' + t('attendees')));
+    if (ev.description) kids.push(h('div', { class: 'desc' }, ev.description));
+    else if (!ev.detailLoaded) kids.push(h('div', { class: 'muted' }, t('loading')));
+    var actions = [];
+    if (ev.html_link) actions.push(h('button', { class: 'btn', type: 'button', onclick: function () { app.openLink(ev.html_link); } }, t('open')));
+    actions.push(h('button', { class: 'btn', type: 'button', onclick: function () {
+      ensureDetail(ev).then(function () { openForm(ev); }).catch(function (e) { setError(e.message); });
+    } }, t('edit')));
+    actions.push(h('button', { class: 'btn', type: 'button', onclick: function () { remove(ev); } }, t('del')));
+    kids.push(h('div', { class: 'actions' }, actions));
+    return h('div', { class: 'detail' }, kids);
+  }
+
+  function eventRow(ev) {
+    var open = state.expanded === ev.id;
+    var cls = 'ev' + (isAllDay(ev) ? ' allday' : '') + (ev.status === 'cancelled' ? ' cancelled' : '');
+    var btn = h('button', { class: 'row', type: 'button', 'aria-expanded': String(open), onclick: function () {
+      state.expanded = open ? null : ev.id;
+      render();
+      if (!open && !ev.detailLoaded) ensureDetail(ev).then(render).catch(function () {});
+    } }, [
+      h('span', { class: 'bar', 'aria-hidden': 'true' }),
+      h('span', { class: 'when' }, whenLabel(ev)),
+      h('span', { class: 'what' }, [
+        h('span', { class: 't' }, ev.summary || t('untitled')),
+        ev.location ? h('span', { class: 'sub' }, ev.location) : null
+      ])
+    ]);
+    return h('li', { class: cls }, [btn, open ? detailEl(ev) : null]);
+  }
+
+  function agenda() {
+    if (!state.events.length) return h('div', { class: 'empty' }, t('empty'));
+    var today = todayKey(), nodes = [], group = null, ul = null;
+    state.events.forEach(function (ev) {
+      var key = dayKey(ev);
+      if (key !== group) {
+        group = key;
+        var rel = relDay(key);
+        nodes.push(h('div', { class: 'day' + (key === today ? ' today' : '') }, [fmtDay(key), rel ? h('span', { class: 'rel' }, rel) : null]));
+        ul = h('ul', { role: 'list' });
+        nodes.push(ul);
+      }
+      ul.appendChild(eventRow(ev));
+    });
+    return h('div', {}, nodes);
+  }
+
+  function rangeLabel() {
+    if (!state.weekStart) return t('upcoming');
+    return fmtDay(state.weekStart) + ' – ' + fmtDay(addDays(state.weekStart, 6));
+  }
+  function shiftWeek(n) {
+    var from = state.weekStart || todayKey();
+    state.weekStart = addDays(from, 7 * n);
+    state.expanded = null;
+    fetchEvents();
+  }
+
+  function render() {
+    if (!state.loaded) return;
+    var select = null;
+    if (state.calendars.length > 1) {
+      select = h('select', { class: 'field', 'aria-label': t('calendar'), onchange: function (e) {
+        state.calId = e.target.value; state.expanded = null; fetchEvents();
+      } }, state.calendars.map(function (c) {
+        var opt = h('option', { value: c.id }, c.summary || c.id);
+        if (c.id === state.calId || (c.primary && state.calId === 'primary')) opt.selected = true;
+        return opt;
+      }));
+    }
+    var refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('refresh'), title: t('refresh'), onclick: function () { fetchEvents(); } }, icon(REFRESH));
+    var nav = h('div', { class: 'nav' }, [
+      h('button', { class: 'btn btn-ghost', type: 'button', onclick: function () { shiftWeek(-1); } }, t('earlier')),
+      h('span', { class: 'label' }, rangeLabel()),
+      state.weekStart ? h('button', { class: 'btn btn-ghost', type: 'button', onclick: function () { state.weekStart = null; fetchEvents(); } }, t('today')) : null,
+      h('button', { class: 'btn btn-ghost', type: 'button', onclick: function () { shiftWeek(1); } }, t('later'))
+    ]);
+    var footer = state.editing ? formEl() : h('div', { class: 'add' },
+      h('button', { class: 'btn btn-primary', type: 'button', onclick: function () { openForm(null); } }, t('newEvent')));
+    var card = h('div', { class: 'card' + (state.saving ? ' busy' : '') }, [
+      h('div', { class: 'card-head' }, [h('h1', {}, t('title')), select, refresh]),
+      nav,
+      state.error ? h('div', { class: 'error', role: 'alert' }, state.error) : null,
+      agenda(),
+      footer
+    ]);
+    root.replaceChildren(card);
+    if (app) app.reportSize();
+  }
+
+  function adopt(ev) { ev.detailLoaded = ev.description !== undefined; return ev; }
+
+  app = GatewayApp({
+    onContext: function (ctx) { lang = /^fa/i.test(ctx.locale || '') ? 'fa' : 'en'; render(); },
+    onInput: function (args) { if (args && args.calendar_id) state.calId = args.calendar_id; },
+    onResult: function (data) {
+      if (data.calendar_id && !data.event_id) state.calId = data.calendar_id;
+      if (Array.isArray(data.events)) {
+        state.events = sortEvents(data.events.map(adopt));
+        state.loaded = true;
+        state.error = '';
+        if (!state.calendars.length) loadCalendars();
+        render();
+      } else if (data.status === 'deleted') {
+        state.events = state.events.filter(function (x) { return x.id !== data.event_id; });
+        state.loaded = true;
+        render();
+      } else if (data.id && data.start) {
+        // A single event (get/create/update by the model): show the agenda around it.
+        var ev = adopt(data);
+        var key = dayKey(ev);
+        state.weekStart = key;
+        state.expanded = ev.id;
+        app.callTool('google_calendar_list_events', {
+          calendar_id: state.calId, max_results: 100, include_past: true,
+          time_min: zonedMidnight(key, tz()).toISOString(), time_max: zonedMidnight(addDays(key, 7), tz()).toISOString()
+        }).then(function (list) {
+          var events = (list.events || []);
+          if (!events.some(function (x) { return x.id === ev.id; })) events.push(ev);
+          state.events = sortEvents(events.map(function (x) { return x.id === ev.id ? Object.assign(x, ev) : x; }));
+          state.loaded = true;
+          render();
+        }).catch(function () { state.events = [ev]; state.loaded = true; render(); });
+        if (!state.calendars.length) loadCalendars();
+      } else {
+        state.loaded = true;
+        render();
+      }
+    },
+    onError: function (error) { state.loaded = true; setError(error.message); }
+  });
+})();
+</script>
+</body>
+</html>

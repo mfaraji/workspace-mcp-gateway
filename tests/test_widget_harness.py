@@ -17,12 +17,9 @@ pytestmark = pytest.mark.skipif(
     reason="install jsdom: cd tests/widgets && npm install",
 )
 
-FILES = {"ui://tasks/list": "tasks"}
-
-
 @pytest.mark.parametrize("uri", sorted(ui.WIDGETS))
 def test_widget_behaviour(uri, tmp_path):
-    name = FILES[uri]
+    name = Path(ui.WIDGETS[uri][0]).stem
     (tmp_path / f"{name}.html").write_text(ui.render_widget(uri), encoding="utf-8")
     done = subprocess.run(
         ["node", str(HARNESS / f"{name}.test.mjs"), str(tmp_path)],

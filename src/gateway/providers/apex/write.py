@@ -240,6 +240,7 @@ def register(registry) -> None:
             input_model=CreateInvoiceInput,
             handler=create_invoice,
             preview_builder=_create_invoice_preview,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -258,6 +259,7 @@ def register(registry) -> None:
             input_model=CreateTimesheetInput,
             handler=create_timesheet,
             preview_builder=_create_timesheet_preview,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -273,5 +275,6 @@ def register(registry) -> None:
             input_model=UpdateTimesheetInput,
             handler=update_timesheet,
             preview_builder=_update_timesheet_preview,
+            ui_app_callable=True,
         )
     )

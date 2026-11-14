@@ -12,6 +12,12 @@ from gateway.providers.finance import client
 
 PROVIDER = "finance"
 
+FINANCE_UI = "ui://finance/rates"
+UI_NOTE = (
+    "Shows an interactive rate card with a history chart in the chat; do not repeat its "
+    "numbers in text, summarise or answer follow-ups instead."
+)
+
 _EXCLUSION_FLAGS = (
     ("isOutlier", "outlier"),
     ("isExpired", "expired"),
@@ -137,7 +143,7 @@ def get_rate_history(args: RateHistoryInput, _ctx: CallContext, _session: Sessio
 
 
 def list_currencies(_args: ListCurrenciesInput, _ctx: CallContext, _session: Session) -> Any:
-    return client.list_currencies()
+    return {"currencies": client.list_currencies()}
 
 
 def register(registry) -> None:
@@ -151,10 +157,12 @@ def register(registry) -> None:
                 "Get the current exchange rate for a currency pair (default quote IRR, the "
                 "Iranian rial): average buy, sell and mid rate across valid sources, the "
                 "per-source quotes, and any excluded sources with reasons. Units are units "
-                "of the quote currency per 1 unit of the base."
+                "of the quote currency per 1 unit of the base. " + UI_NOTE
             ),
             input_model=CurrentRateInput,
             handler=get_current_rate,
+            ui_resource=FINANCE_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -165,10 +173,12 @@ def register(registry) -> None:
             description=(
                 "Get how the average exchange rate changed over the last 24 hours (hourly "
                 "series) or the last day (daily series): current, previous, absolute and "
-                "percent change. Covers the average rate only."
+                "percent change. Covers the average rate only. " + UI_NOTE
             ),
             input_model=RateChangeInput,
             handler=get_rate_change,
+            ui_resource=FINANCE_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -178,10 +188,13 @@ def register(registry) -> None:
             risk=RiskLevel.READ,
             description=(
                 "Get average exchange-rate history: hourly for the last 7 days (view='1W') "
-                "or daily back to 2018 (view='all', last `limit` days). Average rate only."
+                "or daily back to 2018 (view='all', last `limit` days). Average rate only. "
+                + UI_NOTE
             ),
             input_model=RateHistoryInput,
             handler=get_rate_history,
+            ui_resource=FINANCE_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -192,5 +205,6 @@ def register(registry) -> None:
             description="List supported currencies (id, abbreviation, title).",
             input_model=ListCurrenciesInput,
             handler=list_currencies,
+            ui_app_callable=True,
         )
     )

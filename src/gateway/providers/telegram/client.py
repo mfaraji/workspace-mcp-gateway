@@ -16,6 +16,11 @@ from gateway.connectors.upstream import ApiKeyStrategy
 from gateway.providers.registry import ToolError
 
 PROVIDER = "telegram"
+TELEGRAM_UI = "ui://telegram/send"
+UI_NOTE = (
+    "Shows an interactive composer in the chat (destination picker, message box, explicit "
+    "send confirmation): do not repeat its contents in text; wait for the user to send."
+)
 TELEGRAM_API_BASE = "https://api.telegram.org"
 
 _STATUS_ERROR_CODES = {

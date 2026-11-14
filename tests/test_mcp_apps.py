@@ -157,7 +157,8 @@ def test_resources_exist_only_on_mounts_whose_tools_use_them():
         return [str(r.uri) for r in mcp._resource_manager.list_resources()]
 
     assert served("tasks") == [TASKS_URI]
-    assert served("calendar") == []
+    assert served("calendar") == ["ui://calendar/agenda"]
+    assert served("apex") == ["ui://apex/billing"]
 
 
 @pytest.mark.parametrize("uri", sorted(ui.WIDGETS))

@@ -15,12 +15,15 @@ from sqlalchemy.orm import Session
 from gateway.db.models import GmailAgentDraft
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 from gateway.providers.google.gmail.common import (
+    GMAIL_UI,
     PROVIDER,
+    UI_NOTE,
     gmail_service,
     is_labeled,
     parse_message,
     require_labeled,
     resolve_access_label_id,
+    with_text_fallback,
 )
 from gateway.providers.registry import ToolError
 
@@ -89,7 +92,7 @@ def get_message(args: GetMessageInput, ctx: CallContext, session: Session) -> di
     label_id = resolve_access_label_id(service)
     msg = service.users().messages().get(userId="me", id=args.message_id, format="full").execute()
     require_labeled(msg, label_id)
-    return parse_message(msg)
+    return with_text_fallback(parse_message(msg))
 
 
 def get_thread(args: GetThreadInput, ctx: CallContext, session: Session) -> dict[str, Any]:
@@ -99,7 +102,10 @@ def get_thread(args: GetThreadInput, ctx: CallContext, session: Session) -> dict
     labeled = [m for m in thread.get("messages", []) if is_labeled(m, label_id)]
     if not labeled:
         raise ToolError("not_found", "thread not found")
-    return {"thread_id": args.thread_id, "messages": [parse_message(m) for m in labeled]}
+    return {
+        "thread_id": args.thread_id,
+        "messages": [with_text_fallback(parse_message(m)) for m in labeled],
+    }
 
 
 def list_drafts(_args: ListDraftsInput, ctx: CallContext, session: Session) -> dict[str, Any]:
@@ -139,10 +145,12 @@ def register(registry) -> None:
             risk=RiskLevel.READ,
             description=(
                 "Search Gmail messages. Only messages labelled 'agent-access' are "
-                "visible; others never appear." + _UNTRUSTED
+                "visible; others never appear." + _UNTRUSTED + " " + UI_NOTE
             ),
             input_model=SearchMessagesInput,
             handler=search_messages,
+            ui_resource=GMAIL_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -152,10 +160,12 @@ def register(registry) -> None:
             risk=RiskLevel.READ,
             description=(
                 "Read one labelled Gmail message (text and HTML bodies, attachment "
-                "metadata only)." + _UNTRUSTED
+                "metadata only)." + _UNTRUSTED + " " + UI_NOTE
             ),
             input_model=GetMessageInput,
             handler=get_message,
+            ui_resource=GMAIL_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -163,9 +173,13 @@ def register(registry) -> None:
             name="google_gmail_get_thread",
             provider=PROVIDER,
             risk=RiskLevel.READ,
-            description="Read the labelled messages of a Gmail thread." + _UNTRUSTED,
+            description=(
+                "Read the labelled messages of a Gmail thread." + _UNTRUSTED + " " + UI_NOTE
+            ),
             input_model=GetThreadInput,
             handler=get_thread,
+            ui_resource=GMAIL_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -173,8 +187,10 @@ def register(registry) -> None:
             name="google_gmail_list_drafts",
             provider=PROVIDER,
             risk=RiskLevel.READ,
-            description="List drafts previously created through this gateway.",
+            description="List drafts previously created through this gateway. " + UI_NOTE,
             input_model=ListDraftsInput,
             handler=list_drafts,
+            ui_resource=GMAIL_UI,
+            ui_app_callable=True,
         )
     )

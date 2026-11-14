@@ -1,0 +1,386 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apex Wealth</title>
+<style>
+{{SHARED_CSS}}
+.tabs { display: flex; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tab { min-height: 36px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.tab[aria-selected="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; padding: 12px 14px; }
+.stat { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+.stat .k { color: var(--muted); font-size: 12px; }
+.stat .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pos { color: var(--ok); } .neg { color: var(--danger); }
+.group { padding: 8px 14px 2px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+ul.rows { list-style: none; margin: 0; padding: 0; }
+.row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; border: 0; border-top: 1px solid var(--border); background: none; text-align: start; min-height: 52px; }
+button.row { cursor: pointer; }
+button.row:hover { background: var(--surface-2); }
+.row .main { flex: 1; min-width: 0; }
+.row .name { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .sub { display: block; color: var(--muted); font-size: 12px; }
+.amt { font-variant-numeric: tabular-nums; text-align: end; white-space: nowrap; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 8px 10px; text-align: end; border-top: 1px solid var(--border); white-space: nowrap; }
+th:first-child, td:first-child { text-align: start; position: sticky; inset-inline-start: 0; background: var(--surface); }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.scroll { overflow-x: auto; }
+.bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin: 4px 14px 8px; background: var(--surface-2); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 0 14px 10px; font-size: 12px; color: var(--muted); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-inline-end: 5px; }
+.seg { display: flex; gap: 4px; }
+.seg .tab { min-height: 32px; }
+.chart { padding: 6px 10px 12px; }
+svg.line { width: 100%; height: auto; display: block; direction: ltr; }
+svg.line text { fill: var(--muted); font-size: 11px; }
+.tip { padding: 0 14px 10px; min-height: 22px; color: var(--muted); }
+.chipbar { display: flex; gap: 8px; align-items: center; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; background: var(--surface-2); color: var(--muted); }
+select.field { padding-inline: 8px; }
+.busy { opacity: .6; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="card" id="root"><div class="skeleton"></div><div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:55%"></div></div>
+<script>
+{{SHARED_JS}}
+</script>
+<script>
+(function () {
+  'use strict';
+  var STRINGS = {
+    en: { title: 'Apex Wealth', accounts: 'Accounts', investments: 'Investments', networth: 'Net worth', none: 'Nothing here yet.', assets: 'Assets', debts: 'Debts',
+      netLiquid: 'Net liquid', totalValue: 'Total value', gain: 'Gain', cash: 'Cash', symbol: 'Symbol', qty: 'Qty', price: 'Price', value: 'Value', allAccounts: 'All accounts',
+      allocation: 'Allocation', positions: 'Positions', months: 'mo', liabilities: 'Liabilities', worth: 'Net worth', failed: 'That did not work: ', refresh: 'Refresh',
+      workspace: 'Workspace', switchWs: 'Switch workspace…', unnamed: 'Account', holdings: 'Holdings', cad: 'in CAD', range: 'Range' },
+    fa: { title: 'ثروت Apex', accounts: 'حساب‌ها', investments: 'سرمایه‌گذاری', networth: 'ارزش خالص', none: 'هنوز چیزی نیست.', assets: 'دارایی‌ها', debts: 'بدهی‌ها',
+      netLiquid: 'خالص نقدی', totalValue: 'ارزش کل', gain: 'سود', cash: 'نقد', symbol: 'نماد', qty: 'تعداد', price: 'قیمت', value: 'ارزش', allAccounts: 'همه حساب‌ها',
+      allocation: 'توزیع دارایی', positions: 'موقعیت‌ها', months: 'ماه', liabilities: 'بدهی‌ها', worth: 'ارزش خالص', failed: 'انجام نشد: ', refresh: 'تازه‌سازی',
+      workspace: 'فضای کار', switchWs: 'تغییر فضای کار…', unnamed: 'حساب', holdings: 'دارایی‌ها', cad: 'به دلار کانادا', range: 'بازه' }
+  };
+  var lang = 'en';
+  function t(key) { return (STRINGS[lang] || STRINGS.en)[key] || STRINGS.en[key] || key; }
+  var PALETTE = ['#3b6ef5', '#1f9d63', '#c98a12', '#d6453d', '#8a5cf6', '#0e9db5', '#d9619b', '#697386'];
+
+  var state = { tab: 'accounts', accounts: null, summary: null, invest: null, positions: null, posAccount: '', history: null, months: 12, workspaces: [], workspaceName: '',
+    loaded: false, error: '', busy: false, tip: '' };
+  var root = document.getElementById('root');
+  var app;
+
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (v === false || v == null) return;
+      if (k === 'class') el.className = v;
+      else if (k === 'value') el.value = v;
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    });
+    [].concat(kids || []).forEach(function (kid) {
+      if (kid == null || kid === false) return;
+      el.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid);
+    });
+    return el;
+  }
+  var NS = 'http://www.w3.org/2000/svg';
+  function s(tag, attrs, text) {
+    var el = document.createElementNS(NS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+    if (text != null) el.textContent = text;
+    return el;
+  }
+  var REFRESH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg>';
+  function icon(svg) { var sp = document.createElement('span'); sp.style.display = 'contents'; sp.innerHTML = svg; return sp; } // static literals only
+
+  // ---- tolerant parsing of passthrough JSON ----
+  function parseLoose(text) {
+    try { return JSON.parse(text); } catch (e) { /* maybe several concatenated JSON values */ }
+    var out = [], depth = 0, start = -1, inStr = false, esc = false;
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === '{' || c === '[') { if (depth === 0) start = i; depth++; }
+      else if (c === '}' || c === ']') { depth--; if (depth === 0 && start >= 0) { try { out.push(JSON.parse(text.slice(start, i + 1))); } catch (e2) { /* skip */ } start = -1; } }
+    }
+    return out.length === 1 ? out[0] : out;
+  }
+  function unwrap(data) {
+    if (data && typeof data.text === 'string' && Object.keys(data).length === 1) return parseLoose(data.text);
+    return data;
+  }
+  function listOf(data, keys) {
+    data = unwrap(data);
+    if (Array.isArray(data)) return data;
+    if (!data || typeof data !== 'object') return [];
+    var all = (keys || []).concat(['result', 'data', 'items']);
+    for (var i = 0; i < all.length; i++) if (Array.isArray(data[all[i]])) return data[all[i]];
+    var k = Object.keys(data).filter(function (key) { return Array.isArray(data[key]); });
+    return k.length ? data[k[0]] : [];
+  }
+  function obj(data) { data = unwrap(data); return data && typeof data === 'object' && !Array.isArray(data) ? data : {}; }
+  function num(v) { var n = typeof v === 'string' ? parseFloat(v) : v; return typeof n === 'number' && isFinite(n) ? n : null; }
+  function pick(o, keys) { o = o || {}; for (var i = 0; i < keys.length; i++) if (o[keys[i]] != null && o[keys[i]] !== '') return o[keys[i]]; return null; }
+  function pickNum(o, keys) { for (var i = 0; i < keys.length; i++) { var n = num((o || {})[keys[i]]); if (n != null) return n; } return null; }
+  function str(v) { return v == null ? '' : String(v); }
+
+  function fmtMoney(n, cur) {
+    if (n == null) return '—';
+    var loc = document.documentElement.lang || 'en';
+    cur = /^[A-Za-z]{3}$/.test(cur || '') ? cur.toUpperCase() : 'CAD';
+    try { return new Intl.NumberFormat(loc, { style: 'currency', currency: cur }).format(n); }
+    catch (e) { return new Intl.NumberFormat(loc, { maximumFractionDigits: 2 }).format(n) + ' ' + cur; }
+  }
+  function fmtNum(n, max) {
+    if (n == null) return '—';
+    try { return new Intl.NumberFormat(document.documentElement.lang || 'en', { maximumFractionDigits: max == null ? 4 : max }).format(n); } catch (e) { return String(n); }
+  }
+  function fmtPct(n) {
+    if (n == null) return '';
+    try { return new Intl.NumberFormat(document.documentElement.lang || 'en', { maximumFractionDigits: 1 }).format(n) + '%'; } catch (e) { return n + '%'; }
+  }
+  function fmtMonth(v) {
+    var d = new Date(str(v).length === 7 ? v + '-01T00:00:00Z' : v);
+    if (isNaN(d)) return str(v);
+    try { return new Intl.DateTimeFormat(document.documentElement.lang || 'en', { year: '2-digit', month: 'short', timeZone: 'UTC' }).format(d); } catch (e) { return str(v); }
+  }
+
+  // ---- normalisers ----
+  function normAccount(a) {
+    a = a || {};
+    var balance = pickNum(a, ['balance', 'currentBalance', 'current_balance', 'value', 'marketValue']);
+    return { id: str(a.id || a.accountId), name: str(pick(a, ['name', 'nickname', 'displayName', 'accountName'])) || t('unnamed'),
+      institution: str(pick(a, ['institution', 'institutionName', 'provider'])), kind: str(pick(a, ['subtype', 'type', 'registration', 'accountType'])),
+      currency: str(a.currency || 'CAD'), balance: balance, liability: (balance != null && balance < 0) || a.isLiability === true };
+  }
+  function normPosition(p) {
+    p = p || {};
+    return { symbol: str(pick(p, ['symbol', 'ticker', 'name'])) || '—', qty: pickNum(p, ['quantity', 'qty', 'units', 'shares']),
+      price: pickNum(p, ['price', 'lastPrice', 'marketPrice']), value: pickNum(p, ['marketValue', 'value', 'market_value']),
+      gain: pickNum(p, ['gain', 'unrealizedGain', 'gainLoss', 'pnl']), currency: str(p.currency || '') };
+  }
+  function normPoint(p) {
+    p = p || {};
+    var assets = pickNum(p, ['assets', 'totalAssets', 'total_assets']);
+    var liabilities = pickNum(p, ['liabilities', 'totalLiabilities', 'total_liabilities']);
+    var worth = pickNum(p, ['netWorth', 'net_worth', 'net', 'value', 'total']);
+    if (worth == null && assets != null) worth = assets - Math.abs(liabilities || 0);
+    return { label: pick(p, ['month', 'date', 'period', 'label', 'asOf']), assets: assets, liabilities: liabilities, worth: worth };
+  }
+
+  // ---- data ----
+  function fail(e) { state.busy = false; state.loaded = true; state.error = e && e.message ? t('failed') + e.message : ''; render(); }
+  function call(name, args) { return app.callTool(name, args || {}); }
+  function loadAccounts() {
+    return Promise.all([
+      call('apex_wealth_list_accounts').then(function (d) { state.accounts = listOf(d, ['accounts']).map(normAccount); }),
+      call('apex_wealth_get_accounts_summary').then(function (d) { state.summary = obj(d); }).catch(function () { state.summary = {}; })
+    ]);
+  }
+  function loadInvestments() {
+    var args = state.posAccount ? { account_id: state.posAccount } : {};
+    return Promise.all([
+      state.invest ? null : call('apex_wealth_get_investments_summary').then(function (d) { state.invest = obj(d); }),
+      call('apex_wealth_get_positions', args).then(function (d) { state.positions = obj(d); if (Array.isArray(unwrap(d))) state.positions = { positions: unwrap(d) }; })
+    ]);
+  }
+  function loadHistory() {
+    return call('apex_wealth_get_net_worth_history', { months: state.months }).then(function (d) { state.history = listOf(d, ['series', 'history', 'points', 'months']).map(normPoint); });
+  }
+  function ensure(tab) {
+    if (tab === 'accounts' && !state.accounts) return loadAccounts();
+    if (tab === 'investments' && !state.positions) return loadInvestments();
+    if (tab === 'networth' && !state.history) return loadHistory();
+    return Promise.resolve();
+  }
+  function go(tab) {
+    state.tab = tab; state.error = ''; state.tip = '';
+    ensure(tab).then(render).catch(fail);
+    render();
+  }
+  function reload() {
+    state.accounts = state.summary = state.invest = state.positions = state.history = null; state.error = '';
+    ensure(state.tab).then(render).catch(fail);
+    render();
+  }
+  function setMonths(m) { state.months = m; state.history = null; state.tip = ''; loadHistory().then(render).catch(fail); render(); }
+  function setPosAccount(id) { state.posAccount = id; state.positions = null; loadInvestments().then(render).catch(fail); render(); }
+  function loadWorkspaces() {
+    return call('apex_wealth_list_workspaces').then(function (d) { state.workspaces = listOf(d, ['workspaces']).filter(function (w) { return w && w.id; }); }).catch(function () { state.workspaces = []; });
+  }
+  function switchWorkspace(id) {
+    state.busy = true; render();
+    call('apex_wealth_set_workspace', { workspace_id: id }).then(function (res) { state.workspaceName = str(res && res.name); state.busy = false; reload(); }).catch(fail);
+  }
+
+  // ---- views ----
+  function stat(k, v, cls) { return h('div', { class: 'stat' }, [h('div', { class: 'k' }, k), h('div', { class: 'v ' + (cls || '') }, v)]); }
+  function gainCls(n) { return n == null ? '' : (n >= 0 ? 'pos' : 'neg'); }
+
+  function accountsView() {
+    var list = state.accounts || [];
+    var sum = state.summary || {};
+    var assets = list.filter(function (a) { return !a.liability; });
+    var debts = list.filter(function (a) { return a.liability; });
+    var totalCad = pickNum(sum, ['netLiquidCad', 'netLiquid', 'net_liquid', 'netCad', 'net']);
+    var kids = [];
+    var stats = [];
+    var cashCad = pickNum(sum, ['cashCad', 'totalCashCad', 'cash']);
+    var debtCad = pickNum(sum, ['debtCad', 'totalDebtCad', 'liabilitiesCad', 'debt', 'debts']);
+    if (cashCad != null) stats.push(stat(t('assets') + ' (' + t('cad') + ')', fmtMoney(cashCad, 'CAD')));
+    if (debtCad != null) stats.push(stat(t('debts') + ' (' + t('cad') + ')', fmtMoney(debtCad, 'CAD'), 'neg'));
+    if (totalCad != null) stats.push(stat(t('netLiquid') + ' (' + t('cad') + ')', fmtMoney(totalCad, 'CAD'), gainCls(totalCad)));
+    if (stats.length) kids.push(h('div', { class: 'stats' }, stats));
+    function group(title, rows) {
+      if (!rows.length) return;
+      kids.push(h('div', { class: 'group' }, title));
+      kids.push(h('ul', { class: 'rows', role: 'list' }, rows.map(function (a) {
+        var body = [h('span', { class: 'main' }, [h('span', { class: 'name' }, a.name), h('span', { class: 'sub' }, [a.institution, a.kind].filter(Boolean).join(' · '))]),
+          h('span', { class: 'amt ' + (a.liability ? 'neg' : '') }, fmtMoney(a.balance, a.currency))];
+        return h('li', {}, a.id && !a.liability ? h('button', { class: 'row', type: 'button', onclick: function () { state.posAccount = a.id; state.positions = null; state.tab = 'investments'; loadInvestments().then(render).catch(fail); render(); } }, body) : h('div', { class: 'row' }, body));
+      })));
+    }
+    group(t('assets'), assets);
+    group(t('debts'), debts);
+    if (!list.length) kids.push(h('div', { class: 'empty' }, state.accounts ? t('none') : '…'));
+    return kids;
+  }
+
+  function investmentsView() {
+    var inv = state.invest || {};
+    var pos = state.positions || {};
+    var kids = [];
+    var summary = obj(pos.summary);
+    var total = pickNum(summary, ['marketValue', 'totalMarketValue', 'totalValue', 'value']) ;
+    if (total == null) total = pickNum(inv, ['totalValue', 'totalValueCad', 'value', 'marketValue']);
+    var gain = pickNum(summary, ['gain', 'totalGain', 'unrealizedGain', 'gainLoss']);
+    if (gain == null) gain = pickNum(inv, ['totalGain', 'gain', 'gainCad']);
+    var cash = pickNum(inv, ['cash', 'totalCash', 'cashCad']);
+    var stats = [];
+    if (total != null) stats.push(stat(t('totalValue'), fmtMoney(total, 'CAD')));
+    if (gain != null) stats.push(stat(t('gain'), fmtMoney(gain, 'CAD'), gainCls(gain)));
+    if (cash != null) stats.push(stat(t('cash'), fmtMoney(cash, 'CAD')));
+    if (stats.length) kids.push(h('div', { class: 'stats' }, stats));
+
+    var accounts = listOf(inv.accounts || [], []).map(function (a) { return { id: str(a.id || a.accountId), name: str(pick(a, ['name', 'nickname', 'accountName'])) || t('unnamed') }; }).filter(function (a) { return a.id; });
+    if (accounts.length) {
+      var select = h('select', { class: 'field', 'aria-label': t('allAccounts'), style: 'margin:0 14px 10px;width:calc(100% - 28px)' },
+        [h('option', { value: '' }, t('allAccounts'))].concat(accounts.map(function (a) { var o = h('option', { value: a.id }, a.name); if (a.id === state.posAccount) o.selected = true; return o; })));
+      select.addEventListener('change', function () { setPosAccount(select.value); });
+      kids.push(select);
+    }
+    var alloc = listOf(inv.allocation || inv.allocations || [], []).map(function (a) { return { label: str(pick(a, ['label', 'name', 'assetClass', 'class', 'category'])), pct: pickNum(a, ['percent', 'pct', 'weight', 'percentage']), value: pickNum(a, ['value', 'marketValue', 'amount']) }; }).filter(function (a) { return a.label && (a.pct != null || a.value != null); });
+    if (alloc.length) {
+      var sumVal = alloc.reduce(function (acc, a) { return acc + (a.pct != null ? a.pct : a.value); }, 0) || 1;
+      kids.push(h('div', { class: 'group' }, t('allocation')));
+      kids.push(h('div', { class: 'bar', role: 'img', 'aria-label': t('allocation') }, alloc.map(function (a, i) {
+        return h('span', { title: a.label, style: 'width:' + (((a.pct != null ? a.pct : a.value) / sumVal) * 100) + '%;background:' + PALETTE[i % PALETTE.length] }); })));
+      kids.push(h('div', { class: 'legend' }, alloc.map(function (a, i) {
+        return h('span', {}, [h('span', { class: 'dot', style: 'background:' + PALETTE[i % PALETTE.length] }), a.label + (a.pct != null ? ' ' + fmtPct(a.pct) : '')]); })));
+    }
+    var rows = listOf(pos, ['positions', 'holdings']).map(normPosition);
+    kids.push(h('div', { class: 'group' }, t('positions')));
+    if (rows.length) {
+      kids.push(h('div', { class: 'scroll' }, h('table', {}, [
+        h('thead', {}, h('tr', {}, [t('symbol'), t('qty'), t('price'), t('value'), t('gain')].map(function (c) { return h('th', {}, c); }))),
+        h('tbody', {}, rows.map(function (p) {
+          return h('tr', {}, [h('td', {}, p.symbol), h('td', {}, fmtNum(p.qty)), h('td', {}, p.price == null ? '—' : fmtMoney(p.price, p.currency)),
+            h('td', {}, fmtMoney(p.value, p.currency)), h('td', { class: gainCls(p.gain) }, p.gain == null ? '—' : fmtMoney(p.gain, p.currency))]); }))])));
+    } else kids.push(h('div', { class: 'empty' }, state.positions ? t('none') : '…'));
+    return kids;
+  }
+
+  function networthView() {
+    var pts = (state.history || []).filter(function (p) { return p.worth != null; });
+    var kids = [];
+    var seg = h('div', { class: 'seg', role: 'group', 'aria-label': t('range') }, [6, 12, 24, 60].map(function (m) {
+      return h('button', { class: 'tab', type: 'button', 'aria-pressed': String(state.months === m), 'aria-selected': String(state.months === m), onclick: function () { setMonths(m); } }, m + ' ' + t('months')); }));
+    kids.push(h('div', { style: 'padding:10px 14px 0' }, seg));
+    if (!pts.length) { kids.push(h('div', { class: 'empty' }, state.history ? t('none') : '…')); return kids; }
+    var last = pts[pts.length - 1], first = pts[0];
+    var delta = last.worth - first.worth;
+    kids.push(h('div', { class: 'stats' }, [stat(t('worth') + ' (' + t('cad') + ')', fmtMoney(last.worth, 'CAD')), stat(t('range'), (delta >= 0 ? '+' : '') + fmtMoney(delta, 'CAD'), gainCls(delta)),
+      last.assets != null ? stat(t('assets'), fmtMoney(last.assets, 'CAD')) : null, last.liabilities != null ? stat(t('liabilities'), fmtMoney(Math.abs(last.liabilities), 'CAD'), 'neg') : null]));
+    var W = 600, H = 200, padL = 8, padR = 8, padT = 12, padB = 24;
+    var min = Math.min.apply(null, pts.map(function (p) { return p.worth; })), max = Math.max.apply(null, pts.map(function (p) { return p.worth; }));
+    if (min === max) { min -= 1; max += 1; }
+    var xs = function (i) { return padL + (pts.length === 1 ? (W - padL - padR) / 2 : (i * (W - padL - padR)) / (pts.length - 1)); };
+    var ys = function (v) { return padT + (1 - (v - min) / (max - min)) * (H - padT - padB); };
+    var svg = s('svg', { class: 'line', viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': t('networth') });
+    var path = pts.map(function (p, i) { return (i ? 'L' : 'M') + xs(i).toFixed(1) + ' ' + ys(p.worth).toFixed(1); }).join(' ');
+    svg.appendChild(s('path', { d: path + ' L' + xs(pts.length - 1).toFixed(1) + ' ' + (H - padB) + ' L' + xs(0).toFixed(1) + ' ' + (H - padB) + ' Z', fill: 'var(--accent)', opacity: '0.12' }));
+    svg.appendChild(s('path', { d: path, fill: 'none', stroke: 'var(--accent)', 'stroke-width': '2', 'stroke-linejoin': 'round' }));
+    svg.appendChild(s('text', { x: padL, y: H - 6 }, fmtMonth(first.label)));
+    var endLabel = s('text', { x: W - padR, y: H - 6, 'text-anchor': 'end' }, fmtMonth(last.label));
+    svg.appendChild(endLabel);
+    pts.forEach(function (p, i) {
+      var c = s('circle', { cx: xs(i).toFixed(1), cy: ys(p.worth).toFixed(1), r: pts.length > 36 ? 2 : 3.5, fill: 'var(--accent)', tabindex: '0', 'aria-label': fmtMonth(p.label) + ': ' + fmtMoney(p.worth, 'CAD') });
+      c.appendChild(s('title', {}, fmtMonth(p.label) + ': ' + fmtMoney(p.worth, 'CAD')));
+      var show = function () { state.tip = fmtMonth(p.label) + ' — ' + fmtMoney(p.worth, 'CAD'); var tip = document.getElementById('tip'); if (tip) tip.textContent = state.tip; };
+      c.addEventListener('mouseenter', show); c.addEventListener('focus', show); c.addEventListener('click', show);
+      svg.appendChild(c);
+    });
+    kids.push(h('div', { class: 'chart' }, svg));
+    kids.push(h('div', { class: 'tip', id: 'tip', 'aria-live': 'polite' }, state.tip));
+    return kids;
+  }
+
+  function render() {
+    if (!state.loaded) return;
+    var picker = null;
+    if (state.workspaces.length > 1) {
+      var select = h('select', { class: 'field', 'aria-label': t('workspace'), style: 'width:auto;max-width:160px' },
+        [h('option', { value: '' }, state.workspaceName || t('switchWs'))].concat(state.workspaces.map(function (w) { return h('option', { value: w.id }, str(w.name) || w.id); })));
+      select.addEventListener('change', function () { if (select.value) switchWorkspace(select.value); });
+      picker = select;
+    } else if (state.workspaceName) picker = h('span', { class: 'badge' }, state.workspaceName);
+    var body = state.tab === 'accounts' ? accountsView() : state.tab === 'investments' ? investmentsView() : networthView();
+    var card = h('div', { class: 'card' + (state.busy ? ' busy' : '') }, [
+      h('div', { class: 'card-head' }, [h('h1', {}, t('title')), h('div', { class: 'chipbar' }, [picker,
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('refresh'), title: t('refresh'), onclick: reload }, icon(REFRESH))])]),
+      h('div', { class: 'tabs', role: 'tablist' }, ['accounts', 'investments', 'networth'].map(function (k) {
+        return h('button', { class: 'tab', type: 'button', role: 'tab', 'aria-selected': String(state.tab === k), onclick: function () { go(k); } }, t(k)); })),
+      state.error ? h('div', { class: 'error', role: 'alert' }, state.error) : null
+    ].concat(body));
+    root.replaceChildren(card);
+    if (app) app.reportSize();
+  }
+
+  var TAB_OF = { apex_wealth_list_accounts: 'accounts', apex_wealth_get_accounts_summary: 'accounts', apex_wealth_get_investments_summary: 'investments',
+    apex_wealth_get_positions: 'investments', apex_wealth_get_net_worth_history: 'networth' };
+  function initial(data) {
+    var name = app.toolName || '';
+    state.tab = TAB_OF[name] || 'accounts';
+    if (name === 'apex_wealth_list_accounts') state.accounts = listOf(data, ['accounts']).map(normAccount);
+    else if (name === 'apex_wealth_get_accounts_summary') state.summary = obj(data);
+    else if (name === 'apex_wealth_get_investments_summary') state.invest = obj(data);
+    else if (name === 'apex_wealth_get_positions') { state.positions = obj(data); state.posAccount = str(app.args && app.args.account_id); }
+    else if (name === 'apex_wealth_get_net_worth_history') {
+      state.history = listOf(data, ['series', 'history', 'points', 'months']).map(normPoint);
+      if (app.args && app.args.months) state.months = app.args.months;
+    }
+    state.loaded = true;
+    ensure(state.tab).then(function () {
+      // Accounts and investments views need the companion data for a complete picture.
+      return state.tab === 'accounts' && !state.summary ? call('apex_wealth_get_accounts_summary').then(function (d) { state.summary = obj(d); }).catch(function () { state.summary = {}; })
+        : (state.tab === 'accounts' && !state.accounts ? loadAccounts() : null);
+    }).then(function () {
+      if (state.tab === 'investments' && !state.invest) return call('apex_wealth_get_investments_summary').then(function (d) { state.invest = obj(d); });
+    }).then(render).catch(fail);
+    render();
+  }
+
+  app = GatewayApp({
+    onContext: function (ctx) { lang = /^fa/i.test(ctx.locale || '') ? 'fa' : 'en'; render(); },
+    onResult: initial,
+    onError: function (error) { state.loaded = true; state.error = t('failed') + error.message; render(); },
+    onReady: function () { loadWorkspaces().then(render); }
+  });
+})();
+</script>
+</body>
+</html>

@@ -16,9 +16,11 @@ from gateway.db.models import GmailAgentDraft
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 from gateway.providers.google.connections import get_active_connection
 from gateway.providers.google.gmail.common import (
+    GMAIL_UI,
     MAX_BODY_CHARS,
     MAX_RECIPIENTS,
     PROVIDER,
+    UI_NOTE,
     build_mime,
     gmail_service,
     parse_message,
@@ -212,10 +214,13 @@ def register(registry) -> None:
             description=(
                 "Create a Gmail DRAFT (never sent). Supports HTML via body_html (a "
                 "plain-text fallback is generated if body_text is omitted). Set "
-                "reply_to_message_id (must be a labelled message) to draft a threaded reply."
+                "reply_to_message_id (must be a labelled message) to draft a threaded reply. "
+                + UI_NOTE
             ),
             input_model=CreateDraftInput,
             handler=create_draft,
+            ui_resource=GMAIL_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -224,9 +229,11 @@ def register(registry) -> None:
             provider=PROVIDER,
             risk=RiskLevel.MUTATING,
             requires_confirmation=False,
-            description="Update a draft created through this gateway. Never sends.",
+            description="Update a draft created through this gateway. Never sends. " + UI_NOTE,
             input_model=UpdateDraftInput,
             handler=update_draft,
+            ui_resource=GMAIL_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -238,5 +245,6 @@ def register(registry) -> None:
             description="Delete a draft created through this gateway.",
             input_model=DeleteDraftInput,
             handler=delete_draft,
+            ui_app_callable=True,
         )
     )

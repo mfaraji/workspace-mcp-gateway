@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
-from gateway.providers.telegram.client import PROVIDER
+from gateway.providers.telegram.client import PROVIDER, TELEGRAM_UI, UI_NOTE
 from gateway.providers.telegram.service import list_destinations
 
 
@@ -40,9 +40,11 @@ def register(registry) -> None:
             risk=RiskLevel.READ,
             description=(
                 "List the verified Telegram channel aliases available to the current user. "
-                "Use an alias from this result with telegram_send_message."
+                "Use an alias from this result with telegram_send_message. " + UI_NOTE
             ),
             input_model=ListDestinationsInput,
             handler=list_verified_destinations,
+            ui_resource=TELEGRAM_UI,
+            ui_app_callable=True,
         )
     )

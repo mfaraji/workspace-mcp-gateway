@@ -12,6 +12,12 @@ from gateway.providers.google.client import build_calendar_service
 
 PROVIDER = "google"
 
+CALENDAR_UI = "ui://calendar/agenda"
+UI_NOTE = (
+    "Shows an interactive agenda in the chat (open, edit, delete, add events): do not "
+    "repeat the events in text; summarise or answer follow-ups instead."
+)
+
 CALENDAR_OAUTH = OAuthStrategy(
     upstream_provider=PROVIDER,
     required_scopes=CALENDAR_SCOPES,

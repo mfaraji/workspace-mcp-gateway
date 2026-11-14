@@ -1,0 +1,329 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gmail</title>
+<style>
+{{SHARED_CSS}}
+.tabs { display: flex; gap: 4px; }
+.tab { min-height: 34px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
+.search { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+ul { list-style: none; margin: 0; padding: 0; }
+.row { display: block; width: 100%; text-align: start; background: none; border: 0; border-bottom: 1px solid var(--border); padding: 10px 14px; cursor: pointer; }
+.row:hover { background: var(--surface-2); }
+.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.line { display: flex; gap: 8px; align-items: baseline; }
+.from { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.date { color: var(--muted); font-size: 12px; flex: none; }
+.subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snippet { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
+.item .row { border-bottom: 0; flex: 1; min-width: 0; }
+.msg { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.msg:last-child { border-bottom: 0; }
+.meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.msg h2 { margin: 0 0 4px; font-size: 15px; overflow-wrap: anywhere; }
+.bodytext { margin: 10px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; unicode-bidi: plaintext; }
+.note { margin-top: 8px; color: var(--muted); font-size: 12px; }
+.files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { padding: 2px 10px; border-radius: 999px; background: var(--surface-2); font-size: 12px; overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.form { padding: 12px 14px; display: grid; gap: 8px; }
+.form label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.form textarea { min-height: 150px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); resize: vertical; }
+.notice { margin: 10px 14px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.foot { display: flex; justify-content: center; padding: 8px; }
+.busy { opacity: .55; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="card" id="root"><div class="skeleton"></div><div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:55%"></div></div>
+<script>
+{{SHARED_JS}}
+</script>
+<script>
+(function () {
+  'use strict';
+  var STRINGS = {
+    en: { title: 'Mail', inbox: 'Labelled mail', drafts: 'Drafts', search: 'Search mail', go: 'Search', empty: 'No labelled messages.',
+      noDrafts: 'No drafts yet.', newDraft: 'New draft', back: 'Back', reply: 'Reply as draft', thread: 'Whole thread',
+      edit: 'Edit', del: 'Delete draft', from: 'From', to: 'To', cc: 'Cc', subject: 'Subject', body: 'Message',
+      keepBody: 'Leave empty to keep the current text', save: 'Save draft', cancel: 'Cancel', more: 'Load more',
+      confirmDelete: 'Delete the draft “%s”? This cannot be undone.', delOk: 'Delete', noSubject: '(no subject)',
+      noBody: '(empty message)', fromHtml: 'Shown as plain text from the HTML version.', truncated: 'Message was truncated.',
+      attachments: 'Attachments (names only)', saved: 'Draft saved. Nothing was sent.', created: 'Draft created. Nothing was sent.',
+      needBody: 'Write a message first.', failed: 'That did not work: ', addrHint: 'Separate addresses with commas', refresh: 'Refresh',
+      sendNote: 'Drafts only: this assistant cannot send email.' },
+    fa: { title: 'ایمیل', inbox: 'ایمیل‌های برچسب‌خورده', drafts: 'پیش‌نویس‌ها', search: 'جستجو در ایمیل', go: 'جستجو', empty: 'ایمیلی با برچسب نیست.',
+      noDrafts: 'هنوز پیش‌نویسی نیست.', newDraft: 'پیش‌نویس جدید', back: 'بازگشت', reply: 'پاسخ به‌صورت پیش‌نویس', thread: 'کل گفتگو',
+      edit: 'ویرایش', del: 'حذف پیش‌نویس', from: 'از', to: 'به', cc: 'رونوشت', subject: 'موضوع', body: 'متن',
+      keepBody: 'برای حفظ متن فعلی خالی بگذارید', save: 'ذخیره پیش‌نویس', cancel: 'انصراف', more: 'بیشتر',
+      confirmDelete: 'پیش‌نویس «%s» حذف شود؟ قابل بازگشت نیست.', delOk: 'حذف', noSubject: '(بدون موضوع)',
+      noBody: '(پیام خالی)', fromHtml: 'متن ساده از نسخه HTML نمایش داده شد.', truncated: 'پیام کوتاه شده است.',
+      attachments: 'پیوست‌ها (فقط نام)', saved: 'پیش‌نویس ذخیره شد. چیزی ارسال نشد.', created: 'پیش‌نویس ساخته شد. چیزی ارسال نشد.',
+      needBody: 'ابتدا متن پیام را بنویسید.', failed: 'انجام نشد: ', addrHint: 'آدرس‌ها را با ویرگول جدا کنید', refresh: 'تازه‌سازی',
+      sendNote: 'فقط پیش‌نویس: این دستیار نمی‌تواند ایمیل ارسال کند.' }
+  };
+  var lang = 'en';
+  function t(key, arg) {
+    var s = (STRINGS[lang] || STRINGS.en)[key] || STRINGS.en[key] || key;
+    return arg === undefined ? s : s.replace('%s', arg);
+  }
+
+  var state = {
+    view: 'list', tab: 'list', loaded: false, error: '', notice: '', busy: false,
+    query: '', messages: [], next: null, drafts: [], thread: [], backTo: 'list',
+    edit: null
+  };
+  var root = document.getElementById('root');
+  var app;
+
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (v === false || v == null) return;
+      if (k === 'class') el.className = v;
+      else if (k === 'value') el.value = v;
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    });
+    [].concat(kids || []).forEach(function (kid) {
+      if (kid == null || kid === false) return;
+      el.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid);
+    });
+    return el;
+  }
+  var REFRESH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg>';
+  var TRASH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12h10l1-12M9 7V4h6v3"/></svg>';
+  var BACK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>';
+  function icon(svg) { var s = document.createElement('span'); s.style.display = 'contents'; s.innerHTML = svg; return s; } // static literals only
+
+  function hdr(m, name) { return ((m && m.headers) || {})[name] || ''; }
+  function sender(value) {
+    var name = String(value || '').replace(/<[^>]*>/, '').replace(/^\s*"|"\s*$/g, '').trim();
+    return name || String(value || '').replace(/[<>]/g, '').trim();
+  }
+  function fmtDate(value) {
+    var d = new Date(value);
+    if (!value || isNaN(d)) return value || '';
+    var locale = document.documentElement.lang || 'en';
+    try { return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric' }).format(d); }
+    catch (e) { return String(value).slice(0, 16); }
+  }
+  function addresses(text) {
+    return String(text || '').split(/[,;\n]+/).map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+  function bareAddresses(value) {
+    return addresses(value).map(function (x) { var m = x.match(/<([^>]+)>/); return m ? m[1] : x; });
+  }
+
+  function fail(e) { state.busy = false; state.error = t('failed') + (e && e.message ? e.message : ''); render(); }
+  function go(view, tab) { state.view = view; if (tab) state.tab = tab; state.error = ''; state.notice = ''; render(); }
+
+  function loadList(token) {
+    var args = { query: state.query, max_results: 20 };
+    if (token) args.page_token = token;
+    return app.callTool('google_gmail_search_messages', args).then(function (data) {
+      state.messages = token ? state.messages.concat(data.messages || []) : (data.messages || []);
+      state.next = data.next_page_token || null;
+      state.loaded = true; state.view = 'list'; state.tab = 'list'; state.error = '';
+      render();
+    }).catch(function (e) { state.loaded = true; fail(e); });
+  }
+  function loadDrafts() {
+    return app.callTool('google_gmail_list_drafts', {}).then(function (data) {
+      state.drafts = data.drafts || [];
+      state.loaded = true; state.view = 'drafts'; state.tab = 'drafts'; state.error = '';
+      render();
+    }).catch(function (e) { state.loaded = true; fail(e); });
+  }
+  function openMessage(id) {
+    state.busy = true; render();
+    app.callTool('google_gmail_get_message', { message_id: id }).then(function (m) {
+      state.busy = false; state.thread = [m]; state.backTo = state.view === 'read' ? state.backTo : state.view;
+      state.view = 'read'; state.error = ''; render();
+    }).catch(fail);
+  }
+  function openThread(id) {
+    state.busy = true; render();
+    app.callTool('google_gmail_get_thread', { thread_id: id }).then(function (data) {
+      state.busy = false; state.thread = data.messages || []; state.view = 'read'; state.error = ''; render();
+    }).catch(fail);
+  }
+
+  function startEdit(init) {
+    state.edit = Object.assign({ draft_id: null, reply_to: null, to: '', cc: '', subject: '', body: '' }, init);
+    state.backTo = state.view === 'edit' ? state.backTo : state.view;
+    go('edit');
+  }
+  function save() {
+    var e = state.edit;
+    var body = e.body.trim();
+    if (!e.draft_id && !body) { state.error = t('needBody'); render(); return; }
+    state.busy = true; state.error = ''; render();
+    var args = { to: addresses(e.to), cc: addresses(e.cc), subject: e.subject };
+    var call;
+    if (e.draft_id) {
+      args.draft_id = e.draft_id;
+      // A new body replaces the whole draft, dropping any stale HTML alternative.
+      if (body) { args.body_text = e.body; args.body_html = ''; }
+      call = app.callTool('google_gmail_update_draft', args);
+    } else {
+      args.body_text = e.body;
+      if (e.reply_to) args.reply_to_message_id = e.reply_to;
+      call = app.callTool('google_gmail_create_draft', args);
+    }
+    call.then(function (res) {
+      state.busy = false;
+      var created = res && res.status === 'draft_created';
+      return loadDrafts().then(function () { state.notice = created ? t('created') : t('saved'); render(); });
+    }).catch(fail);
+  }
+  function removeDraft(d) {
+    var title = hdr(d, 'Subject') || t('noSubject');
+    app.confirm(t('confirmDelete', title), { ok: t('delOk'), cancel: t('cancel') }).then(function (ok) {
+      if (!ok) return;
+      var snapshot = state.drafts.slice();
+      state.drafts = state.drafts.filter(function (x) { return x.draft_id !== d.draft_id; });
+      render();
+      app.callTool('google_gmail_delete_draft', { draft_id: d.draft_id }).catch(function (e) {
+        state.drafts = snapshot; fail(e);
+      });
+    });
+  }
+
+  function messageRow(m) {
+    var from = sender(hdr(m, 'From'));
+    return h('button', { class: 'row', type: 'button', onclick: function () { openMessage(m.id); } }, [
+      h('div', { class: 'line' }, [h('span', { class: 'from' }, from || '—'), h('span', { class: 'date' }, fmtDate(hdr(m, 'Date')))]),
+      h('div', { class: 'subject' }, hdr(m, 'Subject') || t('noSubject')),
+      h('div', { class: 'snippet' }, m.snippet || '')
+    ]);
+  }
+  function draftRow(d) {
+    var to = sender(hdr(d, 'To'));
+    var row = h('button', { class: 'row', type: 'button', onclick: function () {
+      startEdit({ draft_id: d.draft_id, to: bareAddresses(hdr(d, 'To')).join(', '), cc: bareAddresses(hdr(d, 'Cc')).join(', '), subject: hdr(d, 'Subject') });
+    } }, [
+      h('div', { class: 'line' }, [h('span', { class: 'from' }, to ? t('to') + ': ' + to : '—'), h('span', { class: 'date' }, fmtDate(hdr(d, 'Date')))]),
+      h('div', { class: 'subject' }, hdr(d, 'Subject') || t('noSubject')),
+      h('div', { class: 'snippet' }, d.snippet || '')
+    ]);
+    var del = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('del'), title: t('del'), onclick: function () { removeDraft(d); } }, icon(TRASH));
+    return h('div', { class: 'item' }, [row, del]);
+  }
+
+  function messageView(m) {
+    var kids = [h('h2', {}, hdr(m, 'Subject') || t('noSubject'))];
+    [['From', 'from'], ['To', 'to'], ['Cc', 'cc']].forEach(function (pair) {
+      var v = hdr(m, pair[0]);
+      if (v) kids.push(h('div', { class: 'meta' }, t(pair[1]) + ': ' + v));
+    });
+    if (hdr(m, 'Date')) kids.push(h('div', { class: 'meta' }, fmtDate(hdr(m, 'Date'))));
+    kids.push(h('pre', { class: 'bodytext', dir: 'auto' }, m.body_text || t('noBody')));   // text only, never HTML
+    if (m.text_from_html) kids.push(h('div', { class: 'note' }, t('fromHtml')));
+    if (m.truncated) kids.push(h('div', { class: 'note' }, t('truncated')));
+    if ((m.attachments || []).length) {
+      kids.push(h('div', { class: 'note' }, t('attachments')));
+      kids.push(h('div', { class: 'files' }, m.attachments.map(function (a) { return h('span', { class: 'chip' }, a.filename || '—'); })));
+    }
+    var actions = [h('button', { class: 'btn btn-primary', type: 'button', onclick: function () {
+      startEdit({ reply_to: m.id, to: bareAddresses(hdr(m, 'From')).join(', '), subject: /^re:/i.test(hdr(m, 'Subject')) ? hdr(m, 'Subject') : 'Re: ' + hdr(m, 'Subject') });
+    } }, t('reply'))];
+    if (state.thread.length === 1 && m.thread_id) {
+      actions.push(h('button', { class: 'btn', type: 'button', onclick: function () { openThread(m.thread_id); } }, t('thread')));
+    }
+    kids.push(h('div', { class: 'actions' }, actions));
+    return h('div', { class: 'msg' }, kids);
+  }
+
+  function editor() {
+    var e = state.edit;
+    function field(label, key, opts) {
+      var input = h('input', { class: 'field', type: 'text', value: e[key], dir: 'auto', placeholder: opts && opts.hint ? t('addrHint') : '' });
+      input.addEventListener('input', function () { e[key] = input.value; });
+      return h('label', {}, [label, input]);
+    }
+    var area = h('textarea', { dir: 'auto', placeholder: e.draft_id ? t('keepBody') : '' });
+    area.value = e.body;
+    area.addEventListener('input', function () { e.body = area.value; });
+    var form = h('div', { class: 'form' + (state.busy ? ' busy' : '') }, [
+      field(t('to'), 'to', { hint: true }), field(t('cc'), 'cc', { hint: true }), field(t('subject'), 'subject'),
+      h('label', {}, [t('body'), area]),
+      h('div', { class: 'note' }, t('sendNote')),
+      h('div', { class: 'actions' }, [
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: save }, t('save')),
+        h('button', { class: 'btn', type: 'button', onclick: function () { go(state.backTo, state.backTo === 'drafts' ? 'drafts' : 'list'); } }, t('cancel'))
+      ])
+    ]);
+    return form;
+  }
+
+  function render() {
+    if (!state.loaded && state.view !== 'read' && state.view !== 'edit') return;
+    var head = [];
+    if (state.view === 'read' || state.view === 'edit') {
+      head.push(h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('back'), title: t('back'), onclick: function () {
+        go(state.view === 'edit' && state.backTo === 'read' ? 'read' : (state.backTo === 'drafts' ? 'drafts' : 'list'), state.backTo === 'drafts' ? 'drafts' : 'list');
+      } }, icon(BACK)));
+      head.push(h('h1', {}, t('title')));
+    } else {
+      head.push(h('h1', {}, t('title')));
+      head.push(h('div', { class: 'tabs', role: 'tablist' }, [
+        h('button', { class: 'tab', role: 'tab', 'aria-selected': String(state.tab === 'list'), type: 'button', onclick: function () { loadList(); } }, t('inbox')),
+        h('button', { class: 'tab', role: 'tab', 'aria-selected': String(state.tab === 'drafts'), type: 'button', onclick: function () { loadDrafts(); } }, t('drafts'))
+      ]));
+      head.push(h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('refresh'), title: t('refresh'), onclick: function () { state.tab === 'drafts' ? loadDrafts() : loadList(); } }, icon(REFRESH)));
+    }
+    var body;
+    if (state.view === 'list') {
+      var input = h('input', { class: 'field', type: 'search', value: state.query, placeholder: t('search'), 'aria-label': t('search'), dir: 'auto' });
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { state.query = input.value; loadList(); } });
+      var btn = h('button', { class: 'btn', type: 'button', onclick: function () { state.query = input.value; loadList(); } }, t('go'));
+      body = [h('div', { class: 'search' }, [input, btn]),
+        state.messages.length ? h('ul', { role: 'list' }, state.messages.map(function (m) { return h('li', {}, messageRow(m)); })) : h('div', { class: 'empty' }, t('empty')),
+        state.next ? h('div', { class: 'foot' }, h('button', { class: 'btn btn-ghost', type: 'button', onclick: function () { loadList(state.next); } }, t('more'))) : null];
+    } else if (state.view === 'drafts') {
+      body = [h('div', { class: 'search' }, [h('button', { class: 'btn btn-primary', type: 'button', onclick: function () { startEdit({}); } }, t('newDraft'))]),
+        state.drafts.length ? h('ul', { role: 'list' }, state.drafts.map(function (d) { return h('li', {}, draftRow(d)); })) : h('div', { class: 'empty' }, t('noDrafts'))];
+    } else if (state.view === 'read') {
+      body = [h('div', { class: state.busy ? 'busy' : '' }, state.thread.map(messageView))];
+    } else {
+      body = [editor()];
+    }
+    var card = h('div', { class: 'card' }, [
+      h('div', { class: 'card-head' }, head),
+      state.notice ? h('div', { class: 'notice', role: 'status' }, state.notice) : null,
+      state.error ? h('div', { class: 'error', role: 'alert' }, state.error) : null
+    ].concat(body));
+    root.replaceChildren(card);
+    if (app) app.reportSize();
+  }
+
+  function dispatch(data) {
+    state.error = ''; state.notice = '';
+    if (Array.isArray(data.drafts)) { state.drafts = data.drafts; state.loaded = true; state.view = 'drafts'; state.tab = 'drafts'; render(); return; }
+    if (Array.isArray(data.messages) && data.messages.length && data.messages[0].body_text !== undefined) {
+      state.thread = data.messages; state.loaded = true; state.backTo = 'list'; state.view = 'read'; render(); return;
+    }
+    if (data.id && data.body_text !== undefined) { state.thread = [data]; state.loaded = true; state.backTo = 'list'; state.view = 'read'; render(); return; }
+    if (data.status === 'draft_created' || data.status === 'draft_updated' || data.status === 'draft_deleted') {
+      loadDrafts().then(function () { state.notice = data.status === 'draft_created' ? t('created') : t('saved'); render(); }); return;
+    }
+    state.messages = data.messages || []; state.next = data.next_page_token || null;
+    state.loaded = true; state.view = 'list'; state.tab = 'list'; render();
+  }
+
+  app = GatewayApp({
+    onContext: function (ctx) { lang = /^fa/i.test(ctx.locale || '') ? 'fa' : 'en'; render(); },
+    onInput: function (args) { if (args && typeof args.query === 'string') state.query = args.query; },
+    onResult: dispatch,
+    onError: function (error) { state.loaded = true; fail(error); }
+  });
+})();
+</script>
+</body>
+</html>

@@ -15,7 +15,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
-from gateway.providers.google.calendar.common import PROVIDER, calendar_service, trim_event
+from gateway.providers.google.calendar.common import (
+    CALENDAR_UI,
+    PROVIDER,
+    UI_NOTE,
+    calendar_service,
+    trim_event,
+)
 
 
 class CreateEventInput(BaseModel):
@@ -231,11 +237,13 @@ def register(registry) -> None:
             description=(
                 "Create a Google calendar event. Requires confirmation. For relative "
                 "dates, use system_get_current_time as the date anchor; never use "
-                "existing calendar event dates as today's date."
+                "existing calendar event dates as today's date. " + UI_NOTE
             ),
             input_model=CreateEventInput,
             handler=create_event,
             preview_builder=_create_preview,
+            ui_resource=CALENDAR_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -243,10 +251,14 @@ def register(registry) -> None:
             name="google_calendar_update_event",
             provider=PROVIDER,
             risk=RiskLevel.MUTATING,
-            description="Update fields of a Google calendar event. Requires confirmation.",
+            description=(
+                "Update fields of a Google calendar event. Requires confirmation. " + UI_NOTE
+            ),
             input_model=UpdateEventInput,
             handler=update_event,
             preview_builder=_update_preview,
+            ui_resource=CALENDAR_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -258,5 +270,6 @@ def register(registry) -> None:
             input_model=DeleteEventInput,
             handler=delete_event,
             preview_builder=_delete_preview,
+            ui_app_callable=True,
         )
     )

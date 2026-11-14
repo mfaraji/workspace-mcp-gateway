@@ -18,6 +18,12 @@ from gateway.providers.base import CallContext
 from gateway.providers.google.client import build_drive_service
 
 PROVIDER = "google"
+
+DRIVE_UI = "ui://drive/files"
+UI_NOTE = (
+    "Shows an interactive file list in the chat (search, details, open in Drive): do not "
+    "repeat the files in text; summarise or answer follow-ups instead."
+)
 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 

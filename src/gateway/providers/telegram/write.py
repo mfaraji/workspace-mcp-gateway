@@ -140,5 +140,7 @@ def register(registry, settings: Settings) -> None:
             handler=send_message,
             preview_builder=None,
             requires_confirmation=False,
+            # The composer widget asks "Send to <destination>?" itself before this call.
+            ui_app_callable=True,
         )
     )

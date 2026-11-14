@@ -79,7 +79,7 @@ class ToolRegistry:
             result = await anyio.to_thread.run_sync(
                 lambda: _run_pipeline(spec, settings, kwargs, confirmation_token)
             )
-            if spec.ui_resource and isinstance(result, dict):
+            if spec.ui_resource and isinstance(result, dict | list):
                 return _with_structured_content(result)
             return result
 
@@ -117,8 +117,13 @@ class ToolRegistry:
         return tool
 
 
-def _with_structured_content(result: dict) -> CallToolResult:
-    """Return a widget tool's result as text (for the model) plus structuredContent (for the UI)."""
+def _with_structured_content(result: dict | list) -> CallToolResult:
+    """Return a widget tool's result as text (for the model) plus structuredContent (for the UI).
+
+    structuredContent must be an object, so a bare list is wrapped as ``{"result": [...]}``.
+    """
+    if isinstance(result, list):
+        result = {"result": result}
     text = json.dumps(result, indent=2, ensure_ascii=False, default=str)
     return CallToolResult(
         content=[TextContent(type="text", text=text)],

@@ -14,6 +14,12 @@ from gateway.storage.capella.repository import OwnedDocumentRepository
 
 PROVIDER = "recipes"
 
+RECIPES_UI = "ui://recipes/book"
+UI_NOTE = (
+    "Shows an interactive recipe book in the chat (browse, servings scaler, rate, edit, delete): "
+    "do not repeat the recipe in text; summarise or answer follow-ups instead."
+)
+
 NOT_FOUND_MESSAGE = "Recipe not found."
 
 

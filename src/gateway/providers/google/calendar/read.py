@@ -15,7 +15,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
-from gateway.providers.google.calendar.common import PROVIDER, calendar_service, trim_event
+from gateway.providers.google.calendar.common import (
+    CALENDAR_UI,
+    PROVIDER,
+    UI_NOTE,
+    calendar_service,
+    trim_event,
+)
 
 
 class ListCalendarsInput(BaseModel):
@@ -128,6 +134,7 @@ def register(registry) -> None:
             description="List the user's Google calendars.",
             input_model=ListCalendarsInput,
             handler=list_calendars,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -138,10 +145,13 @@ def register(registry) -> None:
             description=(
                 "List events on a Google calendar, optionally filtered by time or query. "
                 "Do not use event dates returned by this tool as today's date; use "
-                "system_get_current_time for current-date and relative-date context."
+                "system_get_current_time for current-date and relative-date context. "
+                + UI_NOTE
             ),
             input_model=ListEventsInput,
             handler=list_events,
+            ui_resource=CALENDAR_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -149,8 +159,10 @@ def register(registry) -> None:
             name="google_calendar_get_event",
             provider=PROVIDER,
             risk=RiskLevel.READ,
-            description="Get a single Google calendar event by id.",
+            description="Get a single Google calendar event by id. " + UI_NOTE,
             input_model=GetEventInput,
             handler=get_event,
+            ui_resource=CALENDAR_UI,
+            ui_app_callable=True,
         )
     )

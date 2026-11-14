@@ -1,0 +1,403 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recipes</title>
+<style>
+{{SHARED_CSS}}
+.bar { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.bar .field { flex: 1; min-width: 0; }
+.cards { display: grid; gap: 8px; padding: 10px 14px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.rc { text-align: start; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+.rc:hover { border-color: var(--accent); }
+.rc:focus-visible { outline: 2px solid var(--accent); }
+.rc .t { font-weight: 600; overflow-wrap: anywhere; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+button.chip { cursor: pointer; font: inherit; font-size: 12px; }
+button.chip:hover { border-color: var(--accent); color: var(--text); }
+.rate { color: var(--warn); font-size: 13px; letter-spacing: 1px; white-space: nowrap; }
+.rate .num { color: var(--muted); letter-spacing: 0; margin-inline-start: 4px; }
+.sec { padding: 10px 14px; border-top: 1px solid var(--border); }
+.sec h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 14px; color: var(--muted); font-size: 13px; }
+.scaler { display: inline-flex; align-items: center; gap: 4px; }
+.scaler output { min-width: 28px; text-align: center; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; }
+ul.ing { list-style: none; margin: 0; padding: 0; }
+ul.ing li { padding: 5px 0; border-bottom: 1px dashed var(--border); overflow-wrap: anywhere; }
+ul.ing li:last-child { border-bottom: 0; }
+.qty { font-weight: 600; font-variant-numeric: tabular-nums; margin-inline-end: 4px; }
+ol.steps { margin: 0; padding-inline-start: 22px; }
+ol.steps li { padding: 6px 0; overflow-wrap: anywhere; cursor: pointer; }
+ol.steps li.done { color: var(--muted); text-decoration: line-through; }
+.stars { display: inline-flex; }
+.stars button { background: none; border: 0; font-size: 26px; line-height: 1; min-width: 40px; min-height: 40px; cursor: pointer; color: var(--border); }
+.stars button.on, .stars button:hover { color: var(--warn); }
+.stars button:focus-visible { outline: 2px solid var(--accent); border-radius: 8px; }
+.fb { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+.fb:last-child { border-bottom: 0; }
+.fb .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+.row .field { min-width: 0; }
+.row .q { flex: 0 0 72px; } .row .u { flex: 0 0 84px; } .row .n { flex: 1; }
+textarea.field { padding: 8px 12px; min-height: 64px; resize: vertical; }
+label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.foot { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); justify-content: flex-end; flex-wrap: wrap; }
+.warn { margin: 10px 14px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 16%, transparent); display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.back { font-size: 18px; }
+.busy { opacity: .55; pointer-events: none; }
+a.link { color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; font: inherit; text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="card" id="root"><div class="skeleton"></div><div class="skeleton" style="width:65%"></div><div class="skeleton" style="width:50%"></div></div>
+<script>
+{{SHARED_JS}}
+</script>
+<script>
+(function () {
+  'use strict';
+  var STRINGS = {
+    en: { title: 'Recipes', search: 'Search recipes…', newRecipe: 'New recipe', empty: 'No recipes found.', more: 'Load more',
+      back: 'Back', edit: 'Edit', del: 'Delete', servings: 'Servings', fewer: 'Fewer servings', moreServ: 'More servings',
+      prep: 'Prep', cook: 'Cook', min: 'min', ingredients: 'Ingredients', steps: 'Steps', notes: 'Notes', source: 'Source',
+      rating: 'Your rating', comment: 'Add a note (optional)', ratings: 'Ratings', noRatings: 'Not rated yet',
+      save: 'Save', cancel: 'Cancel', delOk: 'Delete', fTitle: 'Title', fDesc: 'Description', fCuisine: 'Cuisine',
+      fCategory: 'Category', fServings: 'Servings', fLang: 'Language', fPrep: 'Prep (min)', fCook: 'Cook (min)',
+      fTags: 'Tags (comma separated)', fNotes: 'Personal notes', fSource: 'Source URL', qty: 'Qty', unit: 'Unit', name: 'Ingredient',
+      addIng: 'Add ingredient', addStep: 'Add step', step: 'Step', remove: 'Remove', needTitle: 'A title is required.',
+      conflict: 'This recipe changed elsewhere since you opened it.', reload: 'Reload', failed: 'That did not work: ',
+      rated: 'Rated', star: 'star' },
+    fa: { title: 'دستور پخت‌ها', search: 'جست‌وجوی دستور پخت…', newRecipe: 'دستور جدید', empty: 'دستور پختی پیدا نشد.', more: 'بیشتر',
+      back: 'بازگشت', edit: 'ویرایش', del: 'حذف', servings: 'تعداد نفرات', fewer: 'کمتر', moreServ: 'بیشتر',
+      prep: 'آماده‌سازی', cook: 'پخت', min: 'دقیقه', ingredients: 'مواد لازم', steps: 'مراحل', notes: 'یادداشت‌ها', source: 'منبع',
+      rating: 'امتیاز شما', comment: 'یادداشت (اختیاری)', ratings: 'امتیازها', noRatings: 'هنوز امتیازی نیست',
+      save: 'ذخیره', cancel: 'انصراف', delOk: 'حذف', fTitle: 'عنوان', fDesc: 'توضیح', fCuisine: 'آشپزی',
+      fCategory: 'دسته', fServings: 'تعداد نفرات', fLang: 'زبان', fPrep: 'آماده‌سازی (دقیقه)', fCook: 'پخت (دقیقه)',
+      fTags: 'برچسب‌ها (با ویرگول)', fNotes: 'یادداشت شخصی', fSource: 'نشانی منبع', qty: 'مقدار', unit: 'واحد', name: 'ماده',
+      addIng: 'افزودن ماده', addStep: 'افزودن مرحله', step: 'مرحله', remove: 'حذف', needTitle: 'عنوان لازم است.',
+      conflict: 'این دستور در جای دیگری تغییر کرده است.', reload: 'بارگذاری دوباره', failed: 'انجام نشد: ',
+      rated: 'امتیاز', star: 'ستاره' }
+  };
+  var lang = 'en', locale = 'en';
+  var root = document.getElementById('root');
+  var app;
+  var state = {
+    view: 'list', items: [], next: null, query: '', tag: '', loaded: false, error: '', conflict: false, busy: false,
+    recipe: null, servings: null, doneSteps: {}, pendingRating: 0, comment: '', draft: null, draftKey: ''
+  };
+
+  function t(key) { return (STRINGS[lang] || STRINGS.en)[key] || STRINGS.en[key] || key; }
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (v === false || v == null) return;
+      if (k === 'class') el.className = v;
+      else if (k === 'value') el.value = v;
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    });
+    [].concat(kids || []).forEach(function (kid) {
+      if (kid == null || kid === false) return;
+      el.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid);
+    });
+    return el;
+  }
+  function num(n, o) { try { return new Intl.NumberFormat(locale, o || { maximumFractionDigits: 1 }).format(n); } catch (e) { return String(n); } }
+  function uid() { return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'k' + Date.now() + Math.random().toString(16).slice(2); }
+  function fail(e) {
+    state.busy = false;
+    if (e && e.cancelled) { render(); return; }
+    var msg = e && e.message || '';
+    state.conflict = /changed since|version/i.test(msg);
+    state.error = state.conflict ? '' : t('failed') + msg;
+    render();
+  }
+  function confirmer(message) { return app.confirm(message, { ok: t('delOk'), cancel: t('cancel') }); }
+
+  function stars(value, label) {
+    var rounded = Math.round(value || 0);
+    var s = ''; for (var i = 1; i <= 5; i++) s += i <= rounded ? '★' : '☆';
+    return h('span', { class: 'rate', role: 'img', 'aria-label': label || (value ? num(value) + '/5' : t('noRatings')) },
+      [s, value ? h('span', { class: 'num' }, num(value)) : null]);
+  }
+
+  // ---- data
+  function fetchList(more) {
+    var query = state.query.trim();
+    var offset = more ? (state.next || 0) : 0;
+    var call = (query || state.tag)
+      ? app.callTool('recipes_search', Object.assign({ limit: 20, offset: offset }, query ? { query: query } : {}, state.tag ? { tag: state.tag } : {}))
+      : app.callTool('recipes_list', { limit: 20, offset: offset });
+    state.busy = true; render();
+    return call.then(function (data) {
+      state.items = more ? state.items.concat(data.items || []) : (data.items || []);
+      state.next = data.next_offset == null ? null : data.next_offset;
+      state.loaded = true; state.busy = false; state.error = ''; state.view = 'list'; render();
+    }).catch(function (e) { state.loaded = true; fail(e); });
+  }
+  function openRecipe(id) {
+    state.busy = true; state.error = ''; state.conflict = false; render();
+    return app.callTool('recipes_get', { recipe_id: id }).then(function (doc) {
+      state.recipe = doc; state.servings = doc.servings || null; state.doneSteps = {}; state.pendingRating = 0; state.comment = '';
+      state.view = 'detail'; state.loaded = true; state.busy = false; render();
+    }).catch(function (e) { state.loaded = true; fail(e); });
+  }
+
+  // ---- quantities
+  var GLYPHS = [[0.125, '⅛'], [0.25, '¼'], [1 / 3, '⅓'], [0.5, '½'], [2 / 3, '⅔'], [0.75, '¾']];
+  function fmtQty(v) {
+    if (v == null) return '';
+    var whole = Math.floor(v + 1e-9), frac = v - whole;
+    if (frac < 0.03) return num(whole, { maximumFractionDigits: 0 });
+    if (frac > 0.97) return num(whole + 1, { maximumFractionDigits: 0 });
+    for (var i = 0; i < GLYPHS.length; i++) {
+      if (Math.abs(frac - GLYPHS[i][0]) < 0.03) return (whole ? num(whole, { maximumFractionDigits: 0 }) + ' ' : '') + GLYPHS[i][1];
+    }
+    return num(v, { maximumFractionDigits: 2 });
+  }
+  function ingredientQty(ing, factor) {
+    if (typeof ing.quantity === 'number') {
+      if (factor === 1 && ing.quantity_text) return ing.quantity_text;
+      return fmtQty(ing.quantity * factor);
+    }
+    return ing.quantity_text || '';
+  }
+
+  // ---- views
+  function listView() {
+    var input = h('input', { class: 'field', type: 'search', dir: 'auto', placeholder: t('search'), 'aria-label': t('search'), value: state.query });
+    function go() { state.query = input.value; state.tag = ''; fetchList(false); }
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+    var cards = state.items.map(function (r) {
+      var bits = [r.cuisine, r.category].filter(Boolean).map(function (x) { return h('span', { class: 'chip', dir: 'auto' }, x); });
+      return h('div', { class: 'rc', role: 'button', tabindex: '0', onclick: function () { openRecipe(r.id); },
+        onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRecipe(r.id); } } }, [
+        h('span', { class: 't', dir: 'auto' }, r.title || '—'),
+        r.rating_avg != null ? stars(r.rating_avg) : null,
+        h('div', { class: 'chips' }, bits.concat((r.tags || []).slice(0, 4).map(function (tg) {
+          return h('button', { class: 'chip', type: 'button', dir: 'auto', onclick: function (e) { e.stopPropagation(); state.tag = tg; state.query = ''; fetchList(false); } }, '#' + tg);
+        }))),
+        r.servings ? h('span', { class: 'muted' }, t('servings') + ' ' + num(r.servings, { maximumFractionDigits: 0 })) : null
+      ]);
+    });
+    return [
+      h('div', { class: 'card-head' }, [h('h1', {}, t('title') + (state.tag ? ' · #' + state.tag : '')),
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: function () { openEdit(null); } }, '+ ' + t('newRecipe'))]),
+      h('div', { class: 'bar' }, [input, h('button', { class: 'btn', type: 'button', onclick: go }, '🔍')]),
+      state.error ? h('div', { class: 'error', role: 'alert' }, state.error) : null,
+      cards.length ? h('div', { class: 'cards' }, cards) : h('div', { class: 'empty' }, t('empty')),
+      state.next != null ? h('div', { class: 'foot' }, h('button', { class: 'btn', type: 'button', onclick: function () { fetchList(true); } }, t('more'))) : null
+    ];
+  }
+
+  function detailView() {
+    var r = state.recipe;
+    var base = r.servings || null;
+    var factor = base && state.servings ? state.servings / base : 1;
+    var scaler = base ? h('span', { class: 'scaler' }, [
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('fewer'), onclick: function () { state.servings = Math.max(1, state.servings - 1); render(); } }, '−'),
+      h('output', { 'aria-live': 'polite' }, num(state.servings, { maximumFractionDigits: 0 })),
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('moreServ'), onclick: function () { state.servings = state.servings + 1; render(); } }, '+')
+    ]) : null;
+    var meta = h('div', { class: 'meta' }, [
+      r.cuisine ? h('span', { dir: 'auto' }, r.cuisine) : null, r.category ? h('span', { dir: 'auto' }, r.category) : null,
+      r.prep_time_minutes != null ? h('span', {}, t('prep') + ' ' + num(r.prep_time_minutes, { maximumFractionDigits: 0 }) + ' ' + t('min')) : null,
+      r.cook_time_minutes != null ? h('span', {}, t('cook') + ' ' + num(r.cook_time_minutes, { maximumFractionDigits: 0 }) + ' ' + t('min')) : null,
+      base ? h('span', {}, [t('servings') + ' ', scaler]) : null,
+      r.rating_avg != null ? stars(r.rating_avg) : null
+    ]);
+    var ings = (r.ingredients || []).map(function (ing) {
+      var q = ingredientQty(ing, factor);
+      return h('li', {}, [q ? h('span', { class: 'qty' }, q) : null, ing.unit ? h('span', {}, ing.unit + ' ') : null,
+        h('span', { dir: 'auto' }, ing.name + (ing.brand ? ' (' + ing.brand + ')' : '')), ing.notes ? h('span', { class: 'muted', dir: 'auto' }, ' — ' + ing.notes) : null]);
+    });
+    var steps = (r.instructions || []).map(function (st, i) {
+      return h('li', { class: state.doneSteps[i] ? 'done' : '', dir: 'auto', role: 'checkbox', tabindex: '0', 'aria-checked': String(!!state.doneSteps[i]),
+        onclick: function () { state.doneSteps[i] = !state.doneSteps[i]; render(); },
+        onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); state.doneSteps[i] = !state.doneSteps[i]; render(); } } }, st);
+    });
+    var rating = h('div', { class: 'sec' }, [h('h2', {}, t('rating')),
+      h('div', { class: 'stars', role: 'radiogroup', 'aria-label': t('rating') }, [1, 2, 3, 4, 5].map(function (n) {
+        return h('button', { type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-label': n + ' ' + t('star'), class: n <= state.pendingRating ? 'on' : '', onclick: function () { rate(n); } }, '★');
+      })),
+      h('input', { class: 'field', type: 'text', dir: 'auto', maxlength: '2000', placeholder: t('comment'), 'aria-label': t('comment'), value: state.comment,
+        oninput: function (e) { state.comment = e.target.value; } })]);
+    var fbs = (r.feedback || []).slice().reverse().map(function (f) {
+      return h('div', { class: 'fb' }, [stars(f.rating, t('rated') + ' ' + f.rating),
+        h('div', { class: 'grow', dir: 'auto' }, [f.comment || '', f.cooked_on ? h('div', { class: 'muted' }, f.cooked_on) : null]),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('del'), title: t('del'), onclick: function () { removeFeedback(f); } }, '✕')]);
+    });
+    return [
+      h('div', { class: 'card-head' }, [
+        h('button', { class: 'icon-btn back', type: 'button', 'aria-label': t('back'), title: t('back'), onclick: function () { fetchList(false); } }, document.documentElement.dir === 'rtl' ? '→' : '←'),
+        h('h1', { dir: 'auto' }, r.title),
+        h('button', { class: 'btn', type: 'button', onclick: function () { openEdit(r); } }, t('edit')),
+        h('button', { class: 'btn btn-ghost', type: 'button', onclick: removeRecipe }, t('del'))]),
+      state.error ? h('div', { class: 'error', role: 'alert' }, state.error) : null,
+      state.conflict ? h('div', { class: 'warn', role: 'alert' }, [h('span', {}, t('conflict')), h('button', { class: 'btn', type: 'button', onclick: function () { openRecipe(r.id); } }, t('reload'))]) : null,
+      r.description ? h('div', { class: 'meta', dir: 'auto', style: 'color:var(--text)' }, r.description) : null,
+      meta,
+      ings.length ? h('div', { class: 'sec' }, [h('h2', {}, t('ingredients')), h('ul', { class: 'ing' }, ings)]) : null,
+      steps.length ? h('div', { class: 'sec' }, [h('h2', {}, t('steps')), h('ol', { class: 'steps' }, steps)]) : null,
+      r.personal_notes ? h('div', { class: 'sec' }, [h('h2', {}, t('notes')), h('div', { dir: 'auto', style: 'white-space:pre-wrap;overflow-wrap:anywhere' }, r.personal_notes)]) : null,
+      r.source_url ? h('div', { class: 'sec' }, [h('h2', {}, t('source')), h('button', { class: 'link', type: 'button', onclick: function () { app.openLink(r.source_url); } }, r.source_url)]) : null,
+      rating,
+      fbs.length ? h('div', { class: 'sec' }, [h('h2', {}, t('ratings') + ' (' + num(fbs.length, { maximumFractionDigits: 0 }) + ')')].concat(fbs)) : null
+    ];
+  }
+
+  // ---- edit form
+  function openEdit(recipe) {
+    state.error = ''; state.conflict = false; state.draftKey = uid();
+    var r = recipe || {};
+    state.draft = {
+      id: r.id || null, version: r.version || null, isNew: !recipe, orig: r,
+      title: r.title || '', description: r.description || '', cuisine: r.cuisine || '', category: r.category || '',
+      servings: r.servings != null ? String(r.servings) : '', language: r.language || (lang === 'fa' ? 'fa' : 'en'),
+      prep: r.prep_time_minutes != null ? String(r.prep_time_minutes) : '', cook: r.cook_time_minutes != null ? String(r.cook_time_minutes) : '',
+      tags: (r.tags || []).join(', '), notes: r.personal_notes || '', source: r.source_url || '',
+      ingredients: (r.ingredients || []).map(function (i) { return { q: i.quantity_text || (i.quantity != null ? String(i.quantity) : ''), u: i.unit || '', n: i.name || '' }; }),
+      steps: (r.instructions || []).slice()
+    };
+    if (!state.draft.ingredients.length) state.draft.ingredients.push({ q: '', u: '', n: '' });
+    if (!state.draft.steps.length) state.draft.steps.push('');
+    state.view = 'edit'; render();
+  }
+  function field(labelKey, key, opts) {
+    opts = opts || {};
+    var d = state.draft;
+    var input = opts.area ? h('textarea', { class: 'field', dir: 'auto', rows: '3', value: d[key] }) : h('input', { class: 'field', dir: opts.ltr ? 'ltr' : 'auto', type: opts.type || 'text', value: d[key], min: opts.type === 'number' ? '0' : null });
+    input.addEventListener('input', function () { d[key] = input.value; });
+    return h('div', {}, [h('label', {}, t(labelKey)), input]);
+  }
+  function editView() {
+    var d = state.draft;
+    function bind(input, obj, key) { input.addEventListener('input', function () { obj[key] = input.value; }); return input; }
+    var ingRows = d.ingredients.map(function (ing, i) {
+      return h('div', { class: 'row' }, [
+        bind(h('input', { class: 'field q', dir: 'ltr', 'aria-label': t('qty'), placeholder: t('qty'), value: ing.q }), ing, 'q'),
+        bind(h('input', { class: 'field u', dir: 'auto', 'aria-label': t('unit'), placeholder: t('unit'), value: ing.u }), ing, 'u'),
+        bind(h('input', { class: 'field n', dir: 'auto', 'aria-label': t('name'), placeholder: t('name'), value: ing.n }), ing, 'n'),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('remove'), onclick: function () { d.ingredients.splice(i, 1); render(); } }, '✕')]);
+    });
+    var stepRows = d.steps.map(function (st, i) {
+      var area = h('textarea', { class: 'field', dir: 'auto', rows: '2', 'aria-label': t('step') + ' ' + (i + 1), value: st });
+      area.addEventListener('input', function () { d.steps[i] = area.value; });
+      return h('div', { class: 'row' }, [area, h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('remove'), onclick: function () { d.steps.splice(i, 1); render(); } }, '✕')]);
+    });
+    return [
+      h('div', { class: 'card-head' }, [h('h1', {}, d.isNew ? t('newRecipe') : t('edit'))]),
+      state.error ? h('div', { class: 'error', role: 'alert' }, state.error) : null,
+      state.conflict ? h('div', { class: 'warn', role: 'alert' }, [h('span', {}, t('conflict')), h('button', { class: 'btn', type: 'button', onclick: function () { openRecipe(d.id); } }, t('reload'))]) : null,
+      h('div', { class: 'sec' }, [field('fTitle', 'title'), field('fDesc', 'description', { area: true }),
+        h('div', { class: 'grid2' }, [field('fCuisine', 'cuisine'), field('fCategory', 'category'), field('fServings', 'servings', { type: 'number', ltr: true }), field('fLang', 'language', { ltr: true }),
+          field('fPrep', 'prep', { type: 'number', ltr: true }), field('fCook', 'cook', { type: 'number', ltr: true })]),
+        field('fTags', 'tags')]),
+      h('div', { class: 'sec' }, [h('h2', {}, t('ingredients'))].concat(ingRows, [h('button', { class: 'btn', type: 'button', onclick: function () { d.ingredients.push({ q: '', u: '', n: '' }); render(); } }, '+ ' + t('addIng'))])),
+      h('div', { class: 'sec' }, [h('h2', {}, t('steps'))].concat(stepRows, [h('button', { class: 'btn', type: 'button', onclick: function () { d.steps.push(''); render(); } }, '+ ' + t('addStep'))])),
+      h('div', { class: 'sec' }, [field('fNotes', 'notes', { area: true }), field('fSource', 'source', { ltr: true })]),
+      h('div', { class: 'foot' }, [
+        h('button', { class: 'btn', type: 'button', onclick: function () { if (d.id) openRecipe(d.id); else fetchList(false); } }, t('cancel')),
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: saveDraft }, t('save'))])
+    ];
+  }
+  function intOrNull(v) { v = String(v).trim(); return v === '' || isNaN(Number(v)) ? null : Math.round(Number(v)); }
+  function saveDraft() {
+    var d = state.draft;
+    if (!d.title.trim()) { state.error = t('needTitle'); render(); return; }
+    var ingredients = d.ingredients.filter(function (i) { return i.n.trim(); }).map(function (i) {
+      var o = { name: i.n.trim() };
+      if (i.q.trim()) o.quantity = i.q.trim();
+      if (i.u.trim()) o.unit = i.u.trim();
+      return o;
+    });
+    var instructions = d.steps.map(function (x) { return x.trim(); }).filter(Boolean);
+    var tags = d.tags.split(/[,،]/).map(function (x) { return x.trim(); }).filter(Boolean);
+    var content = { title: d.title.trim(), language: d.language.trim() || 'en', ingredients: ingredients, instructions: instructions, tags: tags };
+    var optional = { description: d.description.trim(), cuisine: d.cuisine.trim(), category: d.category.trim(), personal_notes: d.notes.trim(), source_url: d.source.trim() };
+    var servings = intOrNull(d.servings), prep = intOrNull(d.prep), cook = intOrNull(d.cook);
+    state.busy = true; state.error = ''; state.conflict = false; render();
+    var call;
+    if (d.isNew) {
+      Object.keys(optional).forEach(function (k) { if (optional[k]) content[k] = optional[k]; });
+      if (servings != null) content.servings = servings;
+      if (prep != null) content.prep_time_minutes = prep;
+      if (cook != null) content.cook_time_minutes = cook;
+      content.idempotency_key = state.draftKey;
+      call = app.callTool('recipes_save', content);
+    } else {
+      var clear = [];
+      Object.keys(optional).forEach(function (k) { if (optional[k]) content[k] = optional[k]; else if (d.orig[k]) clear.push(k); });
+      [['servings', servings, 'servings'], ['prep_time_minutes', prep, 'prep'], ['cook_time_minutes', cook, 'cook']].forEach(function (x) {
+        if (x[1] != null) content[x[0]] = x[1]; else if (d.orig[x[0]] != null) clear.push(x[0]);
+      });
+      if (clear.length) content.clear_fields = clear;
+      content.recipe_id = d.id; content.version = d.version;
+      call = app.callTool('recipes_update', content);
+    }
+    return call.then(function (res) { return openRecipe(res.id || d.id); }).catch(fail);
+  }
+
+  // ---- actions
+  function rate(n) {
+    var r = state.recipe, snapshot = JSON.stringify([r.feedback, r.rating_avg, r.feedback_count]);
+    var temp = { id: 'tmp-' + uid(), rating: n, comment: state.comment.trim() || null, cooked_on: null };
+    r.feedback = (r.feedback || []).concat([temp]);
+    var ratings = r.feedback.map(function (f) { return f.rating; });
+    r.rating_avg = ratings.reduce(function (a, b) { return a + b; }, 0) / ratings.length; r.feedback_count = ratings.length;
+    state.pendingRating = n; render();
+    var args = { recipe_id: r.id, rating: n, idempotency_key: uid() };
+    if (temp.comment) args.comment = temp.comment;
+    app.callTool('recipes_add_feedback', args).then(function (res) {
+      temp.id = res.feedback_id || temp.id; if (res.rating_avg != null) r.rating_avg = res.rating_avg; if (res.version) r.version = res.version;
+      state.pendingRating = 0; state.comment = ''; render();
+    }).catch(function (e) {
+      var old = JSON.parse(snapshot); r.feedback = old[0]; r.rating_avg = old[1]; r.feedback_count = old[2]; state.pendingRating = 0; fail(e);
+    });
+  }
+  function removeFeedback(f) {
+    var r = state.recipe, before = r.feedback.slice(), avg = r.rating_avg;
+    app.callTool('recipes_delete_feedback', { recipe_id: r.id, feedback_id: f.id }, { confirm: confirmer }).then(function (res) {
+      r.feedback = r.feedback.filter(function (x) { return x.id !== f.id; });
+      r.rating_avg = res.rating_avg != null ? res.rating_avg : null; if (res.version) r.version = res.version; render();
+    }).catch(function (e) { r.feedback = before; r.rating_avg = avg; fail(e); });
+  }
+  function removeRecipe() {
+    var r = state.recipe;
+    app.callTool('recipes_delete', { recipe_id: r.id }, { confirm: confirmer }).then(function () {
+      state.recipe = null; return fetchList(false);
+    }).catch(fail);
+  }
+
+  function render() {
+    if (!state.loaded && state.view !== 'edit') return;
+    var kids = state.view === 'edit' && state.draft ? editView() : state.view === 'detail' && state.recipe ? detailView() : listView();
+    root.replaceChildren(h('div', { class: 'card' + (state.busy ? ' busy' : '') }, kids));
+    if (app) app.reportSize();
+  }
+
+  app = GatewayApp({
+    onContext: function (ctx) { locale = ctx.locale || 'en'; lang = /^fa/i.test(locale) ? 'fa' : 'en'; render(); },
+    onResult: function (data) {
+      state.error = '';
+      if (data && Array.isArray(data.items)) {
+        state.items = data.items; state.next = data.next_offset == null ? null : data.next_offset; state.loaded = true; state.view = 'list';
+        var a = app.args || {};
+        state.query = a.query || ''; state.tag = a.tag || '';
+        render();
+      } else if (data && data.ingredients !== undefined && data.id) {
+        state.recipe = data; state.servings = data.servings || null; state.doneSteps = {}; state.loaded = true; state.view = 'detail'; render();
+      } else if (data && (data.id || data.recipe_id) && (data.created !== undefined || data.updated !== undefined || data.added !== undefined)) {
+        openRecipe(data.id || data.recipe_id);
+      } else { fetchList(false); }
+    },
+    onError: function (error) { state.loaded = true; fail(error); }
+  });
+})();
+</script>
+</body>
+</html>

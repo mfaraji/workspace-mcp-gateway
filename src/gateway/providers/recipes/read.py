@@ -14,7 +14,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
-from gateway.providers.recipes.common import PROVIDER, get_repository, storage_errors
+from gateway.providers.recipes.common import (
+    PROVIDER,
+    RECIPES_UI,
+    UI_NOTE,
+    get_repository,
+    storage_errors,
+)
 from gateway.providers.recipes.models import RecipeId, normalize_text, to_public
 from gateway.providers.registry import ToolError
 from gateway.storage.capella.models import Page
@@ -208,10 +214,13 @@ def register(registry) -> None:
             risk=RiskLevel.READ,
             description=(
                 "Get one of the user's saved recipes by id: full ingredients, ordered "
-                "instructions, notes, and its current `version` (needed by recipes_update)."
+                "instructions, notes, and its current `version` (needed by recipes_update). "
+                + UI_NOTE
             ),
             input_model=GetRecipeInput,
             handler=get_recipe,
+            ui_resource=RECIPES_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -221,10 +230,13 @@ def register(registry) -> None:
             risk=RiskLevel.READ,
             description=(
                 "List the user's saved recipes, most recently updated first, as lightweight "
-                "summaries. Optional exact category/tag filters; paginate with offset/next_offset."
+                "summaries. Optional exact category/tag filters; paginate with offset/next_offset. "
+                + UI_NOTE
             ),
             input_model=ListRecipesInput,
             handler=list_recipes,
+            ui_resource=RECIPES_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -236,9 +248,11 @@ def register(registry) -> None:
                 "Search the user's saved recipes (English or Persian) by free text over title, "
                 "tags, ingredient names, cuisine and category, and/or by required ingredients, "
                 "cuisine, category or tag. Case-insensitive substring matching; results are "
-                "ranked by relevance and paginated with offset/next_offset."
+                "ranked by relevance and paginated with offset/next_offset. " + UI_NOTE
             ),
             input_model=SearchRecipesInput,
             handler=search_recipes,
+            ui_resource=RECIPES_UI,
+            ui_app_callable=True,
         )
     )

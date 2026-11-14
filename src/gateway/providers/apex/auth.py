@@ -151,6 +151,7 @@ def register(registry) -> None:
             ),
             input_model=NoInput,
             handler=list_workspaces,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -166,6 +167,7 @@ def register(registry) -> None:
             ),
             input_model=SetWorkspaceInput,
             handler=set_workspace,
+            ui_app_callable=True,
         )
     )
 
@@ -203,6 +205,7 @@ def register_wealth(registry) -> None:
             ),
             input_model=NoInput,
             handler=list_wealth_workspaces,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -218,5 +221,6 @@ def register_wealth(registry) -> None:
             ),
             input_model=SetWorkspaceInput,
             handler=set_wealth_workspace,
+            ui_app_callable=True,
         )
     )

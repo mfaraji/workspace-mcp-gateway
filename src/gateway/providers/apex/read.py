@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
 from gateway.providers.apex.client import APEX_API_KEY, apex_call
+from gateway.providers.apex.ui import BILLING_NOTE, BILLING_UI
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
 PROVIDER = "apex"
@@ -59,10 +60,12 @@ def register(registry) -> None:
             description=(
                 "List clients in the Apex workspace, including id, billing mode (DIRECT "
                 "or TIMESHEET), hourly rate, and HST setting. Use this to find a client's "
-                "id and billing mode before creating an invoice."
+                "id and billing mode before creating an invoice. " + BILLING_NOTE
             ),
             input_model=ListClientsInput,
             handler=list_clients,
+            ui_resource=BILLING_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -70,9 +73,12 @@ def register(registry) -> None:
             name="apex_list_timesheets",
             provider=PROVIDER,
             risk=RiskLevel.READ,
-            description="List Apex timesheets, optionally filtered to one client.",
+            description="List Apex timesheets, optionally filtered to one client. "
+            + BILLING_NOTE,
             input_model=ListTimesheetsInput,
             handler=list_timesheets,
+            ui_resource=BILLING_UI,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -83,9 +89,11 @@ def register(registry) -> None:
             description=(
                 "Get the most recent timesheet for a client, by latest period end. Useful "
                 "for defaulting the next billing period's start date (day after the last "
-                "period's end)."
+                "period's end). " + BILLING_NOTE
             ),
             input_model=GetLastTimesheetInput,
             handler=get_last_timesheet,
+            ui_resource=BILLING_UI,
+            ui_app_callable=True,
         )
     )
