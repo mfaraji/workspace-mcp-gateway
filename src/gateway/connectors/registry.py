@@ -24,6 +24,9 @@ from gateway.providers.google.calendar import write as google_calendar_write
 from gateway.providers.google.calendar.common import CALENDAR_OAUTH
 from gateway.providers.google.drive import read as google_drive_read
 from gateway.providers.google.drive.common import DRIVE_OAUTH
+from gateway.providers.google.gmail import read as google_gmail_read
+from gateway.providers.google.gmail import write as google_gmail_write
+from gateway.providers.google.gmail.common import GMAIL_OAUTH
 from gateway.providers.google.tasks import read as google_tasks_read
 from gateway.providers.google.tasks import write as google_tasks_write
 from gateway.providers.google.tasks.common import TASKS_OAUTH
@@ -48,6 +51,11 @@ def _register_drive(registry: ToolRegistry, _settings: Settings) -> None:
 def _register_tasks(registry: ToolRegistry, _settings: Settings) -> None:
     google_tasks_read.register(registry)
     google_tasks_write.register(registry)
+
+
+def _register_gmail(registry: ToolRegistry, _settings: Settings) -> None:
+    google_gmail_read.register(registry)
+    google_gmail_write.register(registry)
 
 
 def _register_apex(registry: ToolRegistry, _settings: Settings) -> None:
@@ -117,6 +125,15 @@ CONNECTORS: list[Connector] = [
         upstream_provider="google",
         register=_register_tasks,
         upstream=TASKS_OAUTH,
+        error_classifier=_google_classify_error,
+    ),
+    Connector(
+        slug="gmail",
+        tool_prefix="google_gmail_",
+        display_name="Gmail",
+        upstream_provider="google",
+        register=_register_gmail,
+        upstream=GMAIL_OAUTH,
         error_classifier=_google_classify_error,
     ),
     Connector(

@@ -24,7 +24,7 @@ The gateway should expose one Streamable HTTP MCP endpoint to Open WebUI while k
 
 ## Non-Goals For V1
 
-- Gmail support
+- Unrestricted Gmail support (a label-scoped, draft-only Gmail connector exists; see AGENTS.md)
 - Microsoft/Slack/Notion support
 - Admin UI for managing connections
 - Full document editing

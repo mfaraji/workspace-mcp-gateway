@@ -27,6 +27,11 @@ with Open WebUI's native tool-server UI:
 - `/mcp/tasks` registers `system_get_current_time` plus `google_tasks_*` when
   Tasks provider modules exist; until then it intentionally exposes only system
   tools.
+- `/mcp/gmail` registers `system_get_current_time` plus `google_gmail_*`. Reads and
+  searches are hard-scoped to messages with the `GMAIL_ACCESS_LABEL` label
+  (default `agent-access`; unlabelled = `not_found`). Writes are drafts only
+  (HTML supported); there is no send tool, and update/delete only touch drafts
+  recorded in `gmail_agent_drafts`.
 - `/mcp/telegram` registers `system_get_current_time`,
   `telegram_list_destinations`, and `telegram_send_message`. Bot credentials are
   configured through the private HTTP API, never through a model-visible tool.

@@ -23,3 +23,8 @@ def build_drive_service(creds):
 def build_tasks_service(creds):
     """Return an authorized Google Tasks v1 service for ``creds``."""
     return _build_service(creds, "tasks", "v1")
+
+
+def build_gmail_service(creds):
+    """Return an authorized Gmail v1 service for ``creds``."""
+    return _build_service(creds, "gmail", "v1")

@@ -59,7 +59,7 @@ function render() {
       const copy = document.createElement('span'); copy.className = 'tool-copy';
       const top = document.createElement('span'); top.className = 'tool-top';
       const title = document.createElement('span'); title.className = 'tool-name';
-      title.textContent = titles[tool.name] || tool.name.replace(/^(google_calendar_|google_tasks_|google_drive_|apex_wealth_|apex_|telegram_|recipes_|finance_)/, '').replaceAll('_', ' ').replace(/^./, c => c.toUpperCase());
+      title.textContent = titles[tool.name] || tool.name.replace(/^(google_calendar_|google_tasks_|google_gmail_|google_drive_|apex_wealth_|apex_|telegram_|recipes_|finance_)/, '').replaceAll('_', ' ').replace(/^./, c => c.toUpperCase());
       const risk = document.createElement('span'); risk.className = `risk${tool.risk === 'read' ? '' : ' write'}`;
       risk.textContent = tool.risk === 'read' ? 'Read' : 'Write';
       const description = document.createElement('span'); description.className = 'tool-description'; description.textContent = tool.description;
