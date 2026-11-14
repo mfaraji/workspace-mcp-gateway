@@ -75,6 +75,7 @@ src/gateway/
       calendar/         read.py (read tools), write.py (mutating tools), common.py
     recipes/          Capella-backed recipe book (models, read, write, common)
   storage/capella/  lazy shared Capella client, OwnedDocumentRepository, storage errors
+  access/           client grants, `/access` permissions page, `/connections` status page
 migrations/         Alembic migrations
 tests/              pytest suite (some DB-backed, auto-skip without Postgres)
 scripts/            local dev helpers; capella_admin.py (check/indexes/export, operator-only)

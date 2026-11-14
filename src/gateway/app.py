@@ -61,6 +61,9 @@ def create_app() -> FastAPI:
     from gateway.access.routes import router as access_router
 
     app.include_router(access_router)
+    from gateway.access.connections import router as connections_page_router
+
+    app.include_router(connections_page_router)
     from gateway.access.consent import router as consent_router
 
     app.include_router(consent_router)
@@ -90,12 +93,13 @@ def create_app() -> FastAPI:
     app.include_router(telegram_api_router)
     app.include_router(connectors_router)
 
-    @app.get("/")
-    async def index(connected: str | None = None) -> JSONResponse:
-        """Small browser landing page for OAuth redirects."""
-        if connected:
-            return JSONResponse({"status": "connected", "provider": connected})
-        return JSONResponse({"status": "ok", "service": "workspace-mcp-gateway"})
+    @app.get("/", include_in_schema=False)
+    async def index() -> RedirectResponse:
+        """Landing page: the connections page, which sends signed-out users to login.
+
+        Also the target of the Google OAuth callback redirect (``/?connected=google``).
+        """
+        return RedirectResponse("/connections", status_code=303)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

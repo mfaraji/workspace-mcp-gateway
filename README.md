@@ -361,3 +361,7 @@ uv run pytest
 
 Capella integration tests are opt-in:
 `CAPELLA_INTEGRATION_TESTS=1 uv run pytest tests/test_capella_integration.py`.
+
+## Connections page
+
+Sign in at `/connections` to see every connector, whether you have connected it, the linked account, and its `/mcp/<slug>` URL. Cards offer Connect/Disconnect (Google), Add API key (Apex) and Connect bot (Telegram) using the existing endpoints. Client tool permissions stay at `/access`.
