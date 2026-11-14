@@ -13,6 +13,12 @@ reworking the core.
 The authoritative product/scope document is [`spec.md`](./spec.md) — read it
 before making design decisions. It defines V1 milestones and acceptance criteria.
 
+## Interactive widgets (MCP Apps)
+
+Tools may render widgets in clients that support MCP Apps. Widgets live in `src/gateway/mcp/ui/` and are
+served as `ui://` resources gated by the caller's tool grants; see `docs/mcp-apps.md` before adding one.
+Widget actions go through the normal tool pipeline, so never add a widget-only write path.
+
 ## Product MCP endpoint convention
 
 Keep one backend gateway process, but expose product-specific MCP mounts so Open

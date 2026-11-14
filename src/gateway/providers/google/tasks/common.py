@@ -20,6 +20,13 @@ TASKS_OAUTH = OAuthStrategy(
 )
 
 
+TASKS_UI = "ui://tasks/list"
+UI_NOTE = (
+    "Shows an interactive checklist in the chat (tick to complete, add, edit, delete): "
+    "do not repeat the tasks in text; summarise or answer follow-ups instead."
+)
+
+
 def tasks_service(session: Session, ctx: CallContext):
     """Resolve the caller's active Google connection and build a Tasks service."""
     creds = TASKS_OAUTH.get_credentials(session, ctx, get_settings())
@@ -45,6 +52,9 @@ def trim_task(task: dict) -> dict:
         "status": task.get("status"),
         "due": task.get("due"),
         "completed": task.get("completed"),
+        # Write tools overwrite ``status`` with the action taken ("created"/"completed"),
+        # so widgets read this flag instead.
+        "is_completed": task.get("status") == "completed",
         "updated": task.get("updated"),
         "parent": task.get("parent"),
         "position": task.get("position"),
@@ -52,4 +62,3 @@ def trim_task(task: dict) -> dict:
         "hidden": task.get("hidden", False),
         "web_view_link": task.get("webViewLink"),
     }
-

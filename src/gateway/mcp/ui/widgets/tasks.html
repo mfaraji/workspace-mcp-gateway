@@ -1,0 +1,250 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Google Tasks</title>
+<style>
+{{SHARED_CSS}}
+.add { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.progress { height: 3px; background: var(--surface-2); }
+.progress > div { height: 100%; background: var(--ok); transition: width .25s; }
+ul { list-style: none; margin: 0; padding: 0; }
+li.task { display: flex; align-items: flex-start; gap: 4px; padding: 2px 6px 2px 8px; border-bottom: 1px solid var(--border); }
+li.task:last-child { border-bottom: 0; }
+.check { flex: none; width: 40px; height: 40px; display: grid; place-items: center; background: none; border: 0; cursor: pointer; padding: 0; }
+.box { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--muted); display: grid; place-items: center; transition: background .15s, border-color .15s; }
+.check:hover .box { border-color: var(--accent); }
+.check:focus-visible { outline: 2px solid var(--accent); border-radius: 10px; }
+.done .box { background: var(--ok); border-color: var(--ok); }
+.box svg { width: 13px; height: 13px; stroke: #fff; stroke-width: 3; fill: none; opacity: 0; }
+.done .box svg { opacity: 1; }
+.body { flex: 1; min-width: 0; padding: 9px 4px; }
+.title { display: block; width: 100%; text-align: start; background: none; border: 0; padding: 0; cursor: text; overflow-wrap: anywhere; }
+.done .title { text-decoration: line-through; color: var(--muted); }
+.notes { color: var(--muted); font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
+.chip { display: inline-block; margin-top: 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--surface-2); color: var(--muted); }
+.chip.overdue { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.edit { width: 100%; min-height: 34px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--accent); background: var(--surface-2); }
+.foot { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--border); }
+.foot .grow { flex: 1; }
+.busy { opacity: .55; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="card" id="root"><div class="skeleton"></div><div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:55%"></div></div>
+<script>
+{{SHARED_JS}}
+</script>
+<script>
+(function () {
+  'use strict';
+  var STRINGS = {
+    en: { title: 'Tasks', open: 'open', add: 'Add a task', addBtn: 'Add', empty: 'No tasks here yet.',
+      allDone: 'All done', showDone: 'Show completed', hideDone: 'Hide completed', more: 'Load more',
+      refresh: 'Refresh', del: 'Delete task', cancel: 'Cancel', confirmDelete: 'Delete “%s”?', delOk: 'Delete',
+      markDone: 'Mark as done', markOpen: 'Mark as not done', failed: 'That did not work: ', overdue: 'Overdue' },
+    fa: { title: 'کارها', open: 'باز', add: 'افزودن کار', addBtn: 'افزودن', empty: 'هنوز کاری نیست.',
+      allDone: 'همه انجام شد', showDone: 'نمایش انجام‌شده‌ها', hideDone: 'پنهان کردن انجام‌شده‌ها', more: 'بیشتر',
+      refresh: 'تازه‌سازی', del: 'حذف کار', cancel: 'انصراف', confirmDelete: '«%s» حذف شود؟', delOk: 'حذف',
+      markDone: 'انجام شد', markOpen: 'انجام نشده', failed: 'انجام نشد: ', overdue: 'عقب‌افتاده' }
+  };
+  var lang = 'en';
+  function t(key, arg) {
+    var s = (STRINGS[lang] || STRINGS.en)[key] || STRINGS.en[key] || key;
+    return arg === undefined ? s : s.replace('%s', arg);
+  }
+
+  var state = { listId: '@default', tasks: [], next: null, showDone: false, loaded: false, error: '', busy: {} };
+  var root = document.getElementById('root');
+  var app;
+
+  function h(tag, attrs, kids) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      var v = attrs[k];
+      if (v === false || v == null) return;
+      if (k === 'class') el.className = v;
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    });
+    [].concat(kids || []).forEach(function (kid) {
+      if (kid == null || kid === false) return;
+      el.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid);
+    });
+    return el;
+  }
+  var CHECK = '<svg viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.8"/></svg>';
+  var TRASH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12h10l1-12M9 7V4h6v3"/></svg>';
+  var REFRESH = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg>';
+  function icon(svg) { var s = document.createElement('span'); s.style.display = 'contents'; s.innerHTML = svg; return s; } // static literals only
+
+  function normalize(task) {
+    return {
+      id: task.id, title: task.title || '', notes: task.notes || '', due: task.due || null,
+      done: task.is_completed !== undefined ? !!task.is_completed : task.status === 'completed'
+    };
+  }
+  function dueChip(task) {
+    if (!task.due) return null;
+    var d = new Date(task.due);
+    if (isNaN(d)) return null;
+    var locale = document.documentElement.lang || 'en';
+    var label;
+    try { label = new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(d); }
+    catch (e) { label = task.due.slice(0, 10); }
+    var now = new Date();
+    var today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    var overdue = !task.done && d.getTime() < today;
+    return h('span', { class: 'chip' + (overdue ? ' overdue' : ''), title: overdue ? t('overdue') : '' }, label);
+  }
+
+  function setError(message) { state.error = message ? t('failed') + message : ''; render(); }
+
+  function fetchList(opts) {
+    opts = opts || {};
+    var args = { tasklist_id: state.listId, max_results: 100, show_completed: state.showDone, show_hidden: state.showDone };
+    if (opts.token) args.page_token = opts.token;
+    return app.callTool('google_tasks_list_tasks', args).then(function (data) {
+      var incoming = (data.tasks || []).map(normalize);
+      state.tasks = opts.token ? state.tasks.concat(incoming) : incoming;
+      state.next = data.next_page_token || null;
+      state.loaded = true;
+      state.error = '';
+      render();
+    }).catch(function (e) { state.loaded = true; setError(e.message); });
+  }
+
+  function patch(task, fields) { Object.keys(fields).forEach(function (k) { task[k] = fields[k]; }); }
+
+  function toggle(task) {
+    var before = task.done;
+    // Keep a just-ticked task on screen (struck through) so it can be unticked; the next
+    // refresh drops it unless completed tasks are shown.
+    patch(task, { done: !before, keep: !before });
+    render();
+    app.callTool('google_tasks_update_task', {
+      tasklist_id: state.listId, task_id: task.id, status: before ? 'needsAction' : 'completed'
+    }).then(function (saved) { patch(task, normalize(saved)); render(); })
+      .catch(function (e) { patch(task, { done: before }); setError(e.message); });
+  }
+
+  function rename(task, title) {
+    title = title.trim();
+    if (!title || title === task.title) return render();
+    var before = task.title;
+    patch(task, { title: title });
+    render();
+    app.callTool('google_tasks_update_task', { tasklist_id: state.listId, task_id: task.id, title: title })
+      .then(function (saved) { patch(task, normalize(saved)); render(); })
+      .catch(function (e) { patch(task, { title: before }); setError(e.message); });
+  }
+
+  function remove(task) {
+    var snapshot = state.tasks.slice();
+    app.callTool('google_tasks_delete_task', { tasklist_id: state.listId, task_id: task.id }, {
+      confirm: function () { return app.confirm(t('confirmDelete', task.title), { ok: t('delOk'), cancel: t('cancel') }); }
+    }).then(function () {
+      state.tasks = state.tasks.filter(function (x) { return x.id !== task.id; });
+      render();
+    }).catch(function (e) {
+      state.tasks = snapshot;
+      if (e.cancelled) render(); else setError(e.message);
+    });
+  }
+
+  function add(title) {
+    title = title.trim();
+    if (!title) return;
+    state.adding = true;
+    render();
+    app.callTool('google_tasks_create_task', { tasklist_id: state.listId, title: title })
+      .then(function (saved) { var task = normalize(saved); task.done = false; state.tasks.push(task); state.adding = false; state.error = ''; render(); })
+      .catch(function (e) { state.adding = false; setError(e.message); });
+  }
+
+  function taskRow(task) {
+    var cls = 'task' + (task.done ? ' done' : '');
+    var row = h('li', { class: 'task ' + (task.done ? 'done' : '') });
+    var check = h('button', {
+      class: 'check', type: 'button', role: 'checkbox', 'aria-checked': String(task.done),
+      'aria-label': task.done ? t('markOpen') : t('markDone'), onclick: function () { toggle(task); }
+    }, h('span', { class: 'box' }, icon(CHECK)));
+    var titleBtn = h('button', { class: 'title', type: 'button', onclick: function () { edit(task, body, titleBtn); } }, task.title || '—');
+    var body = h('div', { class: 'body' }, [titleBtn, task.notes ? h('div', { class: 'notes' }, task.notes) : null, dueChip(task)]);
+    var del = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('del'), title: t('del'), onclick: function () { remove(task); } }, icon(TRASH));
+    row.append(check, body, del);
+    row.className = cls;
+    return row;
+  }
+
+  function edit(task, body, titleBtn) {
+    var input = h('input', { class: 'edit', type: 'text', value: task.title, maxlength: '1024', 'aria-label': t('title') });
+    var finished = false;
+    function finish(save) { if (finished) return; finished = true; if (save) rename(task, input.value); else render(); }
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); });
+    input.addEventListener('blur', function () { finish(true); });
+    body.replaceChild(input, titleBtn);
+    input.focus();
+    input.select();
+  }
+
+  function render() {
+    if (!state.loaded) return;
+    var open = state.tasks.filter(function (x) { return !x.done; });
+    var done = state.tasks.filter(function (x) { return x.done; });
+    var total = state.tasks.length;
+    var pct = total ? Math.round((done.length / total) * 100) : 0;
+
+    var addInput = h('input', { class: 'field', type: 'text', placeholder: t('add'), 'aria-label': t('add'), maxlength: '1024' });
+    var addBtn = h('button', { class: 'btn btn-primary', type: 'button' }, t('addBtn'));
+    function submit() { var v = addInput.value; addInput.value = ''; add(v); }
+    addBtn.addEventListener('click', submit);
+    addInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+
+    // Original order, so a task does not jump when ticked.
+    var visible = state.tasks.filter(function (x) { return !x.done || state.showDone || x.keep; });
+    var list = h('ul', { role: 'list' }, visible.map(taskRow));
+    var refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('refresh'), title: t('refresh'), onclick: function () { fetchList(); } }, icon(REFRESH));
+    var footer = h('div', { class: 'foot' }, [
+      h('button', { class: 'btn btn-ghost', type: 'button', onclick: function () { state.showDone = !state.showDone; fetchList(); } },
+        state.showDone ? t('hideDone') : t('showDone')),
+      h('span', { class: 'grow' }),
+      state.next ? h('button', { class: 'btn btn-ghost', type: 'button', onclick: function () { fetchList({ token: state.next }); } }, t('more')) : null
+    ]);
+
+    var summary = open.length ? open.length + ' ' + t('open') : (total ? t('allDone') : '');
+    var card = h('div', { class: 'card' + (state.adding ? ' busy' : '') }, [
+      h('div', { class: 'card-head' }, [h('h1', {}, t('title')), h('span', { class: 'muted' }, summary), refresh]),
+      state.showDone && total ? h('div', { class: 'progress', 'aria-hidden': 'true' }, h('div', { style: 'width:' + pct + '%' })) : null,
+      h('div', { class: 'add' }, [addInput, addBtn]),
+      state.error ? h('div', { class: 'error', role: 'alert' }, state.error) : null,
+      visible.length ? list : h('div', { class: 'empty' }, total ? t('allDone') : t('empty')),
+      footer
+    ]);
+    root.replaceChildren(card);
+    if (app) app.reportSize();
+  }
+
+  app = GatewayApp({
+    onContext: function (ctx) { lang = /^fa/i.test(ctx.locale || '') ? 'fa' : 'en'; render(); },
+    onInput: function (args) { if (args && args.tasklist_id) state.listId = args.tasklist_id; },
+    onResult: function (data) {
+      if (data.tasklist_id) state.listId = data.tasklist_id;
+      if (Array.isArray(data.tasks)) {
+        state.tasks = data.tasks.map(normalize);
+        state.next = data.next_page_token || null;
+        state.loaded = true;
+        state.error = '';
+        render();
+      } else {
+        // A single-task result (create/update/complete): load the whole list around it.
+        fetchList();
+      }
+    },
+    onError: function (error) { state.loaded = true; setError(error.message); }
+  });
+})();
+</script>
+</body>
+</html>

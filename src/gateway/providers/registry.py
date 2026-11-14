@@ -13,12 +13,14 @@ providers and the future mutating-tool confirmation flow inherit them for free.
 from __future__ import annotations
 
 import inspect
+import json
 import uuid
 from collections.abc import Callable
 from typing import Any
 
 import anyio
 from mcp.server.fastmcp import FastMCP
+from mcp.types import CallToolResult, TextContent
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -66,6 +68,7 @@ class ToolRegistry:
                 self._build_callable(spec, settings),
                 name=spec.name,
                 description=spec.description,
+                meta=spec.tool_meta,
             )
 
     def _build_callable(self, spec: ToolSpec, settings: Settings):
@@ -73,9 +76,12 @@ class ToolRegistry:
 
         async def tool(**kwargs: Any) -> Any:
             confirmation_token = kwargs.pop(_CONFIRM_PARAM, None)
-            return await anyio.to_thread.run_sync(
+            result = await anyio.to_thread.run_sync(
                 lambda: _run_pipeline(spec, settings, kwargs, confirmation_token)
             )
+            if spec.ui_resource and isinstance(result, dict):
+                return _with_structured_content(result)
+            return result
 
         # Synthesize a flat signature from the input model's fields so the tool
         # schema is ``{field: ...}`` rather than ``{params: {...}}``.
@@ -109,6 +115,15 @@ class ToolRegistry:
         tool.__annotations__ = annotations
         tool.__name__ = spec.name
         return tool
+
+
+def _with_structured_content(result: dict) -> CallToolResult:
+    """Return a widget tool's result as text (for the model) plus structuredContent (for the UI)."""
+    text = json.dumps(result, indent=2, ensure_ascii=False, default=str)
+    return CallToolResult(
+        content=[TextContent(type="text", text=text)],
+        structuredContent=json.loads(text),
+    )
 
 
 def _run_pipeline(

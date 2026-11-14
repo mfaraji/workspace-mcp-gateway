@@ -1,0 +1,1 @@
+{ "private": true, "type": "module", "description": "jsdom harness for MCP App widgets (npm install in this folder to enable)", "devDependencies": { "jsdom": "^26.0.0" } }

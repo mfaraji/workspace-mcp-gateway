@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 from gateway.providers.google.tasks.common import (
     PROVIDER,
+    TASKS_UI,
+    UI_NOTE,
     tasks_service,
     trim_task,
     trim_tasklist,
@@ -34,9 +36,7 @@ class ListTasksInput(BaseModel):
     updated_min: str | None = Field(None, description="RFC3339 lower bound for update time.")
 
 
-def list_tasklists(
-    args: ListTasklistsInput, ctx: CallContext, session: Session
-) -> dict[str, Any]:
+def list_tasklists(args: ListTasklistsInput, ctx: CallContext, session: Session) -> dict[str, Any]:
     service = tasks_service(session, ctx)
     params: dict[str, Any] = {"maxResults": args.max_results}
     if args.page_token:
@@ -86,6 +86,7 @@ def register(registry) -> None:
             description="List the user's Google Tasks task lists.",
             input_model=ListTasklistsInput,
             handler=list_tasklists,
+            ui_app_callable=True,
         )
     )
     registry.add(
@@ -95,10 +96,11 @@ def register(registry) -> None:
             risk=RiskLevel.READ,
             description=(
                 "List tasks in a Google Tasks task list. Google Tasks due dates only "
-                "preserve date information; due times are not readable or writable."
+                "preserve date information; due times are not readable or writable. " + UI_NOTE
             ),
             input_model=ListTasksInput,
             handler=list_tasks,
+            ui_resource=TASKS_UI,
+            ui_app_callable=True,
         )
     )
-
