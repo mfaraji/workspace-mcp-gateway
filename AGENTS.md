@@ -35,8 +35,11 @@ with Open WebUI's native tool-server UI:
   Tasks provider modules exist; until then it intentionally exposes only system
   tools.
 - `/mcp/gmail` registers `system_get_current_time` plus `google_gmail_*`. Reads and
-  searches are hard-scoped to messages with the `GMAIL_ACCESS_LABEL` label
-  (default `agent-access`; unlabelled = `not_found`). Writes are drafts only
+  searches are scoped per connected Gmail account to what the user shares: by
+  default only messages with the `GMAIL_ACCESS_LABEL` label (`agent-access`), or chosen
+  labels, or all mail (`connection_metadata["gmail_sharing"]`, set only from the browser
+  `/connections` page via session + CSRF, "all mail" needs explicit confirmation, never by a
+  model-visible tool; unshared = `not_found`). Writes are drafts only
   (HTML supported); there is no send tool, and update/delete only touch drafts
   recorded in `gmail_agent_drafts`.
 - `/mcp/telegram` registers `system_get_current_time`,

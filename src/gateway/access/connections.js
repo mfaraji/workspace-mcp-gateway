@@ -83,11 +83,64 @@ function actions(c, card) {
   return box;
 }
 
+function sharingSummary(sharing) {
+  if (!sharing) return '';
+  return sharing.mode === 'all' ? 'Sharing: all mail' : `Sharing: ${sharing.labels.join(', ')}`;
+}
+
+async function openSharing(c, a, row) {
+  const existing = row.querySelector('.sharing-panel');
+  if (existing) { existing.remove(); return; }
+  const url = `/oauth/google/connections/${encodeURIComponent(a.id)}/gmail-sharing`;
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) { message('Could not load Gmail labels. Is the Gmail API enabled?', true); return; }
+  const data = await response.json();
+  const panel = el('div', { className: 'sharing-panel' });
+  const name = `mode-${a.id}`;
+  const specific = el('input', { type: 'radio', name, value: 'labels', checked: data.sharing.mode !== 'all' });
+  const all = el('input', { type: 'radio', name, value: 'all', checked: data.sharing.mode === 'all' });
+  const boxes = data.labels.map(label => {
+    const box = el('input', { type: 'checkbox', value: label, checked: data.sharing.labels.includes(label) });
+    return { label, box, node: el('label', { className: 'label-choice' }, box, ` ${label}`) };
+  });
+  const list = el('div', { className: 'label-list' }, ...boxes.map(b => b.node));
+  if (!boxes.length) list.append(el('p', { className: 'muted', textContent: 'No labels yet. Create one in Gmail first.' }));
+  const sync = () => { list.hidden = all.checked; };
+  specific.onchange = sync; all.onchange = sync; sync();
+  panel.append(
+    el('label', { className: 'mode-choice' }, specific, ' Only messages with these labels'),
+    list,
+    el('label', { className: 'mode-choice' }, all, ' All mail (the assistant can read everything in this account)'),
+    el('div', { className: 'card-actions' },
+      el('button', {
+        className: 'primary', textContent: 'Save',
+        onclick: () => {
+          const body = all.checked
+            ? { mode: 'all', confirm: true }
+            : { mode: 'labels', labels: boxes.filter(b => b.box.checked).map(b => b.label) };
+          if (all.checked && !confirm(`Share ALL mail in ${a.email || 'this account'} with the assistant? It will be able to read every message, not just labelled ones.`)) return;
+          if (!all.checked && !body.labels.length) { message('Choose at least one label.', true); return; }
+          act('Saving sharing', () => call('PUT', url, body));
+        }
+      }),
+      el('button', { className: 'secondary', textContent: 'Cancel', onclick: () => panel.remove() })));
+  row.append(panel);
+}
+
 function accountRows(c) {
   const list = el('ul', { className: 'accounts' });
   for (const a of c.accounts || []) {
     const row = el('li', { className: `account ${a.status}` });
     row.append(el('span', { className: 'account-email', textContent: a.email || 'Unknown account' }));
+    if (a.sharing) {
+      row.append(el('span', { className: 'muted account-sharing', textContent: sharingSummary(a.sharing) }));
+      if (a.status === 'connected') {
+        row.append(el('button', {
+          className: 'secondary', textContent: 'Sharing…',
+          onclick: () => openSharing(c, a, row)
+        }));
+      }
+    }
     if (a.is_default && (c.accounts || []).length > 1) {
       row.append(el('span', { className: 'pill connected', textContent: 'Default' }));
     }

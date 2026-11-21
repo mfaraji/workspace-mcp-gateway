@@ -19,12 +19,11 @@ from gateway.providers.google.gmail.common import (
     GMAIL_UI,
     PROVIDER,
     UI_NOTE,
-    gmail_service,
     gmail_service_and_connection,
-    is_labeled,
+    in_scope,
     parse_message,
-    require_labeled,
-    resolve_access_label_id,
+    require_in_scope,
+    resolve_scope,
     with_text_fallback,
 )
 from gateway.providers.registry import ToolError
@@ -64,49 +63,62 @@ def _summary(msg: dict) -> dict[str, Any]:
 def search_messages(
     args: SearchMessagesInput, ctx: CallContext, session: Session
 ) -> dict[str, Any]:
-    service = gmail_service(session, ctx)
-    label_id = resolve_access_label_id(service)
-    params: dict[str, Any] = {
-        "userId": "me",
-        "labelIds": [label_id],
-        "maxResults": args.max_results,
-    }
+    service, conn = gmail_service_and_connection(session, ctx)
+    scope = resolve_scope(service, conn)
+    base: dict[str, Any] = {"userId": "me", "maxResults": args.max_results}
     if args.query:
-        params["q"] = args.query
-    if args.page_token:
-        params["pageToken"] = args.page_token
-    resp = service.users().messages().list(**params).execute()
+        base["q"] = args.query
+
+    next_token = None
+    if scope.all_mail or len(scope.label_ids) == 1:
+        params = dict(base)
+        if not scope.all_mail:
+            params["labelIds"] = list(scope.label_ids)
+        if args.page_token:
+            params["pageToken"] = args.page_token
+        resp = service.users().messages().list(**params).execute()
+        refs = resp.get("messages", []) or []
+        next_token = resp.get("nextPageToken")
+    else:
+        # Gmail ANDs labelIds, so several shared labels are listed one by one and merged.
+        # Results are not paginated in this mode; refine the query for more.
+        seen: dict[str, dict] = {}
+        for label_id in scope.label_ids:
+            resp = service.users().messages().list(**base, labelIds=[label_id]).execute()
+            for ref in resp.get("messages", []) or []:
+                seen.setdefault(ref["id"], ref)
+        refs = list(seen.values())
     messages = []
-    for ref in resp.get("messages", []) or []:
+    for ref in refs:
         msg = (
             service.users()
             .messages()
             .get(userId="me", id=ref["id"], format="metadata")
             .execute()
         )
-        if is_labeled(msg, label_id):
+        if in_scope(msg, scope):
             messages.append(_summary(msg))
-    return {"messages": messages, "next_page_token": resp.get("nextPageToken")}
+    return {"messages": messages[: args.max_results], "next_page_token": next_token}
 
 
 def get_message(args: GetMessageInput, ctx: CallContext, session: Session) -> dict[str, Any]:
-    service = gmail_service(session, ctx)
-    label_id = resolve_access_label_id(service)
+    service, conn = gmail_service_and_connection(session, ctx)
+    scope = resolve_scope(service, conn)
     msg = service.users().messages().get(userId="me", id=args.message_id, format="full").execute()
-    require_labeled(msg, label_id)
+    require_in_scope(msg, scope)
     return with_text_fallback(parse_message(msg))
 
 
 def get_thread(args: GetThreadInput, ctx: CallContext, session: Session) -> dict[str, Any]:
-    service = gmail_service(session, ctx)
-    label_id = resolve_access_label_id(service)
+    service, conn = gmail_service_and_connection(session, ctx)
+    scope = resolve_scope(service, conn)
     thread = service.users().threads().get(userId="me", id=args.thread_id, format="full").execute()
-    labeled = [m for m in thread.get("messages", []) if is_labeled(m, label_id)]
-    if not labeled:
+    shared = [m for m in thread.get("messages", []) if in_scope(m, scope)]
+    if not shared:
         raise ToolError("not_found", "thread not found")
     return {
         "thread_id": args.thread_id,
-        "messages": [with_text_fallback(parse_message(m)) for m in labeled],
+        "messages": [with_text_fallback(parse_message(m)) for m in shared],
     }
 
 
@@ -157,8 +169,11 @@ def register(registry) -> None:
             provider=PROVIDER,
             risk=RiskLevel.READ,
             description=(
-                "Search Gmail messages. Only messages labelled 'agent-access' are "
-                "visible; others never appear." + _UNTRUSTED + " " + UI_NOTE
+                "Search Gmail messages. Only messages the user has shared (by default those "
+                "labelled 'agent-access') are visible; others never appear."
+                + _UNTRUSTED
+                + " "
+                + UI_NOTE
             ),
             input_model=SearchMessagesInput,
             handler=search_messages,
@@ -172,7 +187,7 @@ def register(registry) -> None:
             provider=PROVIDER,
             risk=RiskLevel.READ,
             description=(
-                "Read one labelled Gmail message (text and HTML bodies, attachment "
+                "Read one shared Gmail message (text and HTML bodies, attachment "
                 "metadata only)." + _UNTRUSTED + " " + UI_NOTE
             ),
             input_model=GetMessageInput,
@@ -187,7 +202,7 @@ def register(registry) -> None:
             provider=PROVIDER,
             risk=RiskLevel.READ,
             description=(
-                "Read the labelled messages of a Gmail thread." + _UNTRUSTED + " " + UI_NOTE
+                "Read the shared messages of a Gmail thread." + _UNTRUSTED + " " + UI_NOTE
             ),
             input_model=GetThreadInput,
             handler=get_thread,

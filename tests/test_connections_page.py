@@ -124,6 +124,7 @@ def _conn(scopes, email, *, default=False, status="active"):
         is_default=default,
         status=status,
         last_used_at=None,
+        connection_metadata={},
     )
 
 
@@ -195,3 +196,15 @@ def test_root_redirects_to_connections():
     response = TestClient(create_app(), follow_redirects=False).get("/?connected=google")
     assert response.status_code == 303
     assert response.headers["location"] == "/connections"
+
+
+def test_gmail_accounts_report_sharing_with_safe_default(monkeypatch):
+    needed = by_slug("gmail").upstream.required_scopes
+    shared = _conn(needed, "b@example.com")
+    shared.connection_metadata = {"gmail_sharing": {"mode": "all", "labels": []}}
+    _google(monkeypatch, _conn(needed, "a@example.com", default=True), shared)
+    accounts = _status("gmail")["accounts"]
+    assert accounts[0]["sharing"] == {"mode": "labels", "labels": ["agent-access"]}
+    assert accounts[1]["sharing"] == {"mode": "all", "labels": []}
+    calendar = _status("calendar")
+    assert all("sharing" not in a for a in calendar["accounts"])

@@ -13,3 +13,7 @@
 .account-email{flex:1;min-width:0;font-size:13px;font-weight:600;overflow-wrap:anywhere}
 .account .secondary{padding:5px 11px;font-size:11px}
 .account .danger{color:var(--accent)}
+.account-sharing{flex-basis:100%;order:3}
+.sharing-panel{flex-basis:100%;order:4;display:grid;gap:8px;padding-top:8px;border-top:1px solid var(--line)}
+.label-list{display:grid;gap:4px;max-height:160px;overflow:auto;padding-inline-start:22px}
+.label-choice,.mode-choice{font-size:12px}

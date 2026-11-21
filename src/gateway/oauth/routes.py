@@ -257,6 +257,107 @@ async def default_route(request: Request, connection_id: str):
     return _connection_action(request, connection_id, set_default)
 
 
+def _gmail_connection(session, user_id, connection_id):
+    from gateway.db.models import ProviderConnection
+
+    conn = session.get(ProviderConnection, connection_id)
+    if (
+        conn is None
+        or conn.user_id != user_id
+        or conn.status != "active"
+        or conn.provider != "google"
+        or conn.product != "gmail"
+    ):
+        return None
+    return conn
+
+
+def _gmail_labels(session, conn, settings) -> list[str]:
+    """The account's user-created label names (system labels are never offered)."""
+    from gateway.providers.google.connections import load_credentials
+
+    service = google_client.build_gmail_service(load_credentials(session, conn, settings))
+    labels = service.users().labels().list(userId="me").execute().get("labels", [])
+    return sorted(
+        (str(x["name"]) for x in labels if x.get("type") == "user" and x.get("name")),
+        key=str.lower,
+    )
+
+
+@router.get("/connections/{connection_id}/gmail-sharing")
+async def gmail_sharing_get(request: Request, connection_id: str):
+    """Current sharing choice for one Gmail account plus the labels it could share."""
+    return _gmail_sharing(request, connection_id, None)
+
+
+@router.put("/connections/{connection_id}/gmail-sharing")
+async def gmail_sharing_put(request: Request, connection_id: str):
+    """Set which Gmail messages one account shares: chosen labels or all mail."""
+    try:
+        body = await request.json()
+    except ValueError:
+        return JSONResponse({"error": "invalid_request"}, status_code=400)
+    return _gmail_sharing(request, connection_id, body if isinstance(body, dict) else {})
+
+
+def _gmail_sharing(request: Request, connection_id: str, update: dict | None) -> JSONResponse:
+    import uuid as _uuid
+
+    from fastapi import HTTPException
+
+    from gateway.identity.models import AuthenticatedUser
+    from gateway.providers.google.gmail import sharing as gmail_sharing
+
+    settings = get_settings()
+    try:
+        auth = _resolve(request)
+    except IdentityError as exc:
+        return JSONResponse({"error": "unauthorized", "detail": str(exc)}, status_code=401)
+    try:
+        conn_id = _uuid.UUID(connection_id)
+    except ValueError as exc:
+        raise HTTPException(404, "Connection not found") from exc
+    with session_scope() as session:
+        user = get_or_create_user(
+            session, AuthenticatedUser(external_user_id=auth.external_user_id)
+        )
+        conn = _gmail_connection(session, user.id, conn_id)
+        if conn is None:
+            raise HTTPException(404, "Connection not found")
+        try:
+            available = _gmail_labels(session, conn, settings)
+        except Exception:
+            logger.warning("could not list Gmail labels for sharing settings", exc_info=True)
+            return JSONResponse({"error": "gmail_unavailable"}, status_code=502)
+        if update is not None:
+            mode = update.get("mode")
+            if mode == gmail_sharing.MODE_ALL and update.get("confirm") is not True:
+                return JSONResponse({"error": "confirmation_required"}, status_code=400)
+            labels = update.get("labels")
+            try:
+                chosen = gmail_sharing.normalize(
+                    str(mode), labels if isinstance(labels, list) else []
+                )
+            except ValueError as exc:
+                return JSONResponse(
+                    {"error": "invalid_request", "detail": str(exc)}, status_code=400
+                )
+            known = {n.lower() for n in available}
+            unknown = [n for n in chosen.labels if n.lower() not in known]
+            if unknown:
+                return JSONResponse(
+                    {"error": "unknown_label", "detail": ", ".join(unknown)}, status_code=400
+                )
+            conn.connection_metadata = {
+                **(conn.connection_metadata or {}),
+                gmail_sharing.SHARING_KEY: chosen.as_dict(),
+            }
+        current = gmail_sharing.get_sharing(conn.connection_metadata, settings.gmail_access_label)
+    return JSONResponse(
+        {"sharing": current.as_dict(), "labels": available, "email": conn.provider_email}
+    )
+
+
 def _identify_google_account(creds, settings) -> dict:
     """Return ``{"sub", "email"}`` for the authenticated Google account.
 

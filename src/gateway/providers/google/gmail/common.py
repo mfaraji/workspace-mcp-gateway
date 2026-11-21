@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import re
+from dataclasses import dataclass
 from email.message import EmailMessage
 from html.parser import HTMLParser
 from typing import Any
@@ -15,6 +16,7 @@ from gateway.connectors.upstream import OAuthStrategy
 from gateway.oauth.google import GMAIL_TOOL_SCOPES
 from gateway.providers.base import CallContext
 from gateway.providers.google.client import build_gmail_service
+from gateway.providers.google.gmail.sharing import MODE_ALL, get_sharing
 from gateway.providers.registry import ToolError
 
 PROVIDER = "google"
@@ -49,27 +51,47 @@ def gmail_service_and_connection(session: Session, ctx: CallContext):
     return build_gmail_service(creds), conn
 
 
-def resolve_access_label_id(service) -> str:
-    """Return the id of the configured access label, or raise ``label_not_found``."""
-    name = get_settings().gmail_access_label
-    labels = service.users().labels().list(userId="me").execute().get("labels", [])
-    for label in labels:
-        if str(label.get("name", "")).lower() == name.lower():
-            return label["id"]
-    raise ToolError(
-        "label_not_found",
-        f"no Gmail label named '{name}'; create it and apply it to the messages "
-        "the agent may access.",
+@dataclass(frozen=True)
+class Scope:
+    """What the assistant may see in one Gmail account."""
+
+    all_mail: bool
+    label_ids: tuple[str, ...] = ()
+
+
+def resolve_scope(service, conn) -> Scope:
+    """Resolve the account's sharing setting to Gmail label ids.
+
+    Raises ``label_not_found`` when label sharing is on but none of the shared labels
+    exist yet (nothing is visible rather than everything).
+    """
+    sharing = get_sharing(
+        getattr(conn, "connection_metadata", None), get_settings().gmail_access_label
     )
+    if sharing.mode == MODE_ALL:
+        return Scope(all_mail=True)
+    wanted = {n.lower() for n in sharing.labels}
+    labels = service.users().labels().list(userId="me").execute().get("labels", [])
+    ids = tuple(
+        label["id"] for label in labels if str(label.get("name", "")).lower() in wanted
+    )
+    if not ids:
+        names = ", ".join(f"'{n}'" for n in sharing.labels)
+        raise ToolError(
+            "label_not_found",
+            f"no Gmail label named {names}; create it and apply it to the messages "
+            "the agent may access.",
+        )
+    return Scope(all_mail=False, label_ids=ids)
 
 
-def is_labeled(msg: dict, label_id: str) -> bool:
-    return label_id in (msg.get("labelIds") or [])
+def in_scope(msg: dict, scope: Scope) -> bool:
+    return scope.all_mail or bool(set(scope.label_ids) & set(msg.get("labelIds") or []))
 
 
-def require_labeled(msg: dict, label_id: str) -> None:
-    """Treat unlabelled messages exactly like missing ones (no existence leak)."""
-    if not is_labeled(msg, label_id):
+def require_in_scope(msg: dict, scope: Scope) -> None:
+    """Treat unshared messages exactly like missing ones (no existence leak)."""
+    if not in_scope(msg, scope):
         raise ToolError("not_found", "message not found")
 
 

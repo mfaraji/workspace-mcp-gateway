@@ -23,6 +23,7 @@ from gateway.providers.apex.client import (
     user_workspaces,
 )
 from gateway.providers.google.connections import list_connections
+from gateway.providers.google.gmail.sharing import get_sharing
 from gateway.providers.telegram.service import get_connection as get_telegram_connection
 
 router = APIRouter()
@@ -43,6 +44,15 @@ def oauth_status(upstream: OAuthStrategy, session, user_id) -> dict:
                 else "reauth_required"
             ),
             "last_used_at": c.last_used_at.isoformat() if c.last_used_at else None,
+            **(
+                {
+                    "sharing": get_sharing(
+                        c.connection_metadata, get_settings().gmail_access_label
+                    ).as_dict()
+                }
+                if upstream.product == "gmail"
+                else {}
+            ),
         }
         for c in list_connections(session, user_id, upstream.upstream_provider, upstream.product)
     ]

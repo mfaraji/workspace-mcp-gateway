@@ -26,8 +26,8 @@ from gateway.providers.google.gmail.common import (
     build_mime,
     gmail_service_and_connection,
     parse_message,
-    require_labeled,
-    resolve_access_label_id,
+    require_in_scope,
+    resolve_scope,
     valid_address,
 )
 from gateway.providers.registry import ToolError
@@ -129,14 +129,14 @@ def create_draft(args: CreateDraftInput, ctx: CallContext, session: Session) -> 
     to, subject = list(args.to), args.subject
     thread_id = in_reply_to = references = None
     if args.reply_to_message_id:
-        label_id = resolve_access_label_id(service)
+        scope = resolve_scope(service, conn)
         original = (
             service.users()
             .messages()
             .get(userId="me", id=args.reply_to_message_id, format="full")
             .execute()
         )
-        require_labeled(original, label_id)
+        require_in_scope(original, scope)
         parsed = parse_message(original)
         thread_id = original.get("threadId")
         in_reply_to = _hdr(parsed, "Message-ID")

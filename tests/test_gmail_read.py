@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
@@ -101,8 +102,12 @@ def ctx():
     return CallContext(user_id=uuid.uuid4(), external_user_id="u", request_id="r")
 
 
-def _patch(monkeypatch, service):
-    monkeypatch.setattr(read, "gmail_service", lambda _s, _c: service)
+def _patch(monkeypatch, service, metadata=None):
+    monkeypatch.setattr(
+        read,
+        "gmail_service_and_connection",
+        lambda _s, _c: (service, SimpleNamespace(connection_metadata=metadata or {})),
+    )
 
 
 LABELS = [{"id": LABEL, "name": "Agent-Access"}]
@@ -158,3 +163,51 @@ def test_html_to_text():
         "Hello",
         "World",
     ]
+
+
+def _sharing(**value):
+    return {"gmail_sharing": value}
+
+
+def test_all_mail_mode_has_no_label_filter_and_reads_unlabelled(monkeypatch, ctx):
+    svc = _Service(LABELS, {"m1": _msg("m1", ["INBOX"]), "m2": _msg("m2", [])})
+    _patch(monkeypatch, svc, _sharing(mode="all"))
+    out = read.search_messages(read.SearchMessagesInput(), ctx, None)
+    assert "labelIds" not in svc.messages_res.calls["list"][0]
+    assert [m["id"] for m in out["messages"]] == ["m1", "m2"]
+    msg = read.get_message(read.GetMessageInput(message_id="m1"), ctx, None)
+    assert msg["id"] == "m1"
+
+
+def test_chosen_labels_limit_reads_and_ignore_the_default_label(monkeypatch, ctx):
+    labels = [{"id": "L1", "name": "Agent-Access"}, {"id": "L2", "name": "Projects"}]
+    svc = _Service(labels, {"a": _msg("a", ["L1"]), "p": _msg("p", ["L2"])})
+    _patch(monkeypatch, svc, _sharing(mode="labels", labels=["Projects"]))
+    out = read.search_messages(read.SearchMessagesInput(), ctx, None)
+    assert svc.messages_res.calls["list"][0]["labelIds"] == ["L2"]
+    assert [m["id"] for m in out["messages"]] == ["p"]
+    with pytest.raises(ToolError) as e:
+        read.get_message(read.GetMessageInput(message_id="a"), ctx, None)
+    assert e.value.error_code == "not_found"
+
+
+def test_several_labels_are_listed_per_label_and_merged(monkeypatch, ctx):
+    labels = [{"id": "L1", "name": "A"}, {"id": "L2", "name": "B"}]
+    svc = _Service(labels, {"a": _msg("a", ["L1"]), "b": _msg("b", ["L2"]), "c": _msg("c", [])})
+    _patch(monkeypatch, svc, _sharing(mode="labels", labels=["A", "B"]))
+    out = read.search_messages(read.SearchMessagesInput(), ctx, None)
+    assert {c["labelIds"][0] for c in svc.messages_res.calls["list"]} == {"L1", "L2"}
+    assert sorted(m["id"] for m in out["messages"]) == ["a", "b"]  # "c" rechecked away
+    assert out["next_page_token"] is None
+
+
+def test_normalize_sharing_validates():
+    from gateway.providers.google.gmail import sharing
+
+    assert sharing.normalize("all", None).mode == "all"
+    assert sharing.normalize("labels", [" A ", "A", "B"]).labels == ("A", "B")
+    for bad in (("labels", []), ("labels", ["", " "]), ("other", ["A"])):
+        with pytest.raises(ValueError):
+            sharing.normalize(*bad)
+    default = sharing.get_sharing({}, "agent-access")
+    assert (default.mode, default.labels) == ("labels", ("agent-access",))
