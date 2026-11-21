@@ -129,7 +129,9 @@ function card(c) {
         ? 'Shared connector: no per-user credentials, available to every signed-in user.'
         : 'Uses your own connected account or data.'
     }),
-    el('p', { className: 'muted', textContent: c.account ? `Account: ${c.account}` : ' ' }),
+    c.accounts && c.accounts.length
+      ? accountRows(c)
+      : el('p', { className: 'muted', textContent: c.account ? `Account: ${c.account}` : ' ' }),
     el('p', { className: 'muted', textContent: `${c.tool_count} ${c.tool_count === 1 ? 'tool' : 'tools'}` }),
     el('div', { className: 'url-row' },
       el('code', { textContent: c.mcp_url }),
