@@ -93,20 +93,20 @@ function accountRows(c) {
     }
     if (a.status === 'reauth_required') {
       row.append(el('a', {
-        className: 'text-button',
+        className: 'secondary',
         href: `/oauth/google/start?product=${encodeURIComponent(c.slug)}`,
         textContent: 'Reconnect'
       }));
     }
     if (!a.is_default && a.status === 'connected') {
       row.append(el('button', {
-        className: 'text-button', textContent: 'Make default',
+        className: 'secondary', textContent: 'Make default',
         onclick: () => act('Updating default', () =>
           call('POST', `/oauth/google/connections/${encodeURIComponent(a.id)}/default`))
       }));
     }
     row.append(el('button', {
-      className: 'text-button', textContent: 'Disconnect',
+      className: 'secondary danger', textContent: 'Disconnect',
       onclick: () => confirm(`Disconnect ${a.email || 'this account'} from ${c.name}?`)
         && act('Disconnecting', () =>
           call('POST', `/oauth/google/connections/${encodeURIComponent(a.id)}/disconnect`))
