@@ -1,8 +1,9 @@
-"""Apex mutating tools: create invoices and update timesheets."""
+"""Apex mutating tools: create invoices, mark them paid, and update timesheets."""
 
 from __future__ import annotations
 
 from typing import Any, Literal
+from urllib.parse import quote
 
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
@@ -118,6 +119,17 @@ class UpdateTimesheetInput(BaseModel):
     )
 
 
+class MarkInvoicePaidInput(BaseModel):
+    workspace_id: str = Field(..., description=WORKSPACE_ID_DESC)
+    invoice_id: str = Field(..., description="Invoice UUID to mark as paid.")
+    paid_date: str | None = Field(
+        None, description="Date the payment was received, YYYY-MM-DD. Defaults to today."
+    )
+    paid_amount: float | None = Field(
+        None, ge=0, description="Amount received. Defaults to the invoice total."
+    )
+
+
 def create_invoice(args: CreateInvoiceInput, ctx: CallContext, session: Session) -> Any:
     body: dict[str, Any] = {"clientId": args.client_id, "issueDate": args.issue_date}
     if args.due_date is not None:
@@ -193,6 +205,25 @@ def create_timesheet(args: CreateTimesheetInput, ctx: CallContext, session: Sess
     return apex_call(settings, creds, "POST", "/api/invoices", json=body)
 
 
+def mark_invoice_paid(args: MarkInvoicePaidInput, ctx: CallContext, session: Session) -> Any:
+    body: dict[str, Any] = {}
+    if args.paid_date is not None:
+        body["paidDate"] = args.paid_date
+    if args.paid_amount is not None:
+        body["paidAmount"] = args.paid_amount
+    settings = get_settings()
+    creds = apex_credentials(
+        settings,
+        ctx,
+        scopes=[SCOPE_INVOICING_WRITE],
+        workspace_id=args.workspace_id,
+        capability="invoicing",
+    )
+    return apex_call(
+        settings, creds, "POST", f"/api/invoices/{quote(args.invoice_id, safe='')}/paid", json=body
+    )
+
+
 def update_timesheet(args: UpdateTimesheetInput, ctx: CallContext, session: Session) -> Any:
     body: dict[str, Any] = {}
     if args.period_start is not None:
@@ -243,6 +274,12 @@ def _create_timesheet_preview(args: CreateTimesheetInput) -> str:
     )
 
 
+def _mark_paid_preview(args: MarkInvoicePaidInput) -> str:
+    amount = f"{args.paid_amount:g}" if args.paid_amount is not None else "the full invoice total"
+    when = args.paid_date or "today"
+    return f"Mark invoice '{args.invoice_id}' as PAID: {amount} received on {when}."
+
+
 def _update_timesheet_preview(args: UpdateTimesheetInput) -> str:
     return f"Update timesheet '{args.timesheet_id}'."
 
@@ -288,6 +325,24 @@ def register(registry) -> None:
             required_capability="invoicing",
             preview_builder=_create_timesheet_preview,
             ui_app_callable=True,
+        )
+    )
+    registry.add(
+        ToolSpec(
+            name="apex_mark_invoice_paid",
+            provider=PROVIDER,
+            risk=RiskLevel.MUTATING,
+            description=(
+                "Mark an Apex invoice as paid. Requires confirmation. Records the date the "
+                "payment was received (defaults to today) and the amount (defaults to the "
+                "invoice total); a paid invoice can no longer be edited or deleted, and a "
+                "void invoice cannot be marked paid. Use apex_list_timesheets or the "
+                "invoice id from apex_create_invoice to find the invoice."
+            ),
+            input_model=MarkInvoicePaidInput,
+            handler=mark_invoice_paid,
+            required_capability="invoicing",
+            preview_builder=_mark_paid_preview,
         )
     )
     registry.add(

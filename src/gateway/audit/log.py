@@ -24,6 +24,7 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "apex_wealth_list_workspaces": set(),
     "apex_create_invoice": {"workspace_id"},
     "apex_create_timesheet": {"workspace_id"},
+    "apex_mark_invoice_paid": {"workspace_id", "invoice_id", "paid_date"},
     "apex_update_timesheet": {"workspace_id"},
     "apex_list_clients": {"workspace_id"},
     "apex_list_timesheets": {"workspace_id"},

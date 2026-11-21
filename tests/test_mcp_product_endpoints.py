@@ -87,6 +87,7 @@ def test_apex_filter_registers_expected_apex_tools():
         "apex_get_last_timesheet",
         "apex_create_invoice",
         "apex_create_timesheet",
+        "apex_mark_invoice_paid",
         "apex_update_timesheet",
         "apex_list_workspaces",
     }

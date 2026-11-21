@@ -209,6 +209,39 @@ def test_update_timesheet_builds_partial_body(monkeypatch):
     }
 
 
+def test_mark_invoice_paid_posts_to_the_invoice_paid_route(monkeypatch):
+    captured = {}
+
+    def fake_apex_request(
+        settings, api_key, method, path, params=None, json=None, extra_headers=None
+    ):
+        captured.update(method=method, path=path, json=json)
+        return {"id": "inv1", "status": "PAID"}
+
+    monkeypatch.setattr(apex_client, "apex_request", fake_apex_request)
+    monkeypatch.setattr(write, "get_settings", lambda: _settings())
+    monkeypatch.setattr(
+        write, "apex_credentials", lambda *a, **k: apex_client.ApexCredentials("tok")
+    )
+
+    args = write.MarkInvoicePaidInput(
+        workspace_id="w1", invoice_id="inv/1", paid_date="2026-08-05", paid_amount=339
+    )
+    assert write.mark_invoice_paid(args, _ctx(), None)["status"] == "PAID"
+    assert captured == {
+        "method": "POST",
+        "path": "/api/invoices/inv%2F1/paid",
+        "json": {"paidDate": "2026-08-05", "paidAmount": 339},
+    }
+    assert write.mark_invoice_paid(
+        write.MarkInvoicePaidInput(workspace_id="w1", invoice_id="inv1"), _ctx(), None
+    )
+    assert captured["json"] == {}
+    assert "full invoice total" in write._mark_paid_preview(
+        write.MarkInvoicePaidInput(workspace_id="w1", invoice_id="inv1")
+    )
+
+
 def test_read_and_write_tools_registered_with_expected_risk():
     registry = ToolRegistry()
     read.register(registry)
@@ -221,8 +254,11 @@ def test_read_and_write_tools_registered_with_expected_risk():
         "apex_get_last_timesheet",
         "apex_create_invoice",
         "apex_create_timesheet",
+        "apex_mark_invoice_paid",
         "apex_update_timesheet",
     }
+    assert specs["apex_mark_invoice_paid"].risk is RiskLevel.MUTATING
+    assert specs["apex_mark_invoice_paid"].required_capability == "invoicing"
     assert specs["apex_list_clients"].risk is RiskLevel.READ
     assert specs["apex_create_invoice"].risk is RiskLevel.MUTATING
     assert specs["apex_update_timesheet"].risk is RiskLevel.MUTATING
