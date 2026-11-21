@@ -8,7 +8,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
-from gateway.providers.apex.client import APEX_API_KEY, apex_call
+from gateway.providers.apex.client import (
+    SCOPE_CLIENTS_READ,
+    SCOPE_INVOICING_READ,
+    WORKSPACE_ID_DESC,
+    apex_call,
+    apex_credentials,
+)
 from gateway.providers.apex.ui import BILLING_NOTE, BILLING_UI
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
@@ -16,35 +22,55 @@ PROVIDER = "apex"
 
 
 class ListClientsInput(BaseModel):
-    pass
+    workspace_id: str = Field(..., description=WORKSPACE_ID_DESC)
 
 
 class ListTimesheetsInput(BaseModel):
+    workspace_id: str = Field(..., description=WORKSPACE_ID_DESC)
     client_id: str | None = Field(
         None, description="Filter to one client's timesheets, by client UUID."
     )
 
 
 class GetLastTimesheetInput(BaseModel):
+    workspace_id: str = Field(..., description=WORKSPACE_ID_DESC)
     client_id: str = Field(..., description="Client UUID to look up the latest timesheet for.")
 
 
-def list_clients(_args: ListClientsInput, ctx: CallContext, session: Session) -> Any:
+def list_clients(args: ListClientsInput, ctx: CallContext, session: Session) -> Any:
     settings = get_settings()
-    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
+    creds = apex_credentials(
+        settings,
+        ctx,
+        scopes=[SCOPE_CLIENTS_READ],
+        workspace_id=args.workspace_id,
+        capability="clients",
+    )
     return apex_call(settings, creds, "GET", "/api/clients")
 
 
 def list_timesheets(args: ListTimesheetsInput, ctx: CallContext, session: Session) -> Any:
     settings = get_settings()
-    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
+    creds = apex_credentials(
+        settings,
+        ctx,
+        scopes=[SCOPE_INVOICING_READ],
+        workspace_id=args.workspace_id,
+        capability="invoicing",
+    )
     params = {"clientId": args.client_id} if args.client_id else None
     return apex_call(settings, creds, "GET", "/api/timesheets", params=params)
 
 
 def get_last_timesheet(args: GetLastTimesheetInput, ctx: CallContext, session: Session) -> Any:
     settings = get_settings()
-    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
+    creds = apex_credentials(
+        settings,
+        ctx,
+        scopes=[SCOPE_INVOICING_READ],
+        workspace_id=args.workspace_id,
+        capability="invoicing",
+    )
     return apex_call(
         settings, creds, "GET", "/api/timesheets/last", params={"clientId": args.client_id}
     )
@@ -64,6 +90,7 @@ def register(registry) -> None:
             ),
             input_model=ListClientsInput,
             handler=list_clients,
+            required_capability="clients",
             ui_resource=BILLING_UI,
             ui_app_callable=True,
         )
@@ -77,6 +104,7 @@ def register(registry) -> None:
             + BILLING_NOTE,
             input_model=ListTimesheetsInput,
             handler=list_timesheets,
+            required_capability="invoicing",
             ui_resource=BILLING_UI,
             ui_app_callable=True,
         )
@@ -93,6 +121,7 @@ def register(registry) -> None:
             ),
             input_model=GetLastTimesheetInput,
             handler=get_last_timesheet,
+            required_capability="invoicing",
             ui_resource=BILLING_UI,
             ui_app_callable=True,
         )

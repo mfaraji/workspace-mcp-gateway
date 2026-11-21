@@ -25,9 +25,9 @@ from gateway.logging import get_logger
 from gateway.oauth import google as goog
 from gateway.providers.google import client as google_client
 from gateway.providers.google.connections import (
-    AccountConflict,
     StoredCredentials,
-    disconnect,
+    disconnect_connection,
+    set_default,
     upsert_connection,
 )
 from gateway.providers.google.gmail import onboarding as gmail_onboarding
@@ -98,10 +98,9 @@ async def start(request: Request):
     flow = goog.build_flow(settings, scopes=scopes, state=state)
     authorization_url, _ = flow.authorization_url(
         access_type="offline",
-        include_granted_scopes="true",
-        # Reauthorization must let the user select their existing connected
-        # account. Otherwise Google can silently reuse a different browser
-        # session and trip the V1 single-account conflict guard.
+        include_granted_scopes="false",
+        # Always show the account chooser so the user can add another Google account
+        # (or pick the one to reauthorize) instead of silently reusing a browser session.
         prompt="consent select_account",
     )
     return RedirectResponse(authorization_url, status_code=302)
@@ -156,6 +155,13 @@ async def callback(request: Request):
         expires_at=expires_at,
     )
 
+    granted = list(creds.scopes or goog.scopes_for_product(product))
+    # One connection per product: a single-product start stores that product; the
+    # "all" bundle stores one connection (own token copy) for each product granted.
+    products = [goog.normalize_product(product)] if goog.normalize_product(product) else [
+        p for p in goog.PRODUCT_SCOPES if p in goog.OAUTH_ENABLED_PRODUCTS
+    ]
+    onboard: tuple | None = None
     with session_scope() as session:
         from gateway.identity.models import AuthenticatedUser
 
@@ -166,27 +172,29 @@ async def callback(request: Request):
                 email=account.get("email"),
             ),
         )
-        try:
+        for prod in products:
+            prod_scopes = set(goog.PRODUCT_SCOPES[prod])
+            if not prod_scopes & set(granted):
+                continue  # the user unticked this product on the consent screen
             conn = upsert_connection(
                 session,
                 user=user,
                 provider_account_id=account["sub"],
                 provider_email=account.get("email"),
-                scopes=list(creds.scopes or goog.DEFAULT_SCOPES),
+                scopes=[s for s in granted if s in prod_scopes or s in goog.OPENID_SCOPES],
                 creds=stored,
+                product=prod,
             )
-        except AccountConflict as exc:
-            return JSONResponse(
-                {"error": "account_conflict", "detail": str(exc)}, status_code=409
-            )
-        connection_id = conn.id
-        granted_scopes = list(conn.scopes or [])
-        onboard_gmail = gmail_onboarding.needs_onboarding(granted_scopes, conn.connection_metadata)
+            if prod == "gmail" and gmail_onboarding.needs_onboarding(
+                list(conn.scopes or []), conn.connection_metadata
+            ):
+                onboard = (conn.id, list(conn.scopes or []))
 
     logger.info("google account connected for user %s", external_user_id)
-    if onboard_gmail:
-        _onboard_gmail(request, settings, creds, connection_id, granted_scopes)
-    return RedirectResponse(f"{settings.base_url.rstrip('/')}/?connected=google", status_code=302)
+    if onboard:
+        _onboard_gmail(request, settings, creds, onboard[0], onboard[1])
+    suffix = f"?connected={goog.normalize_product(product) or 'google'}"
+    return RedirectResponse(f"{settings.base_url.rstrip('/')}/connections{suffix}", status_code=302)
 
 
 def _onboard_gmail(request: Request, settings, creds, connection_id, granted_scopes) -> None:
@@ -212,23 +220,41 @@ def _onboard_gmail(request: Request, settings, creds, connection_id, granted_sco
     request.session["notice"] = gmail_onboarding.build_notice(status, name)
 
 
-@router.post("/disconnect")
-async def disconnect_route(request: Request):
-    """Revoke the calling user's Google connection."""
+def _connection_action(request: Request, connection_id: str, action) -> JSONResponse:
+    """Run an owner-scoped, CSRF-protected change on one of the caller's connections."""
+    import uuid as _uuid
+
+    from fastapi import HTTPException
+
+    from gateway.identity.models import AuthenticatedUser
+
     try:
         auth = _resolve(request)
     except IdentityError as exc:
         return JSONResponse({"error": "unauthorized", "detail": str(exc)}, status_code=401)
-
+    try:
+        conn_id = _uuid.UUID(connection_id)
+    except ValueError as exc:
+        raise HTTPException(404, "Connection not found") from exc
     with session_scope() as session:
-        from gateway.identity.models import AuthenticatedUser
-
         user = get_or_create_user(
             session, AuthenticatedUser(external_user_id=auth.external_user_id)
         )
-        removed = disconnect(session, user.id)
+        if not action(session, user.id, conn_id):
+            raise HTTPException(404, "Connection not found")
+    return JSONResponse({"ok": True})
 
-    return JSONResponse({"disconnected": removed})
+
+@router.post("/connections/{connection_id}/disconnect")
+async def disconnect_route(request: Request, connection_id: str):
+    """Disconnect one connected Google account from one product."""
+    return _connection_action(request, connection_id, disconnect_connection)
+
+
+@router.post("/connections/{connection_id}/default")
+async def default_route(request: Request, connection_id: str):
+    """Make one connected account the default for its product."""
+    return _connection_action(request, connection_id, set_default)
 
 
 def _identify_google_account(creds, settings) -> dict:

@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
@@ -22,13 +22,14 @@ from gateway.providers.google.calendar.common import (
     calendar_service,
     trim_event,
 )
+from gateway.providers.google.common import GoogleAccountInput, make_list_accounts_spec
 
 
-class ListCalendarsInput(BaseModel):
+class ListCalendarsInput(GoogleAccountInput):
     """No parameters — lists the user's calendars."""
 
 
-class ListEventsInput(BaseModel):
+class ListEventsInput(GoogleAccountInput):
     calendar_id: str = Field("primary", description="Calendar id, or 'primary'.")
     time_min: str | None = Field(
         None,
@@ -54,7 +55,7 @@ class ListEventsInput(BaseModel):
     )
 
 
-class GetEventInput(BaseModel):
+class GetEventInput(GoogleAccountInput):
     calendar_id: str = Field("primary", description="Calendar id, or 'primary'.")
     event_id: str = Field(..., description="The event id to fetch.")
 
@@ -126,6 +127,14 @@ def get_event(args: GetEventInput, ctx: CallContext, session: Session) -> dict[s
 
 def register(registry) -> None:
     """Register the Calendar read tools with the tool registry."""
+    registry.add(
+        make_list_accounts_spec(
+            name="google_calendar_list_accounts",
+            provider=PROVIDER,
+            product="calendar",
+            display_name="Google Calendar",
+        )
+    )
     registry.add(
         ToolSpec(
             name="google_calendar_list_calendars",

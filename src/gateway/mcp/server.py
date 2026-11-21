@@ -35,7 +35,12 @@ class GatewayFastMCP(FastMCP):
         tools = await super().list_tools()
         import anyio
 
-        from gateway.access.policy import allowed_tools, setup_url, tool_allowed
+        from gateway.access.policy import (
+            allowed_tools,
+            setup_url,
+            tool_allowed,
+            upstream_permits,
+        )
         from gateway.db.engine import session_scope
         from gateway.identity.resolver import get_or_create_user
         from gateway.mcp.context import require_current_user
@@ -49,7 +54,15 @@ class GatewayFastMCP(FastMCP):
 
         names = await anyio.to_thread.run_sync(permitted)
         specs = {spec.name: spec for spec in self.gateway_specs}
-        tools = [t.model_copy(deep=True) for t in tools if tool_allowed(specs[t.name], auth, names)]
+        granted = [t for t in tools if tool_allowed(specs[t.name], auth, names)]
+
+        def upstream_filtered():
+            # May call the upstream (Apex workspaces, cached ~60s), so off the event loop.
+            return [
+                t for t in granted if upstream_permits(self.gateway_settings, auth, specs[t.name])
+            ]
+
+        tools = [t.model_copy(deep=True) for t in await anyio.to_thread.run_sync(upstream_filtered)]
         has_personal = any(
             c.access_mode is AccessMode.PERSONAL
             and any(c.matches(spec) and self.gateway_filter(spec) for spec in self.gateway_specs)
@@ -71,7 +84,7 @@ class GatewayFastMCP(FastMCP):
         """Widgets are served only when a tool the caller may use references them."""
         import anyio
 
-        from gateway.access.policy import allowed_tools, tool_allowed
+        from gateway.access.policy import allowed_tools, tool_allowed, upstream_permits
         from gateway.db.engine import session_scope
         from gateway.identity.resolver import get_or_create_user
         from gateway.mcp.context import require_current_user
@@ -84,11 +97,20 @@ class GatewayFastMCP(FastMCP):
                 return allowed_tools(session, user.id, self.gateway_settings, auth)
 
         names = await anyio.to_thread.run_sync(permitted)
-        return {
-            spec.ui_resource
+        candidates = [
+            spec
             for spec in self.gateway_specs
             if spec.ui_resource and self.gateway_filter(spec) and tool_allowed(spec, auth, names)
-        }
+        ]
+
+        def upstream_filtered():
+            return {
+                spec.ui_resource
+                for spec in candidates
+                if upstream_permits(self.gateway_settings, auth, spec)
+            }
+
+        return await anyio.to_thread.run_sync(upstream_filtered)
 
     async def list_resources(self):
         uris = await self._granted_ui_uris()

@@ -15,7 +15,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Protocol
 
 from gateway.crypto.tokens import get_cipher
-from gateway.providers.google.connections import get_active_connection, load_credentials
+from gateway.providers.google.connections import (
+    get_active_connection,
+    list_connections,
+    load_credentials,
+    resolve_connection,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -44,12 +49,11 @@ class UpstreamAuthStrategy(Protocol):
 class OAuthStrategy:
     """Per-user OAuth, generalizing the existing Google connection machinery.
 
-    ``upstream_provider`` selects which stored account to use. Several
-    connectors may share one provider — the Google Calendar, Drive, and Tasks
-    connectors all use ``upstream_provider="google"`` so one Google account
-    and refresh token covers every one of them, with ``required_scopes``
-    gating access per connector (incremental authorization unions the scopes
-    of whichever connectors a user has enabled).
+    ``upstream_provider`` + ``product`` select the stored accounts. Google connectors
+    share ``upstream_provider="google"`` but each product (calendar, drive, tasks,
+    gmail) keeps its own set of connected accounts: a user may connect several
+    accounts to one product and none to another. A call uses the account named in
+    the tool input, else the product's default account.
     """
 
     def __init__(
@@ -67,11 +71,35 @@ class OAuthStrategy:
         self.product = product
         self.missing_scope_hint = missing_scope_hint
 
-    def get_credentials(self, session: Session, ctx: CallContext, settings: Settings):
+    def get_connection_credentials(
+        self, session: Session, ctx: CallContext, settings: Settings
+    ):
+        """Resolve ``(credentials, connection)`` for this product and ``ctx.account``.
+
+        The account is the one named by the tool input's ``account`` (email), else the
+        product's default account.
+        """
         from gateway.providers.registry import ToolError
 
-        conn = get_active_connection(session, ctx.user_id, self.upstream_provider)
+        conn = resolve_connection(
+            session, ctx.user_id, self.upstream_provider, self.product, ctx.account
+        )
         if conn is None:
+            if ctx.account:
+                known = sorted(
+                    c.provider_email or c.provider_account_id
+                    for c in list_connections(
+                        session, ctx.user_id, self.upstream_provider, self.product
+                    )
+                    if c.status == "active"
+                )
+                hint = ", ".join(known) if known else "none"
+                raise ToolError(
+                    "account_not_connected",
+                    f"{self.display_name} has no connected account '{ctx.account}'; "
+                    f"connected accounts: {hint}. Add one here: "
+                    f"{self.connect_url(settings, ctx.external_user_id)}",
+                )
             raise ToolError(
                 "not_connected",
                 f"no active {self.display_name} connection; authorize here: "
@@ -88,7 +116,10 @@ class OAuthStrategy:
 
         creds = load_credentials(session, conn, settings)
         conn.last_used_at = datetime.now(UTC)
-        return creds
+        return creds, conn
+
+    def get_credentials(self, session: Session, ctx: CallContext, settings: Settings):
+        return self.get_connection_credentials(session, ctx, settings)[0]
 
     def connect_url(self, settings: Settings, external_user_id: str) -> str:
         from gateway.oauth.google import build_start_url

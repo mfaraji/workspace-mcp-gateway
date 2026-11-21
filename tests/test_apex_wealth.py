@@ -13,7 +13,7 @@ from gateway.connectors.registry import by_spec
 from gateway.providers.apex import auth, wealth
 from gateway.providers.apex import client as apex_client
 from gateway.providers.base import CallContext, RiskLevel
-from gateway.providers.registry import ToolError, ToolRegistry
+from gateway.providers.registry import ToolRegistry
 
 EXPECTED_TOOLS = {
     "apex_wealth_list_accounts",
@@ -58,9 +58,9 @@ def captured(monkeypatch):
     monkeypatch.setattr(apex_client, "apex_request", fake_apex_request)
     monkeypatch.setattr(wealth, "get_settings", lambda: _settings())
     monkeypatch.setattr(
-        apex_client.APEX_WEALTH_API_KEY,
-        "get_credentials",
-        lambda session, ctx, settings: apex_client.ApexCredentials("pk_live_wealth"),
+        wealth,
+        "apex_credentials",
+        lambda *a, **k: apex_client.ApexCredentials("tok", {"X-Workspace-Id": k["workspace_id"]}),
     )
     return calls
 
@@ -74,90 +74,57 @@ def captured(monkeypatch):
     ],
 )
 def test_parameterless_tools_call_their_path(captured, handler, path):
-    assert handler(wealth.NoInput(), _ctx(), None) == {"ok": True}
+    assert handler(wealth.WorkspaceInput(workspace_id="w1"), _ctx(), None) == {"ok": True}
     assert captured == [
-        dict(api_key="pk_live_wealth", method="GET", path=path, params=None)
+        dict(api_key="tok", method="GET", path=path, params=None)
     ]
 
 
 def test_get_positions_serialises_filters(captured):
-    args = wealth.GetPositionsInput(account_id="a1", as_of_date="2026-09-01")
+    args = wealth.GetPositionsInput(workspace_id="w1", account_id="a1", as_of_date="2026-09-01")
     wealth.get_positions(args, _ctx(), None)
     assert captured[0]["path"] == "/api/wealth/positions"
     assert captured[0]["params"] == {"accountId": "a1", "asOfDate": "2026-09-01"}
 
 
 def test_get_positions_without_filters_sends_no_params(captured):
-    wealth.get_positions(wealth.GetPositionsInput(), _ctx(), None)
+    wealth.get_positions(wealth.GetPositionsInput(workspace_id="w1"), _ctx(), None)
     assert captured[0]["params"] is None
 
 
 def test_list_manual_holdings_filters_by_account(captured):
-    wealth.list_manual_holdings(wealth.ListManualHoldingsInput(account_id="a1"), _ctx(), None)
-    wealth.list_manual_holdings(wealth.ListManualHoldingsInput(), _ctx(), None)
+    with_account = wealth.ListManualHoldingsInput(workspace_id="w1", account_id="a1")
+    wealth.list_manual_holdings(with_account, _ctx(), None)
+    wealth.list_manual_holdings(wealth.ListManualHoldingsInput(workspace_id="w1"), _ctx(), None)
     assert captured[0]["params"] == {"accountId": "a1"}
     assert captured[1]["params"] is None
 
 
 def test_net_worth_months_default_and_bounds(captured):
-    wealth.get_net_worth_history(wealth.GetNetWorthHistoryInput(), _ctx(), None)
+    wealth.get_net_worth_history(wealth.GetNetWorthHistoryInput(workspace_id="w1"), _ctx(), None)
     assert captured[0]["path"] == "/api/wealth/net-worth"
     assert captured[0]["params"] == {"months": 12}
     for bad in (0, 61):
         with pytest.raises(ValidationError):
-            wealth.GetNetWorthHistoryInput(months=bad)
+            wealth.GetNetWorthHistoryInput(workspace_id="w1", months=bad)
 
 
-def test_missing_key_raises_not_connected(monkeypatch):
-    monkeypatch.setattr(wealth, "get_settings", lambda: _settings())
-    monkeypatch.setattr(
-        apex_client.APEX_WEALTH_API_KEY, "get_credentials", _raise_not_connected
-    )
-    with pytest.raises(ToolError) as exc_info:
-        wealth.list_accounts(wealth.NoInput(), _ctx(), None)
-    assert exc_info.value.error_code == "not_connected"
-
-
-def _raise_not_connected(session, ctx, settings):
-    raise ToolError("not_connected", "apex_wealth_set_api_key")
-
-
-def test_no_deploy_wide_fallback_key():
-    assert apex_client.APEX_WEALTH_API_KEY.fallback_key is None
-
-
-def test_wealth_data_reads_and_settings_writes_are_classified():
+def test_wealth_tools_are_read_only_and_carry_a_capability():
     registry = ToolRegistry()
     wealth.register(registry)
     auth.register_wealth(registry)
     specs = {s.name: s for s in registry._specs}
-    assert set(specs) == EXPECTED_TOOLS | {
-        "apex_wealth_set_api_key",
-        "apex_wealth_list_workspaces",
-        "apex_wealth_set_workspace",
-    }
-    assert all(
-        s.risk is (RiskLevel.MUTATING if "_set_" in s.name else RiskLevel.READ)
-        for s in specs.values()
-    )
+    assert set(specs) == EXPECTED_TOOLS | {"apex_wealth_list_workspaces"}
+    assert all(s.risk is RiskLevel.READ for s in specs.values())
     assert {by_spec(s).slug for s in specs.values()} == {"apex-wealth"}
-
-
-def test_set_wealth_key_stores_under_wealth_provider(monkeypatch):
-    stored = {}
-    monkeypatch.setattr(
-        auth,
-        "store_api_key",
-        lambda session, user_id, provider, api_key: stored.update(provider=provider),
-    )
-    result = auth.set_wealth_api_key(auth.SetApiKeyInput(api_key="pk_live_x"), _ctx(), None)
-    assert result == {"status": "connected", "provider": "apex_wealth"}
-    assert stored == {"provider": "apex_wealth"}
+    assert specs["apex_wealth_get_positions"].required_capability == "investments"
+    assert specs["apex_wealth_get_accounts_summary"].required_capability == "assets"
+    assert specs["apex_wealth_list_workspaces"].required_capability is None
 
 
 def test_audit_records_only_safe_fields():
-    assert summarize_input("apex_wealth_get_positions", {"account_id": "a1", "x": "s"}) == (
-        "account_id='a1'"
-    )
+    assert summarize_input(
+        "apex_wealth_get_positions", {"workspace_id": "w1", "account_id": "a1", "x": "s"}
+    ) == "workspace_id='w1', account_id='a1'"
     assert summarize_input("apex_wealth_get_net_worth_history", {"months": 6}) == "months=6"
-    assert summarize_input("apex_wealth_list_accounts", {"api_key": "secret"}) == ""
+    assert summarize_input("apex_wealth_list_accounts", {"token": "secret"}) == ""

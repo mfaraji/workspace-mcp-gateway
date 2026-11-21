@@ -78,9 +78,10 @@ def session():
 
 
 def _use(monkeypatch, svc):
-    monkeypatch.setattr(write, "gmail_service", lambda _s, _c: svc)
-    conn = SimpleNamespace(provider_account_id="acct")
-    monkeypatch.setattr(write, "get_active_connection", lambda *_a: conn)
+    conn = SimpleNamespace(provider_account_id="acct", provider_email="me@example.com")
+    conn.status = "active"
+    monkeypatch.setattr(write, "gmail_service_and_connection", lambda _s, _c: (svc, conn))
+    monkeypatch.setattr(write, "list_connections", lambda *_a: [conn])
 
 
 def _raw_message(svc):
@@ -167,6 +168,22 @@ def test_create_then_delete_owned(monkeypatch, ctx, session):
     session.flush()
     write.delete_draft(write.DeleteDraftInput(draft_id="d1"), ctx, session)
     assert svc.drafts_res.deleted[0]["id"] == "d1"
+
+
+def test_draft_of_another_account_is_not_found(monkeypatch, ctx, session):
+    svc = _Svc({})
+    _use(monkeypatch, svc)
+    session.add(User(id=ctx.user_id, external_user_id="u"))
+    session.flush()
+    write.create_draft(write.CreateDraftInput(body_text="x"), ctx, session)
+    session.flush()
+    other = CallContext(
+        user_id=ctx.user_id, external_user_id="u", request_id="r", account="other@example.com"
+    )
+    with pytest.raises(ToolError) as e:
+        write.delete_draft(write.DeleteDraftInput(draft_id="d1"), other, session)
+    assert e.value.error_code == "not_found"
+    assert svc.drafts_res.deleted == []
 
 
 def test_audit_drops_content():

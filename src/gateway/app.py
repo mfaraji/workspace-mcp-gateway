@@ -69,6 +69,7 @@ def create_app() -> FastAPI:
     from gateway.access.consent import router as consent_router
 
     app.include_router(consent_router)
+    app.state.access_specs = {spec.name: spec for spec in mcp_servers["all"].gateway_specs}
     app.state.access_catalog = [
         {
             "slug": c.slug,
@@ -85,7 +86,6 @@ def create_app() -> FastAPI:
 
     from gateway.api.drive import router as drive_api_router
     from gateway.api.telegram import router as telegram_api_router
-    from gateway.connectors.routes import router as connectors_router
     from gateway.oauth.clerk_routes import router as clerk_oauth_router
     from gateway.oauth.routes import router as oauth_router
 
@@ -93,7 +93,6 @@ def create_app() -> FastAPI:
     app.include_router(clerk_oauth_router)
     app.include_router(drive_api_router)
     app.include_router(telegram_api_router)
-    app.include_router(connectors_router)
 
     @app.get("/", include_in_schema=False)
     async def index() -> RedirectResponse:
@@ -102,6 +101,17 @@ def create_app() -> FastAPI:
         Also the target of the Google OAuth callback redirect (``/?connected=google``).
         """
         return RedirectResponse("/connections", status_code=303)
+
+    @app.get("/.well-known/apex-jwks.json", include_in_schema=False)
+    async def apex_jwks() -> JSONResponse:
+        """Public keys Apex uses to verify gateway-minted tokens (never private material)."""
+        from gateway.oauth.downstream import SigningKeyError, jwks
+
+        try:
+            body = jwks(settings)
+        except SigningKeyError:
+            return JSONResponse({"error": "signing_key_not_configured"}, status_code=503)
+        return JSONResponse(body, headers={"Cache-Control": "public, max-age=300"})
 
     @app.get("/health")
     async def health() -> dict[str, str]:

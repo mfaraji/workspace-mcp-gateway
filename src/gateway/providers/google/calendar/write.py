@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
@@ -22,9 +22,10 @@ from gateway.providers.google.calendar.common import (
     calendar_service,
     trim_event,
 )
+from gateway.providers.google.common import GoogleAccountInput
 
 
-class CreateEventInput(BaseModel):
+class CreateEventInput(GoogleAccountInput):
     calendar_id: str = Field("primary", description="Calendar id, or 'primary'.")
     summary: str = Field(..., description="Event title.")
     start: str = Field(
@@ -60,7 +61,7 @@ class CreateEventInput(BaseModel):
     )
 
 
-class UpdateEventInput(BaseModel):
+class UpdateEventInput(GoogleAccountInput):
     calendar_id: str = Field("primary", description="Calendar id, or 'primary'.")
     event_id: str = Field(..., description="The event id to update.")
     summary: str | None = Field(None, description="New event title.")
@@ -92,7 +93,7 @@ class UpdateEventInput(BaseModel):
     )
 
 
-class DeleteEventInput(BaseModel):
+class DeleteEventInput(GoogleAccountInput):
     calendar_id: str = Field("primary", description="Calendar id, or 'primary'.")
     event_id: str = Field(..., description="The event id to delete.")
 

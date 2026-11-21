@@ -41,19 +41,25 @@ with Open WebUI's native tool-server UI:
 - `/mcp/telegram` registers `system_get_current_time`,
   `telegram_list_destinations`, and `telegram_send_message`. Bot credentials are
   configured through the private HTTP API, never through a model-visible tool.
-- `/mcp/apex-wealth` registers `system_get_current_time`, read-only
-  `apex_wealth_*` tools, and `apex_wealth_set_api_key`. It uses its own per-user
-  key (wealth data only exists in PERSONAL workspaces); `/mcp/apex` excludes these
-  tools via `Connector.exclude_prefixes`.
-- Apex credentials resolve per call in `ApexAuthStrategy`: stored per-user key, else
-  Clerk act-as (`APEX_GATEWAY_API_KEY` + `X-Act-As-Subject` from `ctx.clerk_subject` +
-  `X-Workspace-Id` from the user's stored default), else `not_connected`. The default
-  workspace is a token-less `ProviderConnection` (account id `clerk`, metadata
-  `workspace_id`/`workspace_name`) set by `apex_set_workspace` (wealth variants:
-  `apex_wealth_list_workspaces`/`apex_wealth_set_workspace`); act-as with none stored
-  raises `workspace_not_set`. The strategy keys only on `ctx.clerk_subject`; the
-  registry fills it from the OAuth token or the `OAuthIdentityLink`, never from an
-  Open WebUI-specific path.
+- `/mcp/apex-wealth` registers `system_get_current_time` and read-only
+  `apex_wealth_*` tools (wealth data only exists in PERSONAL workspaces); `/mcp/apex`
+  excludes these tools via `Connector.exclude_prefixes`.
+- Apex has no keys, no stored credentials and no default workspace. The user's Clerk
+  token is audience-bound to the gateway and is **never forwarded** (MCP token
+  passthrough is forbidden). For each call `gateway.providers.apex.client.apex_credentials`
+  validates `workspace_id` against the user's workspaces and mints a short-lived,
+  Apex-only JWT with `gateway.oauth.downstream.mint_apex_token` (`sub` = verified Clerk
+  subject, `act` = this gateway, `scope` = the tool's scope, `wid` = the workspace,
+  `aud` = `APEX_MCP_AUDIENCE`), signed with `GATEWAY_SIGNING_KEY`; Apex verifies it
+  against `/.well-known/apex-jwks.json`. Never log or audit minted tokens (only `jti`,
+  scopes, `workspace_id`).
+- Every workspace-scoped Apex tool takes a required `workspace_id` (from
+  `apex_list_workspaces` / `apex_wealth_list_workspaces`). A tool is *permitted* when
+  one of the caller's Apex workspaces has its `ToolSpec.required_capability`
+  (`ApexUpstream.permits`, workspaces cached ~60s per Clerk subject). Permission is
+  checked at discovery (`tools/list`, widgets), on the consent and `/access` pages
+  (`policy.permitted_catalog`) and at call time (`policy.enforce` -> `forbidden`), always
+  intersected with the client grant. Apex re-checks membership and capability itself.
 - `/mcp/finance` registers `system_get_current_time` plus `finance_*` read-only
   exchange-rate tools (public API, no per-user credentials; default quote IRR).
 - `/mcp/recipes` registers `system_get_current_time` plus `recipes_*` tools

@@ -39,7 +39,6 @@ function boot({ toolName = 'apex_list_clients', args = {}, locale = 'en-US', the
         else if (name === 'apex_list_timesheets') reply(msg.id, text({ timesheets: SHEETS }));
         else if (name === 'apex_get_last_timesheet') reply(msg.id, text({ id: 'tL', periodStart: '2026-10-16', periodEnd: '2026-10-31', entries: [] }));
         else if (name === 'apex_list_workspaces') reply(msg.id, { content: [{ type: 'text', text: JSON.stringify({ id: 'w1', name: 'Main', kind: 'BUSINESS' }) }, { type: 'text', text: JSON.stringify({ id: 'w2', name: 'Side', kind: 'BUSINESS' }) }] });
-        else if (name === 'apex_set_workspace') reply(msg.id, text({ status: 'workspace_set', workspace_id: a.workspace_id, name: 'Side' }));
         else if (name === 'apex_update_timesheet' || name === 'apex_create_timesheet' || name === 'apex_create_invoice') confirmed({ id: 'new1' });
         else reply(msg.id, { isError: true, content: [{ type: 'text', text: 'unknown tool' }] });
       }
@@ -83,13 +82,13 @@ async function run() {
   sel.value = 'w2';
   sel.dispatchEvent(new t.window.Event('change'));
   await sleep(60);
-  assert.deepEqual(named(t.calls, 'apex_set_workspace')[0].arguments, { workspace_id: 'w2' });
+  assert.equal(named(t.calls, 'apex_list_clients').at(-1).arguments.workspace_id, 'w2', 'reload uses the new workspace');
   assert.match(d.body.textContent, /Side/, 'workspace name shown after switch');
 
   // 2. New timesheet for a TIMESHEET client: defaults, validation, handshake.
   click(d.querySelectorAll('.row')[0]);
   await sleep(60);
-  assert.deepEqual(named(t.calls, 'apex_get_last_timesheet')[0].arguments, { client_id: 'c1' });
+  assert.deepEqual(named(t.calls, 'apex_get_last_timesheet')[0].arguments, { client_id: 'c1', workspace_id: 'w2' });
   const dates = d.querySelectorAll('input[type=date]');
   assert.equal(dates[0].value, '2026-11-01', 'start defaults to the day after the last period end');
   click([...d.querySelectorAll('button')].find((b) => /File timesheet/.test(b.textContent)));

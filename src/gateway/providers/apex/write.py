@@ -8,7 +8,12 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
-from gateway.providers.apex.client import APEX_API_KEY, apex_call
+from gateway.providers.apex.client import (
+    SCOPE_INVOICING_WRITE,
+    WORKSPACE_ID_DESC,
+    apex_call,
+    apex_credentials,
+)
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
 PROVIDER = "apex"
@@ -38,6 +43,7 @@ class InlineTimesheetInput(BaseModel):
 
 
 class CreateInvoiceInput(BaseModel):
+    workspace_id: str = Field(..., description=WORKSPACE_ID_DESC)
     client_id: str = Field(..., description="Client UUID to invoice.")
     issue_date: str = Field(..., description="Invoice issue date, YYYY-MM-DD.")
     due_date: str | None = Field(
@@ -77,6 +83,7 @@ class CreateInvoiceInput(BaseModel):
 
 
 class CreateTimesheetInput(BaseModel):
+    workspace_id: str = Field(..., description=WORKSPACE_ID_DESC)
     client_id: str = Field(
         ..., description="Client UUID to invoice. Must be a TIMESHEET-billing client."
     )
@@ -99,6 +106,7 @@ class CreateTimesheetInput(BaseModel):
 
 
 class UpdateTimesheetInput(BaseModel):
+    workspace_id: str = Field(..., description=WORKSPACE_ID_DESC)
     timesheet_id: str = Field(..., description="Timesheet UUID to update.")
     period_start: str | None = Field(None, description="New period start date, YYYY-MM-DD.")
     period_end: str | None = Field(None, description="New period end date, YYYY-MM-DD.")
@@ -140,7 +148,13 @@ def create_invoice(args: CreateInvoiceInput, ctx: CallContext, session: Session)
             ],
         }
     settings = get_settings()
-    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
+    creds = apex_credentials(
+        settings,
+        ctx,
+        scopes=[SCOPE_INVOICING_WRITE],
+        workspace_id=args.workspace_id,
+        capability="invoicing",
+    )
     return apex_call(settings, creds, "POST", "/api/invoices", json=body)
 
 
@@ -169,7 +183,13 @@ def create_timesheet(args: CreateTimesheetInput, ctx: CallContext, session: Sess
     if args.status is not None:
         body["status"] = args.status
     settings = get_settings()
-    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
+    creds = apex_credentials(
+        settings,
+        ctx,
+        scopes=[SCOPE_INVOICING_WRITE],
+        workspace_id=args.workspace_id,
+        capability="invoicing",
+    )
     return apex_call(settings, creds, "POST", "/api/invoices", json=body)
 
 
@@ -187,7 +207,13 @@ def update_timesheet(args: UpdateTimesheetInput, ctx: CallContext, session: Sess
             for entry in args.entries
         ]
     settings = get_settings()
-    creds = APEX_API_KEY.get_credentials(session, ctx, settings)
+    creds = apex_credentials(
+        settings,
+        ctx,
+        scopes=[SCOPE_INVOICING_WRITE],
+        workspace_id=args.workspace_id,
+        capability="invoicing",
+    )
     return apex_call(
         settings, creds, "PUT", f"/api/timesheets/{args.timesheet_id}", json=body
     )
@@ -239,6 +265,7 @@ def register(registry) -> None:
             ),
             input_model=CreateInvoiceInput,
             handler=create_invoice,
+            required_capability="invoicing",
             preview_builder=_create_invoice_preview,
             ui_app_callable=True,
         )
@@ -258,6 +285,7 @@ def register(registry) -> None:
             ),
             input_model=CreateTimesheetInput,
             handler=create_timesheet,
+            required_capability="invoicing",
             preview_builder=_create_timesheet_preview,
             ui_app_callable=True,
         )
@@ -274,6 +302,7 @@ def register(registry) -> None:
             ),
             input_model=UpdateTimesheetInput,
             handler=update_timesheet,
+            required_capability="invoicing",
             preview_builder=_update_timesheet_preview,
             ui_app_callable=True,
         )

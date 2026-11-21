@@ -9,48 +9,67 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
-from gateway.providers.apex.client import APEX_WEALTH_API_KEY, WEALTH_PROVIDER, apex_call
+from gateway.providers.apex.client import (
+    CAP_WEALTH_WORKSPACE,
+    SCOPE_WEALTH_READ,
+    WEALTH_PROVIDER,
+    WORKSPACE_ID_DESC,
+    apex_call,
+    apex_credentials,
+)
 from gateway.providers.apex.ui import WEALTH_NOTE, WEALTH_UI
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
 _AMOUNTS = "Amounts are in the account's native currency; summaries also include CAD totals."
 
 
-class NoInput(BaseModel):
-    pass
+class WorkspaceInput(BaseModel):
+    workspace_id: str = Field(..., description=WORKSPACE_ID_DESC)
 
 
-class GetPositionsInput(BaseModel):
+class GetPositionsInput(WorkspaceInput):
     account_id: str | None = Field(None, description="Restrict to one account, by account id.")
     as_of_date: date | None = Field(
         None, description="Snapshot date (YYYY-MM-DD). Defaults to the latest snapshot."
     )
 
 
-class ListManualHoldingsInput(BaseModel):
+class ListManualHoldingsInput(WorkspaceInput):
     account_id: str | None = Field(None, description="Restrict to one account, by account id.")
 
 
-class GetNetWorthHistoryInput(BaseModel):
+class GetNetWorthHistoryInput(WorkspaceInput):
     months: int = Field(12, ge=1, le=60, description="Number of months of history (1-60).")
 
 
-def _get(ctx: CallContext, session: Session, path: str, params: dict[str, Any] | None = None):
+def _get(
+    ctx: CallContext,
+    workspace_id: str,
+    capability: str,
+    path: str,
+    params: dict[str, Any] | None = None,
+):
     settings = get_settings()
-    creds = APEX_WEALTH_API_KEY.get_credentials(session, ctx, settings)
+    creds = apex_credentials(
+        settings,
+        ctx,
+        scopes=[SCOPE_WEALTH_READ],
+        workspace_id=workspace_id,
+        capability=capability,
+    )
     return apex_call(settings, creds, "GET", path, params=params or None)
 
 
-def list_accounts(_args: NoInput, ctx: CallContext, session: Session) -> Any:
-    return _get(ctx, session, "/api/wealth/accounts")
+def list_accounts(args: WorkspaceInput, ctx: CallContext, session: Session) -> Any:
+    return _get(ctx, args.workspace_id, CAP_WEALTH_WORKSPACE, "/api/wealth/accounts")
 
 
-def get_accounts_summary(_args: NoInput, ctx: CallContext, session: Session) -> Any:
-    return _get(ctx, session, "/api/wealth/accounts-summary")
+def get_accounts_summary(args: WorkspaceInput, ctx: CallContext, session: Session) -> Any:
+    return _get(ctx, args.workspace_id, "assets", "/api/wealth/accounts-summary")
 
 
-def get_investments_summary(_args: NoInput, ctx: CallContext, session: Session) -> Any:
-    return _get(ctx, session, "/api/wealth/investments")
+def get_investments_summary(args: WorkspaceInput, ctx: CallContext, session: Session) -> Any:
+    return _get(ctx, args.workspace_id, "assets", "/api/wealth/investments")
 
 
 def get_positions(args: GetPositionsInput, ctx: CallContext, session: Session) -> Any:
@@ -58,16 +77,30 @@ def get_positions(args: GetPositionsInput, ctx: CallContext, session: Session) -
         "accountId": args.account_id,
         "asOfDate": args.as_of_date.isoformat() if args.as_of_date else None,
     }
-    return _get(ctx, session, "/api/wealth/positions", {k: v for k, v in params.items() if v})
+    return _get(
+        ctx,
+        args.workspace_id,
+        "investments",
+        "/api/wealth/positions",
+        {k: v for k, v in params.items() if v},
+    )
 
 
 def list_manual_holdings(args: ListManualHoldingsInput, ctx: CallContext, session: Session) -> Any:
     params = {"accountId": args.account_id} if args.account_id else None
-    return _get(ctx, session, "/api/wealth/manual-holdings", params)
+    return _get(
+        ctx, args.workspace_id, "investments", "/api/wealth/manual-holdings", params
+    )
 
 
 def get_net_worth_history(args: GetNetWorthHistoryInput, ctx: CallContext, session: Session) -> Any:
-    return _get(ctx, session, "/api/wealth/net-worth", {"months": args.months})
+    return _get(
+        ctx,
+        args.workspace_id,
+        CAP_WEALTH_WORKSPACE,
+        "/api/wealth/net-worth",
+        {"months": args.months},
+    )
 
 
 # Manual holdings are not drawn by the widget.
@@ -81,21 +114,21 @@ def register(registry) -> None:
             "apex_wealth_list_accounts",
             "List Apex accounts with institution, registration, subtype, currency and current "
             f"balance (liabilities are negative). {_AMOUNTS}",
-            NoInput,
+            WorkspaceInput,
             list_accounts,
         ),
         (
             "apex_wealth_get_accounts_summary",
             "Get the cash and liabilities summary: cash accounts, debts, and net liquid "
             f"position. {_AMOUNTS}",
-            NoInput,
+            WorkspaceInput,
             get_accounts_summary,
         ),
         (
             "apex_wealth_get_investments_summary",
             "Get investments: per-account value, cash, gains, positions, consolidated "
             f"holdings and allocation. {_AMOUNTS}",
-            NoInput,
+            WorkspaceInput,
             get_investments_summary,
         ),
         (
@@ -120,6 +153,14 @@ def register(registry) -> None:
             get_net_worth_history,
         ),
     ]
+    capabilities = {
+        "apex_wealth_list_accounts": CAP_WEALTH_WORKSPACE,
+        "apex_wealth_get_accounts_summary": "assets",
+        "apex_wealth_get_investments_summary": "assets",
+        "apex_wealth_get_positions": "investments",
+        "apex_wealth_list_manual_holdings": "investments",
+        "apex_wealth_get_net_worth_history": CAP_WEALTH_WORKSPACE,
+    }
     for name, description, input_model, handler in specs:
         renders = name not in _NO_WIDGET
         registry.add(
@@ -130,6 +171,7 @@ def register(registry) -> None:
                 description=f"{description} {WEALTH_NOTE}" if renders else description,
                 input_model=input_model,
                 handler=handler,
+                required_capability=capabilities[name],
                 ui_resource=WEALTH_UI if renders else None,
                 ui_app_callable=True,
             )

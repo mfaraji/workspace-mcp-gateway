@@ -11,10 +11,6 @@ from starlette.requests import Request
 
 from gateway.config import Settings
 from gateway.connectors import apikey, upstream
-from gateway.connectors import routes as connectors_routes
-from gateway.identity.models import AuthenticatedUser
-from gateway.providers.apex import auth as apex_auth
-from gateway.providers.apex import client as apex_client
 from gateway.providers.base import CallContext
 from gateway.providers.registry import ToolError
 
@@ -25,7 +21,6 @@ def _settings() -> Settings:
         base_url="https://mcp.ashpazi.shop",
         google_client_id="cid",
         google_client_secret="secret",
-        apex_api_key="pk_live_fallback",
         token_encryption_key="x" * 43 + "=",
         gateway_shared_secret="shared-secret-value",
         trusted_open_webui_origin="https://openwebui.internal",
@@ -156,159 +151,3 @@ def test_get_credentials_raises_not_connected_with_no_fallback(monkeypatch):
 def test_connect_url_is_none_for_api_key_strategy():
     strategy = _strategy()
     assert strategy.connect_url(_settings(), "alice") is None
-
-
-# --- apex_set_api_key tool ----------------------------------------------------
-
-
-def test_apex_set_api_key_tool_stores_the_key(monkeypatch):
-    stored = {}
-
-    def fake_store_api_key(_session, user_id, provider, api_key):
-        stored.update(user_id=user_id, provider=provider, api_key=api_key)
-
-    monkeypatch.setattr(apex_auth, "store_api_key", fake_store_api_key)
-    ctx = _ctx()
-
-    result = apex_auth.set_api_key(apex_auth.SetApiKeyInput(api_key="pk_live_x"), ctx, None)
-
-    assert result == {"status": "connected", "provider": "apex"}
-    assert stored == {"user_id": ctx.user_id, "provider": "apex", "api_key": "pk_live_x"}
-
-
-def test_apex_auth_classifies_settings_as_writes():
-    from gateway.providers.base import RiskLevel
-    from gateway.providers.registry import ToolRegistry
-
-    registry = ToolRegistry()
-    apex_auth.register(registry)
-    specs = {spec.name: spec for spec in registry._specs}
-
-    assert set(specs) == {"apex_set_api_key", "apex_list_workspaces", "apex_set_workspace"}
-    assert specs["apex_list_workspaces"].risk is RiskLevel.READ
-    assert specs["apex_set_api_key"].risk is RiskLevel.MUTATING
-    assert specs["apex_set_workspace"].risk is RiskLevel.MUTATING
-
-
-# --- HTTP intake route ---------------------------------------------------------
-
-
-async def test_set_api_key_route_rejects_unauthenticated(monkeypatch):
-
-    response = await connectors_routes.set_api_key(
-        "apex", connectors_routes.SetApiKeyBody(api_key="pk_live_x"), _request()
-    )
-
-    assert response.status_code == 401
-    assert _body(response)["error"] == "unauthorized"
-
-
-async def test_set_api_key_route_rejects_unknown_slug(monkeypatch):
-    monkeypatch.setattr(
-        connectors_routes,
-        "request_user",
-        lambda _request: AuthenticatedUser("alice", "alice@example.com"),
-    )
-
-    response = await connectors_routes.set_api_key(
-        "not-a-connector",
-        connectors_routes.SetApiKeyBody(api_key="pk_live_x"),
-        _request(),
-    )
-
-    assert response.status_code == 404
-
-
-async def test_set_api_key_route_rejects_oauth_connector(monkeypatch):
-    monkeypatch.setattr(
-        connectors_routes,
-        "request_user",
-        lambda _request: AuthenticatedUser("alice", "alice@example.com"),
-    )
-
-    response = await connectors_routes.set_api_key(
-        "calendar", connectors_routes.SetApiKeyBody(api_key="pk_live_x"), _request()
-    )
-
-    assert response.status_code == 404
-
-
-async def test_set_api_key_route_stores_key_for_apex(monkeypatch):
-    monkeypatch.setattr(
-        connectors_routes,
-        "request_user",
-        lambda _request: AuthenticatedUser("alice", "alice@example.com"),
-    )
-
-    from contextlib import contextmanager
-
-    @contextmanager
-    def fake_session_scope():
-        yield object()
-
-    user = SimpleNamespace(id=uuid.uuid4())
-    stored = {}
-
-    monkeypatch.setattr(connectors_routes, "session_scope", fake_session_scope)
-    monkeypatch.setattr(connectors_routes, "get_or_create_user", lambda _session, _auth: user)
-    monkeypatch.setattr(
-        connectors_routes,
-        "store_api_key",
-        lambda _session, user_id, provider, api_key: stored.update(
-            user_id=user_id, provider=provider, api_key=api_key
-        ),
-    )
-
-    response = await connectors_routes.set_api_key(
-        "apex", connectors_routes.SetApiKeyBody(api_key="pk_live_x"), _request()
-    )
-
-    assert response.status_code == 200
-    assert _body(response) == {"connected": True, "connector": "apex"}
-    assert stored == {"user_id": user.id, "provider": "apex", "api_key": "pk_live_x"}
-
-
-async def test_set_api_key_route_stores_wealth_key_under_wealth_provider(monkeypatch):
-    monkeypatch.setattr(
-        connectors_routes,
-        "request_user",
-        lambda _request: AuthenticatedUser("alice", "alice@example.com"),
-    )
-
-    from contextlib import contextmanager
-
-    @contextmanager
-    def fake_session_scope():
-        yield object()
-
-    user = SimpleNamespace(id=uuid.uuid4())
-    stored = {}
-
-    monkeypatch.setattr(connectors_routes, "session_scope", fake_session_scope)
-    monkeypatch.setattr(connectors_routes, "get_or_create_user", lambda _session, _auth: user)
-    monkeypatch.setattr(
-        connectors_routes,
-        "store_api_key",
-        lambda _session, user_id, provider, api_key: stored.update(
-            user_id=user_id, provider=provider, api_key=api_key
-        ),
-    )
-
-    response = await connectors_routes.set_api_key(
-        "apex-wealth", connectors_routes.SetApiKeyBody(api_key="pk_live_w"), _request()
-    )
-
-    assert response.status_code == 200
-    assert _body(response) == {"connected": True, "connector": "apex-wealth"}
-    assert stored == {"user_id": user.id, "provider": "apex_wealth", "api_key": "pk_live_w"}
-
-
-@pytest.mark.parametrize("strategy", [apex_client.APEX_API_KEY, apex_client.APEX_WEALTH_API_KEY])
-def test_apex_strategies_ignore_deploy_wide_keys(monkeypatch, strategy):
-    monkeypatch.setattr(apex_client, "get_api_key_connection", lambda _s, _u, _p: None)
-    settings = _settings()  # apex_api_key="pk_live_fallback" is set but must be ignored
-
-    with pytest.raises(ToolError) as exc_info:
-        strategy.get_credentials(None, _ctx(), settings)
-
-    assert exc_info.value.error_code == "not_connected"

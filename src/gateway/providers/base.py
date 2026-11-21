@@ -37,6 +37,11 @@ class CallContext:
     # Clerk subject of the caller, when known. Upstream strategies that act on
     # the user's behalf (Apex act-as) key only on this, not on how they signed in.
     clerk_subject: str | None = None
+    # OAuth client the caller signed in with (recorded in gateway-minted downstream tokens).
+    oauth_client_id: str | None = None
+    # Which connected account (email) of a multi-account provider this call targets;
+    # ``None`` means the product's default account. Set from the tool input's ``account``.
+    account: str | None = None
 
 
 # A handler receives validated input, the call context, and an open DB session,
@@ -66,6 +71,9 @@ class ToolSpec:
     # gateway's own preview/token handshake, shown inside the widget, is the confirmation).
     ui_resource: str | None = None
     ui_app_callable: bool = False
+    # Upstream capability a workspace must have for the user to be permitted this tool
+    # (Apex workspace capability, e.g. "invoicing"). None = no per-workspace requirement.
+    required_capability: str | None = None
 
     @property
     def tool_meta(self) -> dict | None:

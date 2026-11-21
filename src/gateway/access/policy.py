@@ -64,6 +64,49 @@ def tool_allowed(spec: ToolSpec, auth: AuthenticatedUser, granted: set[str]) -> 
     return is_shared(spec) or spec.name in granted
 
 
+def upstream_permits(settings: Settings, auth: AuthenticatedUser, spec: ToolSpec) -> bool:
+    """Whether the connector's upstream (e.g. Apex) permits this caller to use ``spec``.
+
+    Connectors without a ``permits`` hook are unrestricted here; the client grant still
+    applies. For Apex this is the user's workspaces + capabilities, so a granted tool
+    that Apex would refuse is hidden from discovery and forbidden at call time.
+    """
+    connector = by_spec(spec)
+    permits = getattr(getattr(connector, "upstream", None), "permits", None)
+    if permits is None:
+        return True
+    return bool(permits(settings, auth.clerk_subject, auth.oauth_client_id, spec))
+
+
+def subject_permits(settings: Settings, subject: str | None, spec: ToolSpec) -> bool:
+    """Like :func:`upstream_permits` for browser flows that only know the Clerk subject."""
+    connector = by_spec(spec)
+    permits = getattr(getattr(connector, "upstream", None), "permits", None)
+    if permits is None:
+        return True
+    return bool(permits(settings, subject, None, spec))
+
+
+def permitted_catalog(
+    settings: Settings,
+    subject: str | None,
+    catalog: list[dict],
+    specs: dict[str, ToolSpec],
+) -> list[dict]:
+    """Drop tools the upstream (Apex) does not permit this Clerk subject to use."""
+    return [
+        {
+            **c,
+            "tools": [
+                t
+                for t in c["tools"]
+                if t["name"] not in specs or subject_permits(settings, subject, specs[t["name"]])
+            ],
+        }
+        for c in catalog
+    ]
+
+
 def personal_tool_names(catalog: list[dict]) -> set[str]:
     """Only personal tools can be selected or revoked through grant APIs."""
     return {
@@ -80,6 +123,8 @@ def enforce(
     from gateway.providers.registry import ToolError
 
     if tool_allowed(spec, auth, allowed_tools(session, user_id, settings, auth)):
+        if not upstream_permits(settings, auth, spec):
+            raise ToolError("forbidden", "Apex does not permit this tool for your account")
         return
     if auth.source != "oauth" or not auth.oauth_client_id:
         raise ToolError("permission_denied", "OAuth authentication is required")

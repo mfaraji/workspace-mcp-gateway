@@ -6,7 +6,6 @@ const labels = {
   connected: 'Connected',
   not_connected: 'Not connected',
   reauth_required: 'Needs reauthorization',
-  workspace_not_set: 'Workspace not set',
   available: 'Available',
   not_configured: 'Not configured'
 };
@@ -61,23 +60,12 @@ function actions(c, card) {
   const box = el('div', { className: 'card-actions' });
   const connected = c.status === 'connected';
   if (c.action === 'oauth') {
+    const product = encodeURIComponent(c.oauth_product || c.slug);
     box.append(el('a', {
       className: 'primary link-button',
-      href: `/oauth/google/start?product=${encodeURIComponent(c.oauth_product || c.slug)}`,
-      textContent: connected ? 'Reconnect' : c.status === 'reauth_required' ? 'Reauthorize' : 'Connect'
-    }));
-    if (connected || c.status === 'reauth_required') {
-      box.append(el('button', {
-        className: 'text-button', textContent: 'Disconnect Google',
-        onclick: () => confirm('This disconnects Calendar, Drive, Tasks and Gmail, which share one Google account. Continue?')
-          && act('Disconnecting Google', () => call('POST', '/oauth/google/disconnect'))
-      }));
-    }
-  } else if (c.action === 'api_key') {
-    box.append(el('button', {
-      className: 'secondary', textContent: connected ? 'Replace API key' : 'Add API key',
-      onclick: () => card.append(inputRow(c, 'Paste API key',
-        key => call('POST', `/connectors/${c.slug}/apikey`, { api_key: key })))
+      href: `/oauth/google/start?product=${product}`,
+      textContent: c.bundle ? 'Connect an account to all'
+        : (c.accounts && c.accounts.length ? 'Add account' : 'Connect')
     }));
   } else if (c.action === 'bot_token') {
     box.append(el('button', {
@@ -93,6 +81,39 @@ function actions(c, card) {
     }
   }
   return box;
+}
+
+function accountRows(c) {
+  const list = el('ul', { className: 'accounts' });
+  for (const a of c.accounts || []) {
+    const row = el('li', { className: `account ${a.status}` });
+    row.append(el('span', { className: 'account-email', textContent: a.email || 'Unknown account' }));
+    if (a.is_default && (c.accounts || []).length > 1) {
+      row.append(el('span', { className: 'pill connected', textContent: 'Default' }));
+    }
+    if (a.status === 'reauth_required') {
+      row.append(el('a', {
+        className: 'text-button',
+        href: `/oauth/google/start?product=${encodeURIComponent(c.slug)}`,
+        textContent: 'Reconnect'
+      }));
+    }
+    if (!a.is_default && a.status === 'connected') {
+      row.append(el('button', {
+        className: 'text-button', textContent: 'Make default',
+        onclick: () => act('Updating default', () =>
+          call('POST', `/oauth/google/connections/${encodeURIComponent(a.id)}/default`))
+      }));
+    }
+    row.append(el('button', {
+      className: 'text-button', textContent: 'Disconnect',
+      onclick: () => confirm(`Disconnect ${a.email || 'this account'} from ${c.name}?`)
+        && act('Disconnecting', () =>
+          call('POST', `/oauth/google/connections/${encodeURIComponent(a.id)}/disconnect`))
+    }));
+    list.append(row);
+  }
+  return list;
 }
 
 function card(c) {

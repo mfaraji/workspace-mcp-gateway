@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 from contextlib import contextmanager
 from types import SimpleNamespace
 
@@ -111,41 +112,67 @@ def test_finance_is_available_and_recipes_depend_on_capella():
     assert _status("recipes", configured)["status"] == "available"
 
 
-def _google(monkeypatch, conn):
-    monkeypatch.setattr(connections, "get_active_connection", lambda *_: conn)
+def _google(monkeypatch, *conns):
+    monkeypatch.setattr(connections, "list_connections", lambda *_: list(conns))
+
+
+def _conn(scopes, email, *, default=False, status="active"):
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        scopes=list(scopes),
+        provider_email=email,
+        is_default=default,
+        status=status,
+        last_used_at=None,
+    )
 
 
 def test_google_status(monkeypatch):
-    _google(monkeypatch, None)
+    _google(monkeypatch)
     assert _status("calendar")["status"] == "not_connected"
 
     needed = by_slug("calendar").upstream.required_scopes
-    _google(monkeypatch, SimpleNamespace(scopes=list(needed), provider_email="a@example.com"))
+    _google(monkeypatch, _conn(needed, "a@example.com", default=True))
     result = _status("calendar")
     assert (result["status"], result["account"]) == ("connected", "a@example.com")
 
-    _google(monkeypatch, SimpleNamespace(scopes=[], provider_email="a@example.com"))
+    _google(monkeypatch, _conn([], "a@example.com", default=True))
     assert _status("calendar")["status"] == "reauth_required"
 
 
-def test_apex_status(monkeypatch):
-    monkeypatch.setattr(connections, "get_api_key_connection", lambda *_: None)
-    monkeypatch.setattr(connections, "get_default_workspace", lambda *_: None)
-    assert _status("apex")["status"] == "not_connected"
-
-    actas = SimpleNamespace(capella_configured=False, apex_gateway_api_key="gw")
-    assert _status("apex", actas)["status"] == "workspace_not_set"
-
-    monkeypatch.setattr(
-        connections,
-        "get_default_workspace",
-        lambda *_: {"workspace_id": "w", "workspace_name": "Acme"},
+def test_google_status_lists_every_account_with_default(monkeypatch):
+    needed = by_slug("gmail").upstream.required_scopes
+    _google(
+        monkeypatch,
+        _conn(needed, "a@example.com", default=True),
+        _conn(needed, "b@example.com"),
     )
-    result = _status("apex", actas)
-    assert (result["status"], result["account"]) == ("connected", "Acme")
+    result = _status("gmail")
+    assert [(a["email"], a["is_default"]) for a in result["accounts"]] == [
+        ("a@example.com", True),
+        ("b@example.com", False),
+    ]
+    assert result["account"] == "a@example.com"
 
-    monkeypatch.setattr(connections, "get_api_key_connection", lambda *_: object())
-    assert _status("apex")["status"] == "connected"
+
+def test_apex_status(monkeypatch):
+    workspaces = [
+        {"id": "w1", "name": "Acme", "kind": "BUSINESS", "capabilities": ["invoicing"]},
+        {"id": "w2", "name": "Main", "kind": "PERSONAL", "capabilities": ["investments"]},
+    ]
+    monkeypatch.setattr(connections, "user_workspaces", lambda *_: workspaces)
+    result = _status("apex")
+    assert (result["status"], result["account"], result["action"]) == (
+        "connected",
+        "2 workspaces",
+        None,
+    )
+    # Wealth counts only the wealth-bearing (PERSONAL) workspaces.
+    assert _status("apex-wealth")["account"] == "1 workspace"
+
+    monkeypatch.setattr(connections, "user_workspaces", lambda *_: None)
+    result = _status("apex")
+    assert (result["status"], result["account"]) == ("not_connected", "No Apex account")
 
 
 def test_telegram_status(monkeypatch):

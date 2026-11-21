@@ -62,7 +62,7 @@ def test_disconnected_status_returns_user_bound_drive_authorization_url(monkeypa
         yield object()
 
     monkeypatch.setattr(drive, "session_scope", fake_session_scope)
-    monkeypatch.setattr(drive, "get_active_connection", lambda _session, _user_id: None)
+    monkeypatch.setattr(drive, "get_active_connection", lambda *_a: None)
 
     response = drive.status(_request())
     body = _body(response)
@@ -94,7 +94,7 @@ def test_connected_status_returns_only_account_identity(monkeypatch):
     )
     monkeypatch.setattr(drive, "session_scope", fake_session_scope)
     monkeypatch.setattr(
-        drive, "get_active_connection", lambda _session, _user_id: connection
+        drive, "get_active_connection", lambda *_a: connection
     )
 
     response = drive.status(_request())
@@ -121,7 +121,7 @@ def test_search_forwards_no_query_content_to_audit(monkeypatch):
     monkeypatch.setattr(
         drive,
         "get_active_connection",
-        lambda _session, _user_id: SimpleNamespace(scopes=[]),
+        lambda *_a: SimpleNamespace(scopes=[]),
     )
     monkeypatch.setattr(drive, "build_scoped_drive_service", lambda *_args: object())
     monkeypatch.setattr(
@@ -156,7 +156,7 @@ def test_search_forwards_parent_id_to_search_files(monkeypatch):
     monkeypatch.setattr(
         drive,
         "get_active_connection",
-        lambda _session, _user_id: SimpleNamespace(scopes=[]),
+        lambda *_a: SimpleNamespace(scopes=[]),
     )
     monkeypatch.setattr(drive, "build_scoped_drive_service", lambda *_args: object())
 
@@ -193,7 +193,7 @@ def test_download_response_is_private_and_closes_stream(monkeypatch):
     monkeypatch.setattr(
         drive,
         "get_active_connection",
-        lambda _session, _user_id: SimpleNamespace(scopes=[]),
+        lambda *_a: SimpleNamespace(scopes=[]),
     )
     monkeypatch.setattr(drive, "build_scoped_drive_service", lambda *_args: object())
     monkeypatch.setattr(

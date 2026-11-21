@@ -65,7 +65,7 @@ select.field { padding-inline: 8px; }
   function t(key) { return (STRINGS[lang] || STRINGS.en)[key] || STRINGS.en[key] || key; }
   var PALETTE = ['#3b6ef5', '#1f9d63', '#c98a12', '#d6453d', '#8a5cf6', '#0e9db5', '#d9619b', '#697386'];
 
-  var state = { tab: 'accounts', accounts: null, summary: null, invest: null, positions: null, posAccount: '', history: null, months: 12, workspaces: [], workspaceName: '',
+  var state = { tab: 'accounts', accounts: null, summary: null, invest: null, positions: null, posAccount: '', history: null, months: 12, workspaces: [], workspaceId: '', workspaceName: '',
     loaded: false, error: '', busy: false, tip: '' };
   var root = document.getElementById('root');
   var app;
@@ -174,7 +174,20 @@ select.field { padding-inline: 8px; }
 
   // ---- data ----
   function fail(e) { state.busy = false; state.loaded = true; state.error = e && e.message ? t('failed') + e.message : ''; render(); }
-  function call(name, args) { return app.callTool(name, args || {}); }
+  function call(name, args) {
+    // Every workspace-scoped tool takes the selected workspace; Apex re-checks it per call.
+    var scoped = name !== 'apex_wealth_list_workspaces';
+    return app.callTool(name, scoped ? Object.assign({}, args || {}, { workspace_id: state.workspaceId }) : (args || {}));
+  }
+  function syncWorkspace() {
+    var w = state.workspaces.filter(function (x) { return x.id === state.workspaceId; })[0];
+    state.workspaceName = w ? str(w.name) : '';
+  }
+  function pickDefaultWorkspace() {
+    if (state.workspaceId || !state.workspaces.length) return false;
+    state.workspaceId = state.workspaces[0].id; syncWorkspace();
+    return true;
+  }
   function loadAccounts() {
     return Promise.all([
       call('apex_wealth_list_accounts').then(function (d) { state.accounts = listOf(d, ['accounts']).map(normAccount); }),
@@ -210,11 +223,10 @@ select.field { padding-inline: 8px; }
   function setMonths(m) { state.months = m; state.history = null; state.tip = ''; loadHistory().then(render).catch(fail); render(); }
   function setPosAccount(id) { state.posAccount = id; state.positions = null; loadInvestments().then(render).catch(fail); render(); }
   function loadWorkspaces() {
-    return call('apex_wealth_list_workspaces').then(function (d) { state.workspaces = listOf(d, ['workspaces']).filter(function (w) { return w && w.id; }); }).catch(function () { state.workspaces = []; });
+    return call('apex_wealth_list_workspaces').then(function (d) { state.workspaces = listOf(d, ['workspaces']).filter(function (w) { return w && w.id; }); syncWorkspace(); }).catch(function () { state.workspaces = []; });
   }
   function switchWorkspace(id) {
-    state.busy = true; render();
-    call('apex_wealth_set_workspace', { workspace_id: id }).then(function (res) { state.workspaceName = str(res && res.name); state.busy = false; reload(); }).catch(fail);
+    state.workspaceId = id; syncWorkspace(); reload();
   }
 
   // ---- views ----
@@ -354,6 +366,7 @@ select.field { padding-inline: 8px; }
     apex_wealth_get_positions: 'investments', apex_wealth_get_net_worth_history: 'networth' };
   function initial(data) {
     var name = app.toolName || '';
+    if (app.args && app.args.workspace_id) { state.workspaceId = String(app.args.workspace_id); syncWorkspace(); }
     state.tab = TAB_OF[name] || 'accounts';
     if (name === 'apex_wealth_list_accounts') state.accounts = listOf(data, ['accounts']).map(normAccount);
     else if (name === 'apex_wealth_get_accounts_summary') state.summary = obj(data);
@@ -378,7 +391,9 @@ select.field { padding-inline: 8px; }
     onContext: function (ctx) { lang = /^fa/i.test(ctx.locale || '') ? 'fa' : 'en'; render(); },
     onResult: initial,
     onError: function (error) { state.loaded = true; state.error = t('failed') + error.message; render(); },
-    onReady: function () { loadWorkspaces().then(render); }
+    onReady: function () {
+      loadWorkspaces().then(function () { if (pickDefaultWorkspace()) reload(); else render(); });
+    }
   });
 })();
 </script>

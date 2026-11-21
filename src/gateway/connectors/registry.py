@@ -16,7 +16,7 @@ from gateway.providers.apex import auth as apex_auth
 from gateway.providers.apex import read as apex_read
 from gateway.providers.apex import wealth as apex_wealth
 from gateway.providers.apex import write as apex_write
-from gateway.providers.apex.client import APEX_API_KEY, APEX_WEALTH_API_KEY
+from gateway.providers.apex.client import APEX_UPSTREAM, APEX_WEALTH_UPSTREAM
 from gateway.providers.base import ToolSpec
 from gateway.providers.finance import read as finance_read
 from gateway.providers.google.calendar import read as google_calendar_read
@@ -142,7 +142,7 @@ CONNECTORS: list[Connector] = [
         display_name="Apex",
         upstream_provider="apex",
         register=_register_apex,
-        upstream=APEX_API_KEY,
+        upstream=APEX_UPSTREAM,
         exclude_prefixes=("apex_wealth_",),
     ),
     Connector(
@@ -151,7 +151,7 @@ CONNECTORS: list[Connector] = [
         display_name="Apex Wealth",
         upstream_provider="apex_wealth",
         register=_register_apex_wealth,
-        upstream=APEX_WEALTH_API_KEY,
+        upstream=APEX_WEALTH_UPSTREAM,
     ),
     Connector(
         slug="telegram",

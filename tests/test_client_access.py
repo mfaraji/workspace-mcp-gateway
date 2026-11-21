@@ -268,18 +268,6 @@ def test_browser_login_uses_pkce_and_checks_callback_state(monkeypatch):
     assert "login" not in req.session
 
 
-def test_connection_setters_are_not_read_only():
-    mcp = build_mcp(_settings())
-    for tool in mcp.gateway_specs:
-        if tool.name in {
-            "apex_set_api_key",
-            "apex_set_workspace",
-            "apex_wealth_set_api_key",
-            "apex_wealth_set_workspace",
-        }:
-            assert tool.risk.value == "mutating"
-
-
 def telegram_request(method="GET"):
     req = request(method)
     req.session["target"]["resource"] = f"{_settings().base_url}/mcp/telegram"

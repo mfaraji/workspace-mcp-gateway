@@ -14,7 +14,6 @@ def _settings() -> Settings:
         base_url="http://localhost:8000",
         google_client_id="cid",
         google_client_secret="secret",
-        apex_api_key="pk_live_test",
         token_encryption_key="x" * 43 + "=",
         gateway_shared_secret="shared-secret-value",
         trusted_open_webui_origin="https://openwebui.internal",
@@ -46,6 +45,7 @@ def test_drive_filter_registers_drive_read_tools():
         "system_get_current_time",
         "google_drive_search_files",
         "google_drive_get_file_metadata",
+        "google_drive_list_accounts",
     }
 
 
@@ -69,6 +69,7 @@ def test_gmail_filter_registers_read_and_draft_tools_only():
         "google_gmail_search_messages",
         "google_gmail_get_message",
         "google_gmail_get_thread",
+        "google_gmail_list_accounts",
         "google_gmail_list_drafts",
         "google_gmail_create_draft",
         "google_gmail_update_draft",
@@ -87,9 +88,7 @@ def test_apex_filter_registers_expected_apex_tools():
         "apex_create_invoice",
         "apex_create_timesheet",
         "apex_update_timesheet",
-        "apex_set_api_key",
         "apex_list_workspaces",
-        "apex_set_workspace",
     }
 
 
@@ -104,9 +103,7 @@ def test_apex_wealth_filter_registers_only_wealth_tools():
         "apex_wealth_get_positions",
         "apex_wealth_list_manual_holdings",
         "apex_wealth_get_net_worth_history",
-        "apex_wealth_set_api_key",
         "apex_wealth_list_workspaces",
-        "apex_wealth_set_workspace",
     }
 
 

@@ -44,7 +44,6 @@ function boot({ toolName = 'apex_wealth_list_accounts', args = {}, locale = 'en-
         else if (name === 'apex_wealth_get_positions') reply(msg.id, text(positionsFor(a.account_id)));
         else if (name === 'apex_wealth_get_net_worth_history') reply(msg.id, text(history(a.months)));
         else if (name === 'apex_wealth_list_workspaces') reply(msg.id, text({ workspaces: [{ id: 'w1', name: 'Personal' }, { id: 'w2', name: 'Family' }] }));
-        else if (name === 'apex_wealth_set_workspace') reply(msg.id, text({ status: 'workspace_set', name: 'Family' }));
         else reply(msg.id, { isError: true, content: [{ type: 'text', text: 'unknown tool' }] });
       }
     }
@@ -91,13 +90,13 @@ async function run() {
   sel.value = 'w2';
   sel.dispatchEvent(new t.window.Event('change'));
   await sleep(80);
-  assert.deepEqual(named(t.calls, 'apex_wealth_set_workspace')[0].arguments, { workspace_id: 'w2' });
+  assert.equal(named(t.calls, 'apex_wealth_list_accounts').at(-1).arguments.workspace_id, 'w2', 'reload uses the new workspace');
   assert.match(d.body.textContent, /Family/);
 
   // 2. Drill into an investment account -> positions table with that account's filter.
   click([...d.querySelectorAll('button.row')].find((b) => b.textContent.includes('Brokerage USD')));
   await sleep(80);
-  assert.deepEqual(named(t.calls, 'apex_wealth_get_positions').at(-1).arguments, { account_id: 'a2' });
+  assert.deepEqual(named(t.calls, 'apex_wealth_get_positions').at(-1).arguments, { account_id: 'a2', workspace_id: 'w2' });
   assert.equal(d.querySelector('.tab[aria-selected=true]').textContent, 'Investments');
   assert.match(d.querySelector('table').textContent, /AAPL/);
   assert.match(d.querySelector('td.neg').textContent, /20/, 'negative gain styled');
@@ -107,18 +106,18 @@ async function run() {
   accSel.value = '';
   accSel.dispatchEvent(new t.window.Event('change'));
   await sleep(80);
-  assert.deepEqual(named(t.calls, 'apex_wealth_get_positions').at(-1).arguments, {}, 'all accounts = no filter');
+  assert.deepEqual(named(t.calls, 'apex_wealth_get_positions').at(-1).arguments, { workspace_id: 'w2' }, 'all accounts = no filter');
   assert.match(d.querySelector('table').textContent, /XEQT/);
 
   // 3. Net worth chart and range toggle.
   click(tab(d, 'Net worth'));
   await sleep(80);
-  assert.deepEqual(named(t.calls, 'apex_wealth_get_net_worth_history')[0].arguments, { months: 12 });
+  assert.deepEqual(named(t.calls, 'apex_wealth_get_net_worth_history')[0].arguments, { months: 12, workspace_id: 'w2' });
   assert.equal(d.querySelectorAll('svg.line circle').length, 8, 'a point per month');
   assert.ok(d.querySelector('svg.line path[stroke]').getAttribute('d').startsWith('M'));
   click([...d.querySelectorAll('.seg .tab')].find((b) => b.textContent.startsWith('24')));
   await sleep(80);
-  assert.deepEqual(named(t.calls, 'apex_wealth_get_net_worth_history').at(-1).arguments, { months: 24 });
+  assert.deepEqual(named(t.calls, 'apex_wealth_get_net_worth_history').at(-1).arguments, { months: 24, workspace_id: 'w2' });
   assert.equal(d.querySelector('.seg [aria-pressed=true]').textContent.startsWith('24'), true);
   click(d.querySelectorAll('svg.line circle')[3]);
   assert.match(d.querySelector('#tip').textContent, /1,100/, 'tapping a point shows its value');

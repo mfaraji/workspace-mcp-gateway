@@ -102,6 +102,8 @@
       options = options || {};
       function run(extra) {
         var payload = Object.assign({}, args || {}, extra || {});
+        // Keep follow-up actions on the connected account the widget was opened for.
+        if (app.args && app.args.account && !payload.account) payload.account = app.args.account;
         return request('tools/call', { name: name, arguments: payload }).then(function (result) {
           if (result && result.isError) throw new Error(errorText(result));
           return parseResult(result);

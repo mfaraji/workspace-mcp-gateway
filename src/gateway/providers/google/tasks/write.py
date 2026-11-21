@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
+from gateway.providers.google.common import GoogleAccountInput
 from gateway.providers.google.tasks.common import (
     PROVIDER,
     TASKS_UI,
@@ -19,7 +20,7 @@ from gateway.providers.google.tasks.common import (
 TaskStatus = Literal["needsAction", "completed"]
 
 
-class CreateTaskInput(BaseModel):
+class CreateTaskInput(GoogleAccountInput):
     tasklist_id: str = Field("@default", description="Task list id, or '@default'.")
     title: str = Field(..., max_length=1024, description="Task title.")
     notes: str | None = Field(None, max_length=8192, description="Task notes.")
@@ -34,7 +35,7 @@ class CreateTaskInput(BaseModel):
     previous: str | None = Field(None, description="Optional previous sibling task id.")
 
 
-class UpdateTaskInput(BaseModel):
+class UpdateTaskInput(GoogleAccountInput):
     tasklist_id: str = Field("@default", description="Task list id, or '@default'.")
     task_id: str = Field(..., description="Task id to update.")
     title: str | None = Field(None, max_length=1024, description="New task title.")
@@ -49,12 +50,12 @@ class UpdateTaskInput(BaseModel):
     status: TaskStatus | None = Field(None, description="'needsAction' or 'completed'.")
 
 
-class CompleteTaskInput(BaseModel):
+class CompleteTaskInput(GoogleAccountInput):
     tasklist_id: str = Field("@default", description="Task list id, or '@default'.")
     task_id: str = Field(..., description="Task id to complete.")
 
 
-class DeleteTaskInput(BaseModel):
+class DeleteTaskInput(GoogleAccountInput):
     tasklist_id: str = Field("@default", description="Task list id, or '@default'.")
     task_id: str = Field(..., description="Task id to delete.")
 

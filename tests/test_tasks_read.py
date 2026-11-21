@@ -145,8 +145,8 @@ def test_tasks_service_reauth_error_includes_product_scoped_link(monkeypatch):
     monkeypatch.setattr(common, "get_settings", _settings)
     monkeypatch.setattr(
         upstream,
-        "get_active_connection",
-        lambda _session, _user_id, _provider: SimpleNamespace(scopes=[]),
+        "resolve_connection",
+        lambda *_a: SimpleNamespace(scopes=[]),
     )
     ctx = CallContext(user_id=uuid.uuid4(), external_user_id="alice", request_id="r1")
 

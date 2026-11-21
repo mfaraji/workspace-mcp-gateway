@@ -15,10 +15,13 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     LargeBinary,
     String,
     UniqueConstraint,
+    false,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -67,7 +70,17 @@ class ProviderConnection(Base, TimestampMixin):
 
     __tablename__ = "provider_connections"
     __table_args__ = (
-        UniqueConstraint("user_id", "provider", "provider_account_id", name="provider_account"),
+        UniqueConstraint(
+            "user_id", "provider", "product", "provider_account_id", name="provider_account"
+        ),
+        Index(
+            "uq_provider_connection_default",
+            "user_id",
+            "provider",
+            "product",
+            unique=True,
+            postgresql_where=text("is_default AND status = 'active'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
@@ -75,6 +88,10 @@ class ProviderConnection(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     provider: Mapped[str] = mapped_column(String(64))
+    # Google: which product ("calendar", "drive", "tasks", "gmail") this account serves.
+    # Empty for providers without per-product connections (Telegram, API-key connectors).
+    product: Mapped[str] = mapped_column(String(32), default="", server_default="")
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     provider_account_id: Mapped[str] = mapped_column(String(255))
     provider_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)

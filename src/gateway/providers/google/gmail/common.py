@@ -43,6 +43,12 @@ def gmail_service(session: Session, ctx: CallContext):
     return build_gmail_service(creds)
 
 
+def gmail_service_and_connection(session: Session, ctx: CallContext):
+    """Like :func:`gmail_service` but also returns the resolved connection (the account)."""
+    creds, conn = GMAIL_OAUTH.get_connection_credentials(session, ctx, get_settings())
+    return build_gmail_service(creds), conn
+
+
 def resolve_access_label_id(service) -> str:
     """Return the id of the configured access label, or raise ``label_not_found``."""
     name = get_settings().gmail_access_label

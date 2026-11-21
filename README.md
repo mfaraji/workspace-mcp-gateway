@@ -148,30 +148,36 @@ Calendar exposes `system_get_current_time` plus `google_calendar_*`; Drive
 exposes `system_get_current_time`, `google_drive_search_files`, and
 `google_drive_get_file_metadata`; Tasks exposes `system_get_current_time` plus
 `google_tasks_*`; Apex exposes `system_get_current_time` plus `apex_*`
-(`apex_list_clients`, `apex_list_timesheets`, `apex_get_last_timesheet`,
-`apex_create_invoice`, `apex_create_timesheet`, `apex_update_timesheet`) against the
-[Apex invoicing/timesheet REST API](../apex/docs/api/invoice-rest.openapi.yaml),
-authenticated with a per-user, workspace-scoped Apex API key (stored with
-`apex_set_api_key` or `POST /connectors/apex/apikey`; `APEX_API_KEY` is deprecated
-and ignored; there is no deploy-wide fallback) rather than per-user OAuth.
+(`apex_list_workspaces`, `apex_list_clients`, `apex_list_timesheets`,
+`apex_get_last_timesheet`, `apex_create_invoice`, `apex_create_timesheet`,
+`apex_update_timesheet`) against the
+[Apex invoicing/timesheet REST API](../apex/docs/api/invoice-rest.openapi.yaml).
+There are no Apex API keys: sign in with Clerk OAuth and pass `workspace_id` (from
+`apex_list_workspaces`) on every workspace-scoped call.
 
 Apex Wealth (`/mcp/apex-wealth`) exposes `system_get_current_time` plus read-only
-`apex_wealth_*` tools: `apex_wealth_list_accounts`, `apex_wealth_get_accounts_summary`
-(cash and liabilities), `apex_wealth_get_investments_summary`,
-`apex_wealth_get_positions`, `apex_wealth_list_manual_holdings`, and
-`apex_wealth_get_net_worth_history`, against the
+`apex_wealth_*` tools: `apex_wealth_list_workspaces`, `apex_wealth_list_accounts`,
+`apex_wealth_get_accounts_summary` (cash and liabilities),
+`apex_wealth_get_investments_summary`, `apex_wealth_get_positions`,
+`apex_wealth_list_manual_holdings`, and `apex_wealth_get_net_worth_history`, against the
 [Apex wealth REST API](../apex/docs/api/wealth-rest.openapi.yaml). Wealth data only
-exists in PERSONAL workspaces, so it uses its own key, stored with
-`apex_wealth_set_api_key` or `POST /connectors/apex-wealth/apikey`
-(`APEX_WEALTH_API_KEY` is deprecated and ignored).
+exists in PERSONAL workspaces; each of these tools takes a `workspace_id`.
 
-**Clerk act-as (no key).** When `APEX_GATEWAY_API_KEY` (an Apex system key, consumer
-`GATEWAY`) and `CLERK_ISSUER` are set, a caller with a Clerk identity reaches Apex as
-themselves: the gateway sends the system key plus `X-Act-As-Subject` and the user's
-default `X-Workspace-Id`. Pick the workspace once with `apex_list_workspaces` then
-`apex_set_workspace(workspace_id)` (wealth: `apex_wealth_list_workspaces` /
-`apex_wealth_set_workspace`); until then tools return `workspace_not_set`. A stored
-personal key, if any, takes precedence over act-as.
+**How the gateway reaches Apex.** The Clerk access token is issued for the gateway and
+is never sent to Apex. For each call the gateway mints a short-lived (120 s) JWT valid
+only for Apex's MCP REST API: `sub` is the verified Clerk user, `act` names the gateway,
+`scope` is limited to the tool (e.g. `apex:clients.read`), `wid` pins the workspace and
+`aud` is `APEX_MCP_AUDIENCE`. It is signed with `GATEWAY_SIGNING_KEY` (EC P-256 or RSA
+PEM); the public key is served at `/.well-known/apex-jwks.json`. Configure Apex with
+`GATEWAY_ISSUER` (= this `BASE_URL`), `GATEWAY_JWKS_URL` and `APEX_MCP_AUDIENCE`.
+Apex accepts these tokens only on its `@McpAccessible` REST routes, never for its UI or
+GraphQL API.
+
+**Which tools a user gets.** Apex decides: a tool is available only if one of the
+user's Apex workspaces has the capability it needs (invoicing/clients tools need a
+BUSINESS workspace; wealth tools need a PERSONAL one). Unpermitted tools are hidden from
+discovery and from the consent and `/access` pages, and return `forbidden` if called.
+The per-client consent still applies on top (tool granted ∩ Apex permits).
 
 Telegram exposes `telegram_list_destinations` and `telegram_send_message`.
 Each Open WebUI user connects one BotFather token through Settings →

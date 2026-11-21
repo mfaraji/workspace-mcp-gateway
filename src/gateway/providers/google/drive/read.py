@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
+from gateway.providers.google.common import GoogleAccountInput, make_list_accounts_spec
 from gateway.providers.google.drive.common import (
     DRIVE_UI,
     PROVIDER,
@@ -21,13 +22,13 @@ from gateway.providers.google.drive.common import (
 from gateway.providers.registry import ToolError
 
 
-class SearchFilesInput(BaseModel):
+class SearchFilesInput(GoogleAccountInput):
     query: str = Field("", max_length=200, description="Filename text; empty returns recent files.")
     page_token: str | None = Field(None, description="Opaque token from a previous response.")
     page_size: int = Field(25, ge=1, le=100, description="Maximum files to return.")
 
 
-class GetFileMetadataInput(BaseModel):
+class GetFileMetadataInput(GoogleAccountInput):
     file_id: str = Field(..., min_length=1, max_length=1024, description="Google Drive file id.")
 
 
@@ -63,6 +64,14 @@ def get_drive_file_metadata(
 
 def register(registry) -> None:
     """Register Google Drive read tools."""
+    registry.add(
+        make_list_accounts_spec(
+            name="google_drive_list_accounts",
+            provider=PROVIDER,
+            product="drive",
+            display_name="Google Drive",
+        )
+    )
     registry.add(
         ToolSpec(
             name="google_drive_search_files",

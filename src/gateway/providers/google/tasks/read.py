@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
+from gateway.providers.google.common import GoogleAccountInput, make_list_accounts_spec
 from gateway.providers.google.tasks.common import (
     PROVIDER,
     TASKS_UI,
@@ -18,12 +19,12 @@ from gateway.providers.google.tasks.common import (
 )
 
 
-class ListTasklistsInput(BaseModel):
+class ListTasklistsInput(GoogleAccountInput):
     max_results: int = Field(100, ge=1, le=1000, description="Max task lists to return.")
     page_token: str | None = Field(None, description="Page token from a previous response.")
 
 
-class ListTasksInput(BaseModel):
+class ListTasksInput(GoogleAccountInput):
     tasklist_id: str = Field("@default", description="Task list id, or '@default'.")
     max_results: int = Field(25, ge=1, le=100, description="Max tasks to return.")
     page_token: str | None = Field(None, description="Page token from a previous response.")
@@ -78,6 +79,14 @@ def list_tasks(args: ListTasksInput, ctx: CallContext, session: Session) -> dict
 
 def register(registry) -> None:
     """Register Google Tasks read tools with the tool registry."""
+    registry.add(
+        make_list_accounts_spec(
+            name="google_tasks_list_accounts",
+            provider=PROVIDER,
+            product="tasks",
+            display_name="Google Tasks",
+        )
+    )
     registry.add(
         ToolSpec(
             name="google_tasks_list_tasklists",

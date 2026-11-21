@@ -21,7 +21,6 @@ def _settings(**overrides) -> Settings:
         google_client_id="cid",
         google_client_secret="secret",
         apex_base_url="http://apex.local",
-        apex_api_key="pk_live_test",
         token_encryption_key="x" * 43 + "=",
         gateway_shared_secret="shared-secret-value",
         trusted_open_webui_origin="https://openwebui.internal",
@@ -108,12 +107,10 @@ def test_list_timesheets_passes_client_id_filter(monkeypatch):
     monkeypatch.setattr(apex_client, "apex_request", fake_apex_request)
     monkeypatch.setattr(read, "get_settings", lambda: _settings())
     monkeypatch.setattr(
-        apex_client.APEX_API_KEY,
-        "get_credentials",
-        lambda session, ctx, settings: apex_client.ApexCredentials("pk_live_test"),
+        read, "apex_credentials", lambda *a, **k: apex_client.ApexCredentials("tok")
     )
 
-    args = read.ListTimesheetsInput(client_id="c1")
+    args = read.ListTimesheetsInput(workspace_id="w1", client_id="c1")
     result = read.list_timesheets(args, _ctx(), None)
 
     assert result == {"timesheets": []}
@@ -122,10 +119,11 @@ def test_list_timesheets_passes_client_id_filter(monkeypatch):
 
 def test_create_invoice_requires_exactly_one_billing_payload():
     with pytest.raises(ValueError):
-        write.CreateInvoiceInput(client_id="c1", issue_date="2026-07-31")
+        write.CreateInvoiceInput(workspace_id="w1", client_id="c1", issue_date="2026-07-31")
 
     with pytest.raises(ValueError):
         write.CreateInvoiceInput(
+            workspace_id="w1",
             client_id="c1",
             issue_date="2026-07-31",
             line_items=[{"description": "Consulting", "quantity": 2, "rate": 150}],
@@ -149,12 +147,11 @@ def test_create_invoice_builds_timesheet_body(monkeypatch):
     monkeypatch.setattr(apex_client, "apex_request", fake_apex_request)
     monkeypatch.setattr(write, "get_settings", lambda: _settings())
     monkeypatch.setattr(
-        apex_client.APEX_API_KEY,
-        "get_credentials",
-        lambda session, ctx, settings: apex_client.ApexCredentials("pk_live_test"),
+        write, "apex_credentials", lambda *a, **k: apex_client.ApexCredentials("tok")
     )
 
     args = write.CreateInvoiceInput(
+        workspace_id="w1",
         client_id="c1",
         issue_date="2026-07-31",
         timesheet=write.InlineTimesheetInput(
@@ -198,12 +195,10 @@ def test_update_timesheet_builds_partial_body(monkeypatch):
     monkeypatch.setattr(apex_client, "apex_request", fake_apex_request)
     monkeypatch.setattr(write, "get_settings", lambda: _settings())
     monkeypatch.setattr(
-        apex_client.APEX_API_KEY,
-        "get_credentials",
-        lambda session, ctx, settings: apex_client.ApexCredentials("pk_live_test"),
+        write, "apex_credentials", lambda *a, **k: apex_client.ApexCredentials("tok")
     )
 
-    args = write.UpdateTimesheetInput(timesheet_id="ts1", notes="Updated")
+    args = write.UpdateTimesheetInput(workspace_id="w1", timesheet_id="ts1", notes="Updated")
     result = write.update_timesheet(args, _ctx(), None)
 
     assert result == {"id": "ts1"}

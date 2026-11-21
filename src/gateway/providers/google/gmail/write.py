@@ -6,15 +6,17 @@ limited to drafts recorded in ``gmail_agent_drafts`` (created via this gateway).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from gateway.db.models import GmailAgentDraft
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
-from gateway.providers.google.connections import get_active_connection
+from gateway.providers.google.common import GoogleAccountInput
+from gateway.providers.google.connections import list_connections
 from gateway.providers.google.gmail.common import (
     GMAIL_UI,
     MAX_BODY_CHARS,
@@ -22,7 +24,7 @@ from gateway.providers.google.gmail.common import (
     PROVIDER,
     UI_NOTE,
     build_mime,
-    gmail_service,
+    gmail_service_and_connection,
     parse_message,
     require_labeled,
     resolve_access_label_id,
@@ -37,7 +39,7 @@ def _check_addresses(values: list[str]) -> list[str]:
     return [valid_address(v) for v in values]
 
 
-class CreateDraftInput(BaseModel):
+class CreateDraftInput(GoogleAccountInput):
     to: list[str] = Field(default_factory=list, description="Recipients (optional for replies).")
     cc: list[str] = Field(default_factory=list)
     bcc: list[str] = Field(default_factory=list)
@@ -51,7 +53,7 @@ class CreateDraftInput(BaseModel):
     _v = field_validator("to", "cc", "bcc")(lambda cls, v: _check_addresses(v))
 
 
-class UpdateDraftInput(BaseModel):
+class UpdateDraftInput(GoogleAccountInput):
     draft_id: str = Field(..., min_length=1, max_length=255)
     to: list[str] | None = None
     cc: list[str] | None = None
@@ -66,11 +68,16 @@ class UpdateDraftInput(BaseModel):
         return None if v is None else _check_addresses(v)
 
 
-class DeleteDraftInput(BaseModel):
+class DeleteDraftInput(GoogleAccountInput):
     draft_id: str = Field(..., min_length=1, max_length=255)
 
 
-def _owned(session: Session, ctx: CallContext, draft_id: str) -> GmailAgentDraft:
+def _owned_service(session: Session, ctx: CallContext, draft_id: str):
+    """Return ``(draft row, Gmail service)`` for a draft recorded for this user.
+
+    The draft's own account is used. If the caller named a different ``account`` the draft
+    is treated as missing, exactly like an unknown id.
+    """
     row = session.scalars(
         select(GmailAgentDraft).where(
             GmailAgentDraft.user_id == ctx.user_id, GmailAgentDraft.draft_id == draft_id
@@ -78,7 +85,24 @@ def _owned(session: Session, ctx: CallContext, draft_id: str) -> GmailAgentDraft
     ).first()
     if row is None:
         raise ToolError("not_found", "draft not found")
-    return row
+    owner = next(
+        (
+            c
+            for c in list_connections(session, ctx.user_id, PROVIDER, "gmail")
+            if c.status == "active" and c.provider_account_id == row.google_account_id
+        ),
+        None,
+    )
+    if owner is None:
+        raise ToolError(
+            "account_not_connected", "the Gmail account holding this draft is not connected"
+        )
+    if ctx.account and ctx.account.strip().lower() != (owner.provider_email or "").lower():
+        raise ToolError("not_found", "draft not found")
+    service, _ = gmail_service_and_connection(
+        session, replace(ctx, account=owner.provider_email or owner.provider_account_id)
+    )
+    return row, service
 
 
 def _hdr(parsed: dict, name: str) -> str | None:
@@ -101,7 +125,7 @@ def _split(value: str | None) -> list[str]:
 def create_draft(args: CreateDraftInput, ctx: CallContext, session: Session) -> dict[str, Any]:
     if not (args.body_text or args.body_html):
         raise ToolError("invalid_input", "provide body_text and/or body_html")
-    service = gmail_service(session, ctx)
+    service, conn = gmail_service_and_connection(session, ctx)
     to, subject = list(args.to), args.subject
     thread_id = in_reply_to = references = None
     if args.reply_to_message_id:
@@ -136,12 +160,11 @@ def create_draft(args: CreateDraftInput, ctx: CallContext, session: Session) -> 
     if thread_id:
         message["threadId"] = thread_id
     draft = service.users().drafts().create(userId="me", body={"message": message}).execute()
-    conn = get_active_connection(session, ctx.user_id, PROVIDER)
     msg = draft.get("message", {})
     session.add(
         GmailAgentDraft(
             user_id=ctx.user_id,
-            google_account_id=conn.provider_account_id if conn else "",
+            google_account_id=conn.provider_account_id,
             draft_id=draft["id"],
             thread_id=msg.get("threadId") or thread_id,
         )
@@ -155,8 +178,7 @@ def create_draft(args: CreateDraftInput, ctx: CallContext, session: Session) -> 
 
 
 def update_draft(args: UpdateDraftInput, ctx: CallContext, session: Session) -> dict[str, Any]:
-    row = _owned(session, ctx, args.draft_id)
-    service = gmail_service(session, ctx)
+    row, service = _owned_service(session, ctx, args.draft_id)
     current = service.users().drafts().get(userId="me", id=row.draft_id, format="full").execute()
     cur_msg = current.get("message", {})
     parsed = parse_message(cur_msg)
@@ -196,8 +218,7 @@ def _in_reply_to(msg: dict) -> str | None:
 
 
 def delete_draft(args: DeleteDraftInput, ctx: CallContext, session: Session) -> dict[str, Any]:
-    row = _owned(session, ctx, args.draft_id)
-    service = gmail_service(session, ctx)
+    row, service = _owned_service(session, ctx, args.draft_id)
     service.users().drafts().delete(userId="me", id=row.draft_id).execute()
     session.delete(row)
     return {"status": "draft_deleted", "draft_id": args.draft_id}

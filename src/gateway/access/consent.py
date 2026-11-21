@@ -7,7 +7,9 @@ cannot approve their own permissions.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 import jwt
@@ -17,7 +19,7 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from gateway.access.policy import grant_for, personal_tool_names
+from gateway.access.policy import grant_for, permitted_catalog, personal_tool_names
 from gateway.access.routes import catalog_for_resource, resource_connector
 from gateway.config import Settings, get_settings
 from gateway.db.engine import session_scope
@@ -68,16 +70,96 @@ def browser_subject(request: Request, settings: Settings) -> str:
     return claims["sub"]
 
 
-def consent_tools(request: Request, resource: str) -> list[dict]:
+def consent_tools(request: Request, resource: str, subject: str | None = None) -> list[dict]:
     try:
         slug = resource_connector(resource)
     except ValueError:
         raise HTTPException(400, "Invalid connector resource") from None
-    return catalog_for_resource(request.app.state.access_catalog, slug)
+    catalog = permitted_catalog(
+        get_settings(),
+        subject,
+        request.app.state.access_catalog,
+        request.app.state.access_specs,
+    )
+    return catalog_for_resource(catalog, slug)
+
+
+_CIMD_SCOPES = {"mcp:tools", "offline_access", "openid", "profile", "email"}
+_CIMD_MAX_BYTES = 64 * 1024
+_CIMD_TTL = 300.0
+_cimd_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _cimd_document(settings: Settings, client_id: str) -> dict:
+    """Fetch a client-ID metadata document from an allow-listed https host (no redirects)."""
+    parts = urlsplit(client_id)
+    allowed = {h.strip().lower() for h in settings.cimd_allowed_hosts.split(",") if h.strip()}
+    if (
+        parts.scheme != "https"
+        or not parts.hostname
+        or parts.username
+        or parts.password
+        or parts.port not in (None, 443)
+        or parts.fragment
+        or parts.hostname.lower() not in allowed
+    ):
+        raise HTTPException(400, "OAuth client is not registered")
+    hit = _cimd_cache.get(client_id)
+    if hit and time.monotonic() - hit[0] < _CIMD_TTL:
+        return hit[1]
+    try:
+        with httpx.Client(timeout=5, follow_redirects=False) as client:
+            response = client.get(client_id, headers={"Accept": "application/json"})
+        response.raise_for_status()
+        if len(response.content) > _CIMD_MAX_BYTES:
+            raise ValueError("metadata document too large")
+        document = response.json()
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(503, "Could not validate the OAuth client") from None
+    if not isinstance(document, dict) or document.get("client_id") != client_id:
+        raise HTTPException(400, "OAuth client is not registered")
+    _cimd_cache[client_id] = (time.monotonic(), document)
+    return document
+
+
+def _redirect_allowed(redirect_uri: str, registered: list) -> bool:
+    """Exact match, or for http loopback redirects any port (RFC 8252 section 7.3)."""
+    if redirect_uri in registered:
+        return True
+    want = urlsplit(redirect_uri)
+    host = (want.hostname or "").lower()
+    if want.scheme != "http" or host not in {"localhost", "127.0.0.1", "::1"}:
+        return False
+    for entry in registered:
+        have = urlsplit(entry) if isinstance(entry, str) else None
+        if (
+            have
+            and have.scheme == "http"
+            and (have.hostname or "").lower() == (want.hostname or "").lower()
+            and have.path == want.path
+            and not have.query
+        ):
+            return True
+    return False
+
+
+def _registered_cimd_client(
+    settings: Settings, client_id: str, redirect_uri: str, scope: str
+) -> None:
+    document = _cimd_document(settings, client_id)
+    requested = set(scope.split())
+    if (
+        not _redirect_allowed(redirect_uri, document.get("redirect_uris") or [])
+        or "mcp:tools" not in requested
+        or not requested <= _CIMD_SCOPES
+    ):
+        raise HTTPException(400, "Invalid OAuth consent request")
 
 
 def registered_client(settings: Settings, client_id: str, redirect_uri: str, scope: str) -> None:
     """Independently validate the client, redirect and scopes before recording a grant."""
+    if client_id.startswith("https://"):
+        return _registered_cimd_client(settings, client_id, redirect_uri, scope)
     if not settings.clerk_backend_api_key:
         raise HTTPException(503, "Consent validation is not configured")
     try:
@@ -196,7 +278,7 @@ class ConsentContext(BaseModel):
 def context(body: ConsentContext, request: Request):
     settings = get_settings()
     subject = browser_subject(request, settings)
-    connectors = consent_tools(request, body.resource)
+    connectors = consent_tools(request, body.resource, subject)
     registered_client(settings, body.client_id, body.redirect_uri, body.scope)
     intent = URLSafeTimedSerializer(settings.session_secret, salt=_INTENT_SALT).dumps(
         {
@@ -233,7 +315,7 @@ def approve(body: ConsentApproval, request: Request):
         validated = ConsentContext(**intent)
     except (BadSignature, ValueError, KeyError, TypeError):
         raise HTTPException(400, "Invalid or expired consent request") from None
-    connectors = consent_tools(request, validated.resource)
+    connectors = consent_tools(request, validated.resource, subject)
     known = personal_tool_names(connectors)
     if not set(body.tools) <= known:
         raise HTTPException(400, "Tool is outside the requested connector")

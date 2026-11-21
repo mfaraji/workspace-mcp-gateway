@@ -21,20 +21,18 @@ class Settings(BaseSettings):
     google_client_id: str
     google_client_secret: str
 
-    # Apex invoicing/timesheet API. Each user stores their own key (via the
-    # apex_set_api_key tool or POST /connectors/apex/apikey) — see
-    # docs/api/invoice-rest.openapi.yaml in the apex repo. apex_api_key and
-    # apex_wealth_api_key are DEPRECATED and ignored (kept only so existing .env
-    # files still parse); per-user keys, and later Clerk act-as via
-    # APEX_GATEWAY_API_KEY, replace them.
+    # Apex invoicing/timesheet/wealth API (see docs/api/invoice-rest.openapi.yaml in the
+    # apex repo). There are no per-user keys: the gateway signs short-lived, Apex-only
+    # tokens for the signed-in Clerk user (gateway.oauth.downstream).
     apex_base_url: str = "http://localhost:3010"
-    # System API key (Apex consumer GATEWAY, minted with scripts/create-gateway-api-key.ts)
-    # that lets the gateway call Apex as a Clerk user via X-Act-As-Subject. Unset
-    # disables act-as. Secret: never log it.
-    apex_gateway_api_key: str | None = None
-    apex_api_key: str | None = None
-    # Wealth endpoints need a key for a PERSONAL workspace. DEPRECATED and ignored.
-    apex_wealth_api_key: str | None = None
+
+    # Downstream (Apex) tokens: after verifying the user's Clerk token the gateway mints
+    # its own short-lived, Apex-only JWT (see gateway.oauth.downstream). Unencrypted PEM
+    # for an EC P-256 or RSA>=2048 key; the public half is served at
+    # /.well-known/apex-jwks.json. Secret: never log it.
+    gateway_signing_key: SecretStr | None = None
+    apex_mcp_audience: str = "apex-mcp-api"
+    apex_token_ttl_seconds: int = 120
 
     # Only Gmail messages carrying this label are visible to the Gmail tools.
     gmail_access_label: str = "agent-access"
@@ -58,6 +56,10 @@ class Settings(BaseSettings):
     clerk_link_client_id: str | None = None
     clerk_link_client_secret: str | None = None
     clerk_link_scope: str = "openid profile mcp:tools"
+    # OAuth clients that identify themselves with a client-ID metadata document (the
+    # client_id is an https URL, e.g. Claude Code) are trusted only from these hosts
+    # (comma-separated). The consent page fetches the document to validate the redirect.
+    cimd_allowed_hosts: str = "claude.ai"
 
     # Deprecated and ignored; development also requires OAuth.
     dev_trust_all_origins: bool = False

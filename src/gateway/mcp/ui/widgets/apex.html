@@ -65,7 +65,7 @@ select.field { padding-inline: 8px; }
   var lang = 'en';
   function t(key) { return (STRINGS[lang] || STRINGS.en)[key] || STRINGS.en[key] || key; }
 
-  var state = { tab: 'clients', clients: null, timesheets: null, workspaces: [], workspaceName: '', view: null, loaded: false, error: '', notice: '', busy: false, filterClient: null };
+  var state = { tab: 'clients', clients: null, timesheets: null, workspaces: [], workspaceId: '', workspaceName: '', view: null, loaded: false, error: '', notice: '', busy: false, filterClient: null };
   var root = document.getElementById('root');
   var app;
 
@@ -161,15 +161,29 @@ select.field { padding-inline: 8px; }
   var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
   // ---- data ----
+  // Every workspace-scoped tool takes the selected workspace; Apex re-checks it per call.
+  function wcall(name, args, options) {
+    return app.callTool(name, Object.assign({}, args || {}, { workspace_id: state.workspaceId }), options);
+  }
+  function syncWorkspace() {
+    var w = state.workspaces.filter(function (x) { return x.id === state.workspaceId; })[0];
+    state.workspaceName = w ? str(w.name) : '';
+  }
+  function pickDefaultWorkspace() {
+    if (state.workspaceId || !state.workspaces.length) return false;
+    var biz = state.workspaces.filter(function (w) { return w.kind === 'BUSINESS'; });
+    state.workspaceId = (biz[0] || state.workspaces[0]).id; syncWorkspace();
+    return true;
+  }
   function fail(e) { state.busy = false; state.loaded = true; if (!e || e.cancelled) return render(); state.error = t('failed') + e.message; render(); }
   function loadClients() {
-    return app.callTool('apex_list_clients', {}).then(function (data) {
+    return wcall('apex_list_clients', {}).then(function (data) {
       state.clients = listOf(data, ['clients']).map(normClient);
     });
   }
   function loadTimesheets(clientId) {
     var args = clientId ? { client_id: clientId } : {};
-    return app.callTool('apex_list_timesheets', args).then(function (data) {
+    return wcall('apex_list_timesheets', args).then(function (data) {
       state.timesheets = listOf(data, ['timesheets']).map(normTs);
       state.filterClient = clientId || null;
     });
@@ -177,6 +191,7 @@ select.field { padding-inline: 8px; }
   function loadWorkspaces() {
     return app.callTool('apex_list_workspaces', {}).then(function (data) {
       state.workspaces = listOf(data, ['workspaces']).filter(function (w) { return w && w.id; });
+      syncWorkspace();
     }).catch(function () { state.workspaces = []; });
   }
   function ensure(tab) {
@@ -200,11 +215,7 @@ select.field { padding-inline: 8px; }
     ensure(state.tab).then(function () { state.loaded = true; render(); }).catch(fail);
   }
   function switchWorkspace(id) {
-    state.busy = true; render();
-    app.callTool('apex_set_workspace', { workspace_id: id }).then(function (res) {
-      state.workspaceName = str(res && res.name);
-      state.busy = false; reload();
-    }).catch(fail);
+    state.workspaceId = id; syncWorkspace(); reload();
   }
 
   // ---- views ----
@@ -212,7 +223,7 @@ select.field { padding-inline: 8px; }
     state.error = ''; state.notice = '';
     state.busy = true; render();
     var last = c.mode === 'TIMESHEET'
-      ? app.callTool('apex_get_last_timesheet', { client_id: c.id }).then(function (d) { var x = unwrap(d); return x && looksLikeTimesheet(x) ? normTs(x) : null; }).catch(function () { return null; })
+      ? wcall('apex_get_last_timesheet', { client_id: c.id }).then(function (d) { var x = unwrap(d); return x && looksLikeTimesheet(x) ? normTs(x) : null; }).catch(function () { return null; })
       : Promise.resolve(null);
     last.then(function (prev) {
       state.busy = false;
@@ -264,7 +275,7 @@ select.field { padding-inline: 8px; }
       after = function () {};
     }
     state.busy = true; render();
-    app.callTool(tool, args, { confirm: function (preview) { state.busy = false; render(); return app.confirm(preview, { ok: t('confirm'), cancel: t('cancel') }).then(function (ok) { if (ok) { state.busy = true; render(); } return ok; }); } })
+    wcall(tool, args, { confirm: function (preview) { state.busy = false; render(); return app.confirm(preview, { ok: t('confirm'), cancel: t('cancel') }).then(function (ok) { if (ok) { state.busy = true; render(); } return ok; }); } })
       .then(function () { after(); state.busy = false; state.view = null; state.notice = success; render(); })
       .catch(function (e) { state.busy = false; if (e && e.cancelled) return render(); state.error = t('failed') + e.message; render(); });
   }
@@ -398,6 +409,7 @@ select.field { padding-inline: 8px; }
 
   function initial(data) {
     var name = app.toolName || '';
+    if (app.args && app.args.workspace_id) { state.workspaceId = String(app.args.workspace_id); syncWorkspace(); }
     var d = unwrap(data);
     if (name === 'apex_get_last_timesheet' || (!name && looksLikeTimesheet(d))) {
       state.tab = 'timesheets';
@@ -419,7 +431,9 @@ select.field { padding-inline: 8px; }
     onContext: function (ctx) { lang = /^fa/i.test(ctx.locale || '') ? 'fa' : 'en'; render(); },
     onResult: initial,
     onError: function (error) { state.loaded = true; state.error = t('failed') + error.message; render(); },
-    onReady: function () { loadWorkspaces().then(render); }
+    onReady: function () {
+      loadWorkspaces().then(function () { if (pickDefaultWorkspace()) reload(); else render(); });
+    }
   });
 })();
 </script>

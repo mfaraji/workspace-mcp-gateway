@@ -17,7 +17,7 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from gateway.access.policy import grant_for, personal_tool_names
+from gateway.access.policy import grant_for, permitted_catalog, personal_tool_names
 from gateway.config import get_settings
 from gateway.connectors.registry import connector_slugs_for
 from gateway.db.engine import session_scope
@@ -222,7 +222,12 @@ def catalog_for_resource(catalog: list[dict], slug: str | None) -> list[dict]:
 
 def scoped_catalog(request: Request, auth: AuthenticatedUser, client_id: str | None = None):
     target = request.session.get("target")
-    catalog = request.app.state.access_catalog
+    catalog = permitted_catalog(
+        get_settings(),
+        auth.clerk_subject,
+        request.app.state.access_catalog,
+        request.app.state.access_specs,
+    )
     if not target:
         return catalog
     if target.get("sub") != auth.clerk_subject:

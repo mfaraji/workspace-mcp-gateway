@@ -104,7 +104,7 @@ def status(request: Request):
 
     try:
         with session_scope() as session:
-            conn = get_active_connection(session, user_id)
+            conn = get_active_connection(session, user_id, "google", "drive")
             if conn is not None and required_scopes_present(conn.scopes):
                 return JSONResponse(
                     {
@@ -160,7 +160,7 @@ def files(
 
     try:
         with session_scope() as session:
-            conn = get_active_connection(session, user_id)
+            conn = get_active_connection(session, user_id, "google", "drive")
             if conn is None:
                 raise DriveProviderError(
                     "reauth_required",
@@ -225,7 +225,7 @@ def content(request: Request, file_id: str):
 
     try:
         with session_scope() as session:
-            conn = get_active_connection(session, user_id)
+            conn = get_active_connection(session, user_id, "google", "drive")
             if conn is None:
                 raise DriveProviderError(
                     "reauth_required",

@@ -38,6 +38,11 @@ class StoredCredentials:
     expires_at: datetime | None
 
 
+def _lock_user(session: Session, user_id) -> None:
+    """Serialize connection changes per user (concurrent callbacks, default switches)."""
+    session.scalar(select(User).where(User.id == user_id).with_for_update())
+
+
 def upsert_connection(
     session: Session,
     *,
@@ -47,28 +52,29 @@ def upsert_connection(
     scopes: list[str],
     creds: StoredCredentials,
     provider: str = PROVIDER,
+    product: str = "",
 ) -> ProviderConnection:
-    """Create or update a connection and its encrypted tokens.
+    """Create or update one account's connection (for one product) and its tokens.
 
-    If the upstream does not return a refresh token on re-consent, the
-    previously stored refresh token is preserved rather than overwritten with
-    null. ``provider`` defaults to Google; other OAuth-based connectors reuse
-    this unchanged by passing their own ``upstream_provider``.
+    Google connections are per product (``product`` set) and a product may hold several
+    accounts; the first active account of a product becomes its default. Providers
+    without products (``product == ""``) keep the single-account rule. If the upstream
+    does not return a refresh token on re-consent, the previously stored refresh token is
+    preserved rather than overwritten with null.
     """
-    # Serialize connection changes per Open WebUI user so two simultaneous OAuth
-    # callbacks cannot activate two different accounts for the same provider.
-    session.scalar(select(User).where(User.id == user.id).with_for_update())
+    _lock_user(session, user.id)
 
     active = session.scalars(
         select(ProviderConnection).where(
             ProviderConnection.user_id == user.id,
             ProviderConnection.provider == provider,
+            ProviderConnection.product == product,
             ProviderConnection.status == "active",
         )
-    ).first()
-    if active is not None and active.provider_account_id != provider_account_id:
+    ).all()
+    if not product and any(a.provider_account_id != provider_account_id for a in active):
         raise AccountConflict(
-            "A different Google account is already connected. Disconnect it before "
+            "A different account is already connected. Disconnect it before "
             "connecting another account."
         )
 
@@ -78,6 +84,7 @@ def upsert_connection(
         select(ProviderConnection).where(
             ProviderConnection.user_id == user.id,
             ProviderConnection.provider == provider,
+            ProviderConnection.product == product,
             ProviderConnection.provider_account_id == provider_account_id,
         )
     )
@@ -85,6 +92,7 @@ def upsert_connection(
         conn = ProviderConnection(
             user_id=user.id,
             provider=provider,
+            product=product,
             provider_account_id=provider_account_id,
         )
         session.add(conn)
@@ -94,6 +102,8 @@ def upsert_connection(
     # response. Never discard scopes previously granted to the same account.
     conn.scopes = sorted(set(conn.scopes or []) | set(scopes))
     conn.status = "active"
+    # Exactly one default per product among active accounts.
+    conn.is_default = not any(a.is_default and a is not conn for a in active)
     session.flush()
 
     token = conn.token
@@ -110,34 +120,118 @@ def upsert_connection(
     return conn
 
 
+def list_connections(
+    session: Session, user_id, provider: str = PROVIDER, product: str = ""
+) -> list[ProviderConnection]:
+    """The user's active/errored connections for a product, default account first."""
+    rows = session.scalars(
+        select(ProviderConnection)
+        .where(
+            ProviderConnection.user_id == user_id,
+            ProviderConnection.provider == provider,
+            ProviderConnection.product == product,
+            ProviderConnection.status.in_(("active", "error")),
+        )
+        .order_by(
+            ProviderConnection.is_default.desc(),
+            ProviderConnection.created_at,
+            ProviderConnection.provider_email,
+        )
+    ).all()
+    return list(rows)
+
+
 def get_active_connection(
-    session: Session, user_id, provider: str = PROVIDER
+    session: Session, user_id, provider: str = PROVIDER, product: str = ""
 ) -> ProviderConnection | None:
-    """Return the user's active connection for a provider, if any."""
-    return session.scalars(
-        select(ProviderConnection).where(
-            ProviderConnection.user_id == user_id,
-            ProviderConnection.provider == provider,
-            ProviderConnection.status == "active",
-        )
-    ).first()
+    """Return the user's default active connection for a provider/product, if any."""
+    for conn in list_connections(session, user_id, provider, product):
+        if conn.status == "active":
+            return conn
+    return None
 
 
-def disconnect(session: Session, user_id, provider: str = PROVIDER) -> bool:
-    """Revoke a connection: mark it revoked and clear stored tokens."""
-    conn = session.scalars(
-        select(ProviderConnection).where(
-            ProviderConnection.user_id == user_id,
-            ProviderConnection.provider == provider,
-            ProviderConnection.status == "active",
-        )
-    ).first()
-    if conn is None:
+def resolve_connection(
+    session: Session,
+    user_id,
+    provider: str = PROVIDER,
+    product: str = "",
+    account: str | None = None,
+) -> ProviderConnection | None:
+    """Pick the connection for a call: the account named by ``account``, else the default.
+
+    ``account`` matches the account email (case-insensitive) or the stable provider
+    account id. Returns ``None`` if nothing matches.
+    """
+    if not account:
+        return get_active_connection(session, user_id, provider, product)
+    wanted = account.strip().lower()
+    for conn in list_connections(session, user_id, provider, product):
+        if conn.status != "active":
+            continue
+        if (conn.provider_email or "").lower() == wanted or conn.provider_account_id == account:
+            return conn
+    return None
+
+
+def _owned_connection(session: Session, user_id, connection_id) -> ProviderConnection | None:
+    conn = session.get(ProviderConnection, connection_id)
+    if conn is None or conn.user_id != user_id:
+        return None
+    return conn
+
+
+def set_default(session: Session, user_id, connection_id) -> bool:
+    """Make a connection the default for its product. False if not found/not active."""
+    _lock_user(session, user_id)
+    conn = _owned_connection(session, user_id, connection_id)
+    if conn is None or conn.status != "active":
         return False
+    others = session.scalars(
+        select(ProviderConnection).where(
+            ProviderConnection.user_id == user_id,
+            ProviderConnection.provider == conn.provider,
+            ProviderConnection.product == conn.product,
+            ProviderConnection.is_default.is_(True),
+            ProviderConnection.id != conn.id,
+        )
+    ).all()
+    for other in others:
+        other.is_default = False
+    session.flush()  # clear the old default before setting the new one (partial unique index)
+    conn.is_default = True
+    return True
+
+
+def disconnect_connection(session: Session, user_id, connection_id) -> bool:
+    """Revoke one account's connection and promote another account to default if needed."""
+    _lock_user(session, user_id)
+    conn = _owned_connection(session, user_id, connection_id)
+    if conn is None or conn.status == "revoked":
+        return False
+    was_default = conn.is_default
     conn.status = "revoked"
+    conn.is_default = False
     if conn.token is not None:
         session.delete(conn.token)
+    session.flush()
+    if was_default:
+        remaining = [
+            c
+            for c in list_connections(session, user_id, conn.provider, conn.product)
+            if c.status == "active"
+        ]
+        if remaining:
+            remaining[0].is_default = True
     return True
+
+
+def disconnect(session: Session, user_id, provider: str = PROVIDER, product: str = "") -> bool:
+    """Revoke every active connection for a provider/product (non-Google providers)."""
+    removed = False
+    for conn in list_connections(session, user_id, provider, product):
+        removed = disconnect_connection(session, user_id, conn.id) or removed
+    return removed
 
 
 def _needs_refresh(expires_at: datetime | None) -> bool:
