@@ -66,8 +66,10 @@ class ToolRegistry:
             mcp.add_tool(
                 self._build_callable(spec, settings),
                 name=spec.name,
-                description=spec.description,
-                meta=spec.tool_meta,
+                description=(
+                    spec.description if settings.mcp_apps_enabled else _plain(spec.description)
+                ),
+                meta=spec.tool_meta if settings.mcp_apps_enabled else None,
             )
 
     def _build_callable(self, spec: ToolSpec, settings: Settings):
@@ -78,7 +80,7 @@ class ToolRegistry:
             result = await anyio.to_thread.run_sync(
                 lambda: _run_pipeline(spec, settings, kwargs, confirmation_token)
             )
-            if spec.ui_resource and isinstance(result, dict | list):
+            if settings.mcp_apps_enabled and spec.ui_resource and isinstance(result, dict | list):
                 return _with_structured_content(result)
             return result
 
@@ -114,6 +116,15 @@ class ToolRegistry:
         tool.__annotations__ = annotations
         tool.__name__ = spec.name
         return tool
+
+
+_WIDGET_NOTE = "Shows an interactive"
+
+
+def _plain(description: str) -> str:
+    """Drop the trailing widget note ("do not repeat the results...") when widgets are off."""
+    cut = description.find(_WIDGET_NOTE)
+    return description if cut < 0 else description[:cut].rstrip()
 
 
 def _with_structured_content(result: dict | list) -> CallToolResult:

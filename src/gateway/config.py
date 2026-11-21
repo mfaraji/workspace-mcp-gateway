@@ -36,6 +36,9 @@ class Settings(BaseSettings):
 
     # Only Gmail messages carrying this label are visible to the Gmail tools.
     gmail_access_label: str = "agent-access"
+    # MCP Apps: serve interactive ``ui://`` widgets in chat. Off by default; tools then
+    # return plain results with no widget metadata. See docs/mcp-apps.md.
+    mcp_apps_enabled: bool = False
 
     token_encryption_key: str
 

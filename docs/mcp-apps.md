@@ -41,3 +41,9 @@ checklist you tick, an agenda, and so on. Clients without support still get the 
 Host notes (Open WebUI v0.13.3): theme is sent once, no CSS variables, default CSP blocks all network,
 height must be reported via `ui/notifications/size-changed` (the bridge does it), and the app must complete
 `ui/initialize` within 30 s.
+
+## Enabling
+
+Widgets are **off by default**. Set `MCP_APPS_ENABLED=true` to advertise `_meta.ui`, list/read `ui://`
+resources and keep the widget notes in tool descriptions. When off, every `/mcp` endpoint returns plain
+tool results and exposes no `ui://` resources.

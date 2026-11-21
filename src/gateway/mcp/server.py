@@ -84,6 +84,9 @@ class GatewayFastMCP(FastMCP):
         """Widgets are served only when a tool the caller may use references them."""
         import anyio
 
+        if not self.gateway_settings.mcp_apps_enabled:
+            return set()
+
         from gateway.access.policy import allowed_tools, tool_allowed, upstream_permits
         from gateway.db.engine import session_scope
         from gateway.identity.resolver import get_or_create_user
@@ -153,16 +156,17 @@ def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> Fast
     mcp.gateway_specs = registry._specs
     registry.register_all(mcp, settings, predicate=tool_filter)
 
-    from gateway.mcp.ui import register_ui
+    if settings.mcp_apps_enabled:
+        from gateway.mcp.ui import register_ui
 
-    register_ui(
-        mcp,
-        {
-            spec.ui_resource
-            for spec in registry._specs
-            if spec.ui_resource and mcp.gateway_filter(spec)
-        },
-    )
+        register_ui(
+            mcp,
+            {
+                spec.ui_resource
+                for spec in registry._specs
+                if spec.ui_resource and mcp.gateway_filter(spec)
+            },
+        )
     return mcp
 
 

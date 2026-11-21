@@ -18,6 +18,7 @@ before making design decisions. It defines V1 milestones and acceptance criteria
 Tools may render widgets in clients that support MCP Apps. Widgets live in `src/gateway/mcp/ui/` and are
 served as `ui://` resources gated by the caller's tool grants; see `docs/mcp-apps.md` before adding one.
 Widget actions go through the normal tool pipeline, so never add a widget-only write path.
+Widgets are off unless `MCP_APPS_ENABLED=true`; when off no endpoint advertises `_meta.ui` or `ui://` resources.
 
 ## Product MCP endpoint convention
 

@@ -6,11 +6,16 @@ from pathlib import Path
 
 from gateway.mcp.server import build_mcp, product_tool_filter
 from gateway.providers.google.gmail.common import with_text_fallback
-from tests.test_clerk_oauth import _settings
+from tests.test_clerk_oauth import _settings as _base_settings
 
 SRC = Path(__file__).parents[1] / "src" / "gateway" / "providers"
 GMAIL_UI = "ui://gmail/mail"
 TELEGRAM_UI = "ui://telegram/send"
+
+
+def _settings():
+    """Settings with MCP Apps widgets switched on (they are off by default)."""
+    return _base_settings().model_copy(update={"mcp_apps_enabled": True})
 
 
 def _tools(product):

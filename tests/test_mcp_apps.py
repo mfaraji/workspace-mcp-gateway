@@ -17,7 +17,7 @@ from gateway.mcp.context import _current_user
 from gateway.mcp.server import build_mcp, product_tool_filter
 from gateway.providers import registry
 from gateway.providers.base import RiskLevel, ToolSpec
-from tests.test_clerk_oauth import _settings
+from tests.test_clerk_oauth import _settings as _base_settings
 
 TASKS_URI = "ui://tasks/list"
 RENDERING = {
@@ -26,6 +26,11 @@ RENDERING = {
     "google_tasks_update_task",
     "google_tasks_complete_task",
 }
+
+
+def _settings():
+    """Settings with MCP Apps widgets switched on (they are off by default)."""
+    return _base_settings().model_copy(update={"mcp_apps_enabled": True})
 
 
 def _tools(product="tasks"):
@@ -188,3 +193,16 @@ def test_every_referenced_widget_is_registered():
     used = {spec.ui_resource for spec in reg._specs if spec.ui_resource}
     assert used <= set(ui.WIDGETS)
     assert used == set(ui.WIDGETS)  # no orphaned widget files
+
+
+def test_widgets_are_off_by_default_on_every_endpoint():
+    settings = _base_settings()
+    assert settings.mcp_apps_enabled is False
+    for product in ("tasks", "calendar", "gmail", "finance", "apex"):
+        mcp = build_mcp(settings, product_tool_filter(product))
+        tools = mcp._tool_manager.list_tools()
+        assert tools, product
+        for tool in tools:
+            assert not (tool.meta or {}).get("ui"), tool.name
+            assert "Shows an interactive" not in (tool.description or ""), tool.name
+        assert mcp._resource_manager.list_resources() == []
