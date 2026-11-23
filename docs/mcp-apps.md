@@ -26,8 +26,9 @@ checklist you tick, an agenda, and so on. Clients without support still get the 
 - `ToolSpec.ui_app_callable` sets `_meta.ui.autoApprove` on tools a widget may call. Clients ignore it unless
   their admin trusts this server (Open WebUI: `MCP_APP_TRUSTED_SERVERS=<connection id>`); without it the host
   shows its own "allow this tool call?" dialog on every widget action.
-- Reversible actions (tasks add/tick/rename) use `requires_confirmation=False`. Destructive ones keep the
-  gateway's confirmation token; the widget shows the preview inline (`app.confirm`) and repeats the call with
+- Reversible actions (tasks add/tick/rename) use `requires_confirmation=False` (low risk by default).
+  Destructive ones are medium risk and keep the gateway's confirmation token; users can change either
+  on `/access`, so a widget must handle `confirmation_required` for any write tool; the widget shows the preview inline (`app.confirm`) and repeats the call with
   the token (`app.callTool` does this automatically).
 
 ## Adding a widget

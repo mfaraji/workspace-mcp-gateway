@@ -1,6 +1,6 @@
 """DB-backed tests for the registry pipeline's audit guarantee.
 
-The pipeline must write exactly one ``tool_audit_log`` row per call, including
+The pipeline must record exactly one audit document per call, including
 for failures. Because the tool's own transaction rolls back on error, the
 error-path audit is committed in a separate transaction (see
 ``gateway.providers.registry._audit_error``). These tests exercise that against
@@ -15,11 +15,11 @@ from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 
+from gateway.audit.log import AuditRecord
 from gateway.config import get_settings
 from gateway.db.engine import check_database, session_scope
-from gateway.db.models import ToolAuditLog, User
+from gateway.db.models import User
 from gateway.identity.models import AuthenticatedUser
 from gateway.mcp import context as mcp_context
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
@@ -45,11 +45,11 @@ def _spec(name: str, handler) -> ToolSpec:
     )
 
 
-def _audit_rows(tool_name: str) -> list[ToolAuditLog]:
-    with session_scope() as session:
-        return list(
-            session.scalars(select(ToolAuditLog).where(ToolAuditLog.tool_name == tool_name))
-        )
+_RECORDED: list[AuditRecord] = []
+
+
+def _audit_rows(tool_name: str) -> list[AuditRecord]:
+    return [r for r in _RECORDED if r.tool_name == tool_name]
 
 
 def _run_as(external_user_id: str, spec: ToolSpec, args: dict):
@@ -59,16 +59,19 @@ def _run_as(external_user_id: str, spec: ToolSpec, args: dict):
     )
     try:
         # Keep these audit transaction tests independent of the grants migration.
-        with patch(
-            "gateway.access.policy.grant_for",
-            return_value=SimpleNamespace(tools=[spec.name], revoked=False),
+        with (
+            patch(
+                "gateway.access.policy.grant_for",
+                return_value=SimpleNamespace(tools=[spec.name], revoked=False),
+            ),
+            patch("gateway.providers.registry.record_audit", _RECORDED.append),
         ):
             return _run_pipeline(spec, get_settings(), args, None)
     finally:
         mcp_context._current_user.reset(token)
 
 
-def test_failed_call_persists_exactly_one_error_audit_row():
+def test_failed_call_records_exactly_one_error_audit():
     tool_name = f"test_fail_{uuid.uuid4().hex}"
 
     def handler(_model, _ctx: CallContext, _session):
@@ -89,7 +92,7 @@ def test_failed_call_persists_exactly_one_error_audit_row():
         assert session.get(User, row.user_id) is not None
 
 
-def test_invalid_input_persists_one_error_audit_row():
+def test_invalid_input_records_one_error_audit():
     tool_name = f"test_badinput_{uuid.uuid4().hex}"
 
     def handler(_model, _ctx, _session):  # should never run
@@ -104,7 +107,7 @@ def test_invalid_input_persists_one_error_audit_row():
     assert rows[0].error_code == "invalid_input"
 
 
-def test_successful_call_persists_one_ok_audit_row():
+def test_successful_call_records_one_ok_audit():
     tool_name = f"test_ok_{uuid.uuid4().hex}"
 
     def handler(model, _ctx, _session):

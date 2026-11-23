@@ -183,28 +183,6 @@ class OAuthLinkIntent(Base):
     user: Mapped[User] = relationship()
 
 
-class ToolAuditLog(Base):
-    """One row per tool invocation. Never stores secrets or raw content."""
-
-    __tablename__ = "tool_audit_log"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-    provider: Mapped[str] = mapped_column(String(64))
-    tool_name: Mapped[str] = mapped_column(String(128))
-    # How the caller authenticated: "header", "token", or "oauth".
-    auth_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    input_summary: Mapped[str | None] = mapped_column(String, nullable=True)
-    result_status: Mapped[str] = mapped_column(String(32))
-    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
-    )
-
-
 class TelegramDestination(Base, TimestampMixin):
     """A channel that one user's connected Telegram bot may publish to."""
 
@@ -269,6 +247,19 @@ class ClientGrant(Base, TimestampMixin):
     client_id: Mapped[str] = mapped_column(String(255))
     tools: Mapped[list[str]] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), default=list)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class UserToolSetting(Base, TimestampMixin):
+    """A user's risk-tier override for one mutating tool (applies to every OAuth client)."""
+
+    __tablename__ = "user_tool_settings"
+    __table_args__ = (UniqueConstraint("user_id", "tool_name", name="user_tool_setting"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    tool_name: Mapped[str] = mapped_column(String(128))
+    tier: Mapped[str] = mapped_column(String(16))
 
 
 class GmailAgentDraft(Base, TimestampMixin):

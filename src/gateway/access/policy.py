@@ -11,10 +11,10 @@ from sqlalchemy.orm import Session
 from gateway.config import Settings
 from gateway.connectors.base import AccessMode
 from gateway.connectors.registry import by_spec
-from gateway.db.models import ClientGrant
+from gateway.db.models import ClientGrant, UserToolSetting
 from gateway.identity.models import AuthenticatedUser
 from gateway.oauth.clerk import issuer_url
-from gateway.providers.base import ToolSpec
+from gateway.providers.base import RiskTier, ToolSpec
 
 
 def setup_url(settings: Settings, auth: AuthenticatedUser) -> str:
@@ -47,6 +47,41 @@ def allowed_tools(
         return set()
     grant = grant_for(session, user_id, settings, auth.oauth_client_id)
     return set(grant.tools) if grant and not grant.revoked else set()
+
+
+def tier_overrides(session: Session, user_id: UUID) -> dict[str, RiskTier]:
+    """The user's stored low/medium overrides, keyed by tool name (all OAuth clients)."""
+    rows = session.execute(
+        select(UserToolSetting.tool_name, UserToolSetting.tier).where(
+            UserToolSetting.user_id == user_id
+        )
+    )
+    out: dict[str, RiskTier] = {}
+    for name, tier in rows:
+        try:
+            out[name] = RiskTier(tier)
+        except ValueError:  # unknown stored value: ignore, fall back to the default
+            continue
+    return out
+
+
+def effective_tier(session: Session, user_id: UUID, spec: ToolSpec) -> RiskTier | None:
+    """The tier gating ``spec`` for this user: their override, else the tool default.
+
+    Read tools have no tier (``None``).
+    """
+    default = spec.default_tier
+    if default is None:
+        return None
+    row = session.scalar(
+        select(UserToolSetting.tier).where(
+            UserToolSetting.user_id == user_id, UserToolSetting.tool_name == spec.name
+        )
+    )
+    try:
+        return RiskTier(row) if row else default
+    except ValueError:
+        return default
 
 
 def is_shared(spec: ToolSpec) -> bool:

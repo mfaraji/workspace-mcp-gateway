@@ -64,9 +64,19 @@ def test_task_policy_one_click_for_reversible_actions_confirm_for_delete():
         "google_tasks_update_task",
         "google_tasks_complete_task",
     )
-    for name in one_click:
-        assert "confirmation_token" not in tools[name].parameters["properties"]
-    assert "confirmation_token" in tools["google_tasks_delete_task"].parameters["properties"]
+    # Every mutating tool accepts the token (a user may raise any tool to medium risk) ...
+    for name in (*one_click, "google_tasks_delete_task"):
+        assert "confirmation_token" in tools[name].parameters["properties"]
+    # ... but only delete asks for confirmation by default.
+    from gateway.providers.base import RiskTier
+    from gateway.providers.google.tasks import write as tasks_write
+    from gateway.providers.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    tasks_write.register(registry)
+    tiers = {s.name: s.default_tier for s in registry._specs}
+    assert all(tiers[name] is RiskTier.LOW for name in one_click)
+    assert tiers["google_tasks_delete_task"] is RiskTier.MEDIUM
 
 
 def test_trim_task_exposes_real_completion_state():

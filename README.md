@@ -150,7 +150,7 @@ exposes `system_get_current_time`, `google_drive_search_files`, and
 `google_tasks_*`; Apex exposes `system_get_current_time` plus `apex_*`
 (`apex_list_workspaces`, `apex_list_clients`, `apex_list_timesheets`,
 `apex_get_last_timesheet`, `apex_create_invoice`, `apex_create_timesheet`,
-`apex_update_timesheet`) against the
+`apex_update_timesheet`, `apex_update_invoice_status` to send an invoice or mark it paid) against the
 [Apex invoicing/timesheet REST API](../apex/docs/api/invoice-rest.openapi.yaml).
 There are no Apex API keys: sign in with Clerk OAuth and pass `workspace_id` (from
 `apex_list_workspaces`) on every workspace-scoped call.
@@ -362,8 +362,9 @@ Three front doors, all resolving to the same user and provider connections:
   `scripts/setup-nginx.sh`); bind the app to `127.0.0.1` and firewall its port so
   the only public route is through the proxy.
 - Tokens are encrypted at rest with Fernet (`TOKEN_ENCRYPTION_KEY`).
-- Tool calls are audited (`tool_audit_log`, incl. `auth_source`) without logging
-  tokens, file contents, full event descriptions, or recipe contents.
+- Tool calls are audited to Capella (`audit` scope, one document per call, expiring
+  after `AUDIT_RETENTION_DAYS`, default 30) without logging tokens, file contents,
+  full event descriptions, or recipe contents.
 - Capella credentials stay server-side; only `couchbases://` (TLS) is accepted,
   and recipe documents are isolated per user by key and an owner check.
 

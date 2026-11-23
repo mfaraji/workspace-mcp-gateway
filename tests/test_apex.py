@@ -10,7 +10,7 @@ import pytest
 from gateway.config import Settings
 from gateway.providers.apex import client as apex_client
 from gateway.providers.apex import read, write
-from gateway.providers.base import CallContext, RiskLevel
+from gateway.providers.base import CallContext, RiskLevel, RiskTier
 from gateway.providers.registry import ToolError, ToolRegistry
 
 
@@ -209,14 +209,12 @@ def test_update_timesheet_builds_partial_body(monkeypatch):
     }
 
 
-def test_mark_invoice_paid_posts_to_the_invoice_paid_route(monkeypatch):
-    captured = {}
-
+def _capture_apex(monkeypatch, captured, response):
     def fake_apex_request(
         settings, api_key, method, path, params=None, json=None, extra_headers=None
     ):
         captured.update(method=method, path=path, json=json)
-        return {"id": "inv1", "status": "PAID"}
+        return response
 
     monkeypatch.setattr(apex_client, "apex_request", fake_apex_request)
     monkeypatch.setattr(write, "get_settings", lambda: _settings())
@@ -224,22 +222,51 @@ def test_mark_invoice_paid_posts_to_the_invoice_paid_route(monkeypatch):
         write, "apex_credentials", lambda *a, **k: apex_client.ApexCredentials("tok")
     )
 
-    args = write.MarkInvoicePaidInput(
-        workspace_id="w1", invoice_id="inv/1", paid_date="2026-08-05", paid_amount=339
+
+def test_update_invoice_status_paid_patches_the_invoice(monkeypatch):
+    captured = {}
+    _capture_apex(monkeypatch, captured, {"id": "inv1", "status": "PAID"})
+
+    args = write.UpdateInvoiceStatusInput(
+        workspace_id="w1",
+        invoice_id="inv/1",
+        status="PAID",
+        paid_date="2026-08-05",
+        paid_amount=339,
     )
-    assert write.mark_invoice_paid(args, _ctx(), None)["status"] == "PAID"
+    assert write.update_invoice_status(args, _ctx(), None)["status"] == "PAID"
     assert captured == {
-        "method": "POST",
-        "path": "/api/invoices/inv%2F1/paid",
-        "json": {"paidDate": "2026-08-05", "paidAmount": 339},
+        "method": "PATCH",
+        "path": "/api/invoices/inv%2F1",
+        "json": {"status": "PAID", "paidDate": "2026-08-05", "paidAmount": 339},
     }
-    assert write.mark_invoice_paid(
-        write.MarkInvoicePaidInput(workspace_id="w1", invoice_id="inv1"), _ctx(), None
-    )
-    assert captured["json"] == {}
-    assert "full invoice total" in write._mark_paid_preview(
-        write.MarkInvoicePaidInput(workspace_id="w1", invoice_id="inv1")
-    )
+    paid = write.UpdateInvoiceStatusInput(workspace_id="w1", invoice_id="inv1", status="PAID")
+    write.update_invoice_status(paid, _ctx(), None)
+    assert captured["json"] == {"status": "PAID"}
+    assert "full invoice total" in write._invoice_status_preview(paid)
+
+
+def test_update_invoice_status_sent_emails_the_client(monkeypatch):
+    captured = {}
+    _capture_apex(monkeypatch, captured, {"id": "inv1", "status": "SENT"})
+
+    sent = write.UpdateInvoiceStatusInput(workspace_id="w1", invoice_id="inv1", status="SENT")
+    assert write.update_invoice_status(sent, _ctx(), None)["status"] == "SENT"
+    assert captured == {"method": "PATCH", "path": "/api/invoices/inv1", "json": {"status": "SENT"}}
+    preview = write._invoice_status_preview(sent)
+    assert "SEND" in preview and "email" in preview and "inv1" in preview
+
+
+def test_update_invoice_status_validation():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        write.UpdateInvoiceStatusInput(
+            workspace_id="w1", invoice_id="i", status="SENT", paid_amount=5
+        )
+    with pytest.raises(ValidationError):
+        write.UpdateInvoiceStatusInput(workspace_id="w1", invoice_id="i", status="VOID")
 
 
 def test_read_and_write_tools_registered_with_expected_risk():
@@ -254,11 +281,12 @@ def test_read_and_write_tools_registered_with_expected_risk():
         "apex_get_last_timesheet",
         "apex_create_invoice",
         "apex_create_timesheet",
-        "apex_mark_invoice_paid",
+        "apex_update_invoice_status",
         "apex_update_timesheet",
     }
-    assert specs["apex_mark_invoice_paid"].risk is RiskLevel.MUTATING
-    assert specs["apex_mark_invoice_paid"].required_capability == "invoicing"
+    assert specs["apex_update_invoice_status"].risk is RiskLevel.MUTATING
+    assert specs["apex_update_invoice_status"].required_capability == "invoicing"
+    assert specs["apex_update_invoice_status"].default_tier is RiskTier.MEDIUM
     assert specs["apex_list_clients"].risk is RiskLevel.READ
     assert specs["apex_create_invoice"].risk is RiskLevel.MUTATING
     assert specs["apex_update_timesheet"].risk is RiskLevel.MUTATING

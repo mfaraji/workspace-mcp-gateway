@@ -1,0 +1,18 @@
+/*
+ * Index for the tool-call audit collection. Run once in the Capella Query
+ * Workbench (or `uv run python scripts/capella_admin.py create-indexes`). Adjust
+ * the keyspace if CAPELLA_BUCKET / CAPELLA_AUDIT_SCOPE / CAPELLA_AUDIT_COLLECTION
+ * differ from the defaults.
+ *
+ * Retention: the gateway stamps every audit document with an expiry of
+ * AUDIT_RETENTION_DAYS (30), so Capella deletes it by itself. As a backstop,
+ * also set the collection's "Max TTL" to 30 days in the Capella UI (or:
+ * `maxTTL` on the `tool_calls` collection), so a document written without an
+ * expiry can never live forever. Do NOT create a primary index.
+ *
+ * Operator query example (a user's most recent calls):
+ *   SELECT d.tool_name, d.result_status, d.created_at FROM `personal`.`audit`.`tool_calls` d
+ *   WHERE d.owner_user_id = "<user uuid>" ORDER BY d.created_at DESC LIMIT 20;
+ */
+CREATE INDEX IF NOT EXISTS idx_audit_owner_created
+  ON `personal`.`audit`.`tool_calls`(owner_user_id, created_at DESC);

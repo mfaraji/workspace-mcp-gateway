@@ -166,7 +166,7 @@ Use Postgres.
 - `created_at`
 - `updated_at`
 
-### `tool_audit_log`
+### Tool audit log (Capella, 30-day expiry; formerly the Postgres `tool_audit_log` table)
 
 - `id`
 - `user_id`

@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
+from gateway.audit.log import shutdown_audit
 from gateway.config import get_settings
 from gateway.connectors.registry import BUNDLES, CONNECTORS
 from gateway.db.engine import check_database
@@ -64,7 +65,8 @@ def create_app() -> FastAPI:
                     await stack.enter_async_context(mcp.session_manager.run())
                 yield
         finally:
-            # Close the shared Capella connection if any tool opened it.
+            # Drain queued audit writes first: they use the shared Capella connection.
+            shutdown_audit()
             close_capella()
 
     app = FastAPI(title="workspace-mcp-gateway", lifespan=lifespan)
@@ -91,7 +93,12 @@ def create_app() -> FastAPI:
             "name": c.display_name,
             "access_mode": c.access_mode.value,
             "tools": [
-                {"name": t.name, "description": t.description, "risk": t.risk.value}
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "risk": t.risk.value,
+                    "default_tier": t.default_tier.value if t.default_tier else None,
+                }
                 for t in mcp_servers["all"].gateway_specs
                 if c.matches(t)
             ],

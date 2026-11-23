@@ -44,7 +44,7 @@ Single chokepoint: `src/gateway/identity/resolver.py`.
 2. **Native clients — per-user bearer tokens.** `Authorization: Bearer wmcp_…`, minted
    by the CLI, hashed at rest. Works from any path including the public proxy.
 
-Audit rows record which door was used (`tool_audit_log.auth_source`).
+Audit documents (Capella, 30-day expiry) record which door was used (`auth_source`).
 
 ---
 
@@ -234,10 +234,10 @@ curl -sS http://127.0.0.1:8000/mcp/ -H 'Accept: application/json, text/event-str
   -H 'Content-Type: application/json' -H "X-Gateway-Auth: SECRET" \
   -H 'X-Open-WebUI-User-Id: alice' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
-# Audit log (who/what/how authed)
-docker compose exec app uv run --no-sync python -c "from gateway.db.engine import session_scope; from sqlalchemy import text;\
-import itertools;\
-[print(r) for r in session_scope().__enter__().execute(text('select created_at,tool_name,auth_source,result_status,error_code from tool_audit_log order by created_at desc limit 10'))]"
+# Audit log (who/what/how authed) lives in Capella; query it in the Query Workbench:
+#   SELECT d.created_at, d.tool_name, d.auth_source, d.result_status, d.error_code
+#   FROM `personal`.`audit`.`tool_calls` d WHERE d.owner_user_id = "<user uuid>"
+#   ORDER BY d.created_at DESC LIMIT 10;
 
 # Open WebUI
 docker logs --tail=40 ai_open_webui

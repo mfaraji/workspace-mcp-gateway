@@ -50,7 +50,8 @@ def test_gmail_still_cannot_send_and_drafts_stay_unconfirmed():
         "google_gmail_update_draft",
         "google_gmail_delete_draft",
     ):
-        assert "confirmation_token" not in tools[name].parameters["properties"]
+        # Low risk by default; the parameter exists so a user can raise it to medium.
+        assert "confirmation_token" in tools[name].parameters["properties"]
 
 
 def test_html_only_messages_get_a_plain_text_body_for_the_reader():
@@ -69,8 +70,17 @@ def test_telegram_composer_wiring():
     send = tools["telegram_send_message"]
     assert send.meta["ui"]["autoApprove"] is True
     assert "resourceUri" not in send.meta["ui"]
-    # The gateway does not ask for a token; the widget's own "Send to ...?" step is the guard.
-    assert "confirmation_token" not in send.parameters["properties"]
+    # Low risk by default: the gateway does not ask; the widget's own "Send to ...?" step is the
+    # guard. The token parameter exists so a user can raise the tool to medium risk.
+    from gateway.providers.base import RiskTier
+    from gateway.providers.registry import ToolRegistry
+    from gateway.providers.telegram import write as telegram_write
+
+    registry = ToolRegistry()
+    telegram_write.register(registry, _settings())
+    spec = next(s for s in registry._specs if s.name == "telegram_send_message")
+    assert spec.default_tier is RiskTier.LOW
+    assert "confirmation_token" in send.parameters["properties"]
 
 
 def test_telegram_widget_error_texts_match_the_gateway():

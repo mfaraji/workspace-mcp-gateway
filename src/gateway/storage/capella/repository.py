@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import timedelta
 from typing import Any
 
 from gateway.storage.capella import errors
@@ -91,13 +92,28 @@ class OwnedDocumentRepository:
             raise errors.DocumentNotFound()
         return doc, int(result.cas)
 
-    def insert(self, owner: uuid.UUID, doc_id: uuid.UUID | str, doc: dict[str, Any]) -> int:
-        """Create a document (fails with ``DocumentAlreadyExists``); return its CAS."""
+    def insert(
+        self,
+        owner: uuid.UUID,
+        doc_id: uuid.UUID | str,
+        doc: dict[str, Any],
+        *,
+        expiry: timedelta | None = None,
+    ) -> int:
+        """Create a document (fails with ``DocumentAlreadyExists``); return its CAS.
+
+        With ``expiry`` the server deletes the document after that long (retention).
+        """
         self._assert_owned(owner, doc_id, doc)
         key = self.key(owner, doc_id)
         collection = self._collection()
         try:
-            result = collection.insert(key, doc)
+            if expiry is None:
+                result = collection.insert(key, doc)
+            else:
+                from couchbase.options import InsertOptions
+
+                result = collection.insert(key, doc, InsertOptions(expiry=expiry))
         except Exception as exc:
             raise translate_exception(exc, write=True) from None
         return int(result.cas)

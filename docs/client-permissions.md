@@ -67,6 +67,20 @@ denies all connector tools. New tools require explicit approval. Changes apply
 to subsequent requests, including existing sessions; already running calls may
 finish. Write access retains existing confirmation requirements.
 
+### Risk level (low / medium)
+
+Each write tool has a risk level the user can change on `/access`, independent of
+which client is connected (it is per user, not per grant). **Low** tools run
+directly. **Medium** tools return `confirmation_required` with a plain-language
+`question`; the assistant must put that question to the user in chat and only
+after an explicit yes call the tool again with the `confirmation_token` (valid for
+`CONFIRMATION_TOKEN_TTL_SECONDS`, 600). Defaults: tools that are recoverable
+(tasks, drafts, recipe saves) are low; deletes, calendar changes and Apex invoice
+actions (creating, sending, marking paid) are medium. Read tools have no level.
+
+PUT /api/tool-risk accepts `{ "tool": "google_tasks_create_task", "tier": "medium" }`
+(CSRF required); GET /api/access returns the user's overrides under `risk`.
+
 GET /api/access returns the connector/tool catalog, existing grants, active setup
 client, and CSRF token to an authenticated browser. PUT /api/access/{client_id}
 accepts `{ "tools": ["google_calendar_list_events"] }`; DELETE revokes it.

@@ -26,6 +26,7 @@ from gateway.storage.capella.client import CapellaClient
 from gateway.storage.capella.repository import OwnedDocumentRepository
 
 INDEX_NAME = "idx_recipes_owner_updated"
+AUDIT_INDEX_NAME = "idx_audit_owner_created"
 EXPORT_BATCH = 500
 
 
@@ -61,6 +62,19 @@ def cmd_create_indexes(client: CapellaClient, _args: argparse.Namespace) -> int:
     )
     client.query(statement, {})
     print(f"index {INDEX_NAME} ensured on {repo.keyspace}")
+    settings = client.settings
+    audit = OwnedDocumentRepository(
+        client,
+        scope=settings.capella_audit_scope,
+        collection=settings.capella_audit_collection,
+        doc_type="audit",
+    )
+    client.query(
+        f"CREATE INDEX IF NOT EXISTS {AUDIT_INDEX_NAME} "
+        f"ON {audit.keyspace}(owner_user_id, created_at DESC)",
+        {},
+    )
+    print(f"index {AUDIT_INDEX_NAME} ensured on {audit.keyspace}")
     return 0
 
 
@@ -104,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("check", help="verify connection, collection access and index")
-    sub.add_parser("create-indexes", help="create the recipes index (idempotent)")
+    sub.add_parser("create-indexes", help="create the recipes and audit indexes (idempotent)")
     export = sub.add_parser("export", help="export recipes as JSON lines")
     export.add_argument("--out", required=True, help="output .jsonl path")
     export.add_argument("--owner", help="only this gateway user UUID")

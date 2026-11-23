@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     capella_bucket: str = "personal"
     capella_recipes_scope: str = "recipes"
     capella_recipes_collection: str = "recipes"
+    # Tool-call audit log (one document per call, expiring after ``audit_retention_days``).
+    capella_audit_scope: str = "audit"
+    capella_audit_collection: str = "tool_calls"
+    audit_retention_days: int = 30
+    # How long a human has to answer an in-chat confirmation question.
+    confirmation_token_ttl_seconds: int = 600
     capella_connect_timeout_seconds: float = 10.0
     capella_kv_timeout_seconds: float = 5.0
     capella_query_timeout_seconds: float = 15.0

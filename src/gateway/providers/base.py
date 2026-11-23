@@ -24,6 +24,13 @@ class RiskLevel(StrEnum):
     MUTATING = "mutating"
 
 
+class RiskTier(StrEnum):
+    """How a mutating tool is gated. ``LOW`` runs directly; ``MEDIUM`` asks the user in chat."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+
+
 @dataclass(frozen=True)
 class CallContext:
     """Resolved per-call context handed to every tool handler."""
@@ -74,6 +81,13 @@ class ToolSpec:
     # Upstream capability a workspace must have for the user to be permitted this tool
     # (Apex workspace capability, e.g. "invoicing"). None = no per-workspace requirement.
     required_capability: str | None = None
+
+    @property
+    def default_tier(self) -> RiskTier | None:
+        """The built-in tier of a mutating tool (``None`` for read tools, which are not tunable)."""
+        if self.risk is not RiskLevel.MUTATING:
+            return None
+        return RiskTier.LOW if self.requires_confirmation is False else RiskTier.MEDIUM
 
     @property
     def tool_meta(self) -> dict | None:

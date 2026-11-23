@@ -200,16 +200,14 @@ def test_expired_browser_session_rejected(monkeypatch):
 
 def test_direct_write_denial_precedes_confirmation_and_is_audited(store, monkeypatch):
     from pydantic import BaseModel
-    from sqlalchemy import select
 
-    from gateway.db.models import ToolAuditLog
     from gateway.providers import registry
     from gateway.providers.base import RiskLevel, ToolSpec
 
     scope, _, _ = store
-    with scope() as session:
-        ToolAuditLog.__table__.create(session.bind)
     monkeypatch.setattr(registry, "session_scope", scope)
+    audits = []
+    monkeypatch.setattr(registry, "record_audit", audits.append)
     called = []
     spec = ToolSpec(
         name="google_calendar_delete_event",
@@ -227,10 +225,8 @@ def test_direct_write_denial_precedes_confirmation_and_is_audited(store, monkeyp
     finally:
         _current_user.reset(token)
     assert called == []
-    with scope() as session:
-        rows = list(session.scalars(select(ToolAuditLog)))
-        assert len(rows) == 1
-        assert rows[0].error_code == "access_setup_required"
+    assert len(audits) == 1
+    assert audits[0].error_code == "access_setup_required"
 
 
 @pytest.mark.parametrize(

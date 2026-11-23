@@ -8,6 +8,7 @@ import hmac
 import secrets
 import time
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlencode
 
 import httpx
@@ -17,11 +18,17 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from gateway.access.policy import grant_for, permitted_catalog, personal_tool_names
+from gateway.access.policy import (
+    grant_for,
+    is_shared,
+    permitted_catalog,
+    personal_tool_names,
+    tier_overrides,
+)
 from gateway.config import get_settings
 from gateway.connectors.registry import connector_slugs_for
 from gateway.db.engine import session_scope
-from gateway.db.models import ClientGrant
+from gateway.db.models import ClientGrant, User, UserToolSetting
 from gateway.identity.models import AuthenticatedUser, IdentityError
 from gateway.identity.resolver import _resolve_oauth, get_or_create_user
 from gateway.oauth.clerk import authorization_endpoint, issuer_url, token_endpoint
@@ -264,10 +271,16 @@ def catalog(request: Request):
             for g in grants
             if not target or g.client_id == target["client"]
         ]
+        risk = {
+            name: tier.value
+            for name, tier in tier_overrides(session, user.id).items()
+            if name in names
+        }
     return {
         "csrf": request.session["csrf"],
         "target": target["client"] if target else None,
         "grants": entries,
+        "risk": risk,
         "connectors": visible,
         "scoped": bool(target and resource_connector(target.get("resource"))),
     }
@@ -304,6 +317,41 @@ def save(client_id: str, body: GrantBody, request: Request):
         previous = set(grant.tools or []) if not grant.revoked else set()
         grant.tools, grant.revoked = sorted((previous - known) | set(body.tools)), False
     return {"saved": True}
+
+
+class TierBody(BaseModel):
+    tool: str = Field(max_length=128)
+    tier: Literal["low", "medium"]
+
+
+@router.put("/api/tool-risk")
+def set_tool_risk(body: TierBody, request: Request):
+    """Set how one mutating tool is gated for this user (all OAuth clients).
+
+    ``low`` runs directly; ``medium`` makes the model ask the user in chat first.
+    Setting a tool back to its default removes the override.
+    """
+    auth = owner(request)
+    csrf(request)
+    spec = request.app.state.access_specs.get(body.tool)
+    if spec is None or spec.default_tier is None or is_shared(spec):
+        raise HTTPException(400, "Unknown tool")
+    with session_scope() as session:
+        user = get_or_create_user(session, auth)
+        session.scalar(select(User).where(User.id == user.id).with_for_update())
+        row = session.scalar(
+            select(UserToolSetting).where(
+                UserToolSetting.user_id == user.id, UserToolSetting.tool_name == body.tool
+            )
+        )
+        if body.tier == spec.default_tier.value:
+            if row is not None:
+                session.delete(row)
+        elif row is None:
+            session.add(UserToolSetting(user_id=user.id, tool_name=body.tool, tier=body.tier))
+        else:
+            row.tier = body.tier
+    return {"saved": True, "tool": body.tool, "tier": body.tier}
 
 
 @router.delete("/api/access/{client_id}")

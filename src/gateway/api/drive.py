@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from gateway.access.routes import request_user
-from gateway.audit.log import write_audit
+from gateway.audit.log import AuditRecord, record_audit
 from gateway.config import get_settings
 from gateway.db.engine import session_scope
 from gateway.identity.models import AuthenticatedUser, IdentityError
@@ -61,22 +61,19 @@ def _audit(
     error_code: str | None,
     auth_source: str,
 ) -> None:
-    """Best-effort route audit, isolated from the provider transaction."""
-    try:
-        with session_scope() as session:
-            write_audit(
-                session,
-                user_id=user_id,
-                provider="google",
-                tool_name=tool_name,
-                request_id=request_id,
-                input_summary=input_summary,
-                result_status=result_status,
-                error_code=error_code,
-                auth_source=auth_source,
-            )
-    except SQLAlchemyError:
-        pass
+    """Best-effort route audit (queued to Capella; never raises)."""
+    record_audit(
+        AuditRecord(
+            user_id=user_id,
+            provider="google",
+            tool_name=tool_name,
+            request_id=request_id,
+            input_summary=input_summary,
+            result_status=result_status,
+            error_code=error_code,
+            auth_source=auth_source,
+        )
+    )
 
 
 def _error_response(

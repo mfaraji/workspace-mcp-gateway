@@ -41,6 +41,7 @@ class FakeCollection:
         self.docs: dict[str, tuple[dict[str, Any], int]] = {}
         self._cas = itertools.count(1000)
         self.fail_with: Exception | None = None
+        self.insert_options: dict[str, tuple] = {}
 
     def _maybe_fail(self) -> None:
         if self.fail_with is not None:
@@ -53,8 +54,9 @@ class FakeCollection:
         value, cas = self.docs[key]
         return _GetResult(dict(value), cas)
 
-    def insert(self, key: str, value: dict[str, Any], *_opts) -> _MutationResult:
+    def insert(self, key: str, value: dict[str, Any], *opts) -> _MutationResult:
         self._maybe_fail()
+        self.insert_options[key] = opts
         if key in self.docs:
             raise cbx.DocumentExistsException()
         cas = next(self._cas)

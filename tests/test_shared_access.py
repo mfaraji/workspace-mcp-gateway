@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from gateway.access import policy, routes
 from gateway.connectors.base import AccessMode
 from gateway.connectors.registry import CONNECTORS, by_slug
-from gateway.db.models import ClientGrant, ToolAuditLog
+from gateway.db.models import ClientGrant
 from gateway.mcp.context import _current_user
 from gateway.mcp.server import build_mcp, product_tool_filter
 from gateway.providers.base import RiskLevel
@@ -117,14 +117,12 @@ def test_shared_grant_management_rejects_selections(store):  # noqa: F811
 
 
 def test_shared_execution_is_audited(store, monkeypatch):  # noqa: F811
-    from sqlalchemy import select
-
     from gateway.providers import registry
 
     scope, _, _ = store
-    with scope() as session:
-        ToolAuditLog.__table__.create(session.bind)
     monkeypatch.setattr(registry, "session_scope", scope)
+    audits = []
+    monkeypatch.setattr(registry, "record_audit", audits.append)
     spec = next(
         s for s in build_mcp(_settings()).gateway_specs if s.name == "finance_list_currencies"
     )
@@ -134,5 +132,4 @@ def test_shared_execution_is_audited(store, monkeypatch):  # noqa: F811
         assert registry._run_pipeline(spec, _settings(), {}, None) == {"currencies": ["USD", "IRR"]}
     finally:
         _current_user.reset(token)
-    with scope() as session:
-        assert len(list(session.scalars(select(ToolAuditLog)))) == 1
+    assert len(audits) == 1 and audits[0].result_status == "ok"

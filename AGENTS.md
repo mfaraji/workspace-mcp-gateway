@@ -88,7 +88,7 @@ src/gateway/
   mcp/              FastMCP server build + IdentityMiddleware / current-user ContextVar
   oauth/            Google OAuth flow (scopes, Flow, signed state) + routes
   policy/           confirmation-token policy seam (confirm.check)
-  audit/            audit-log writer + input redaction (summarize_input)
+  audit/            Capella audit writer (30-day expiry) + input redaction (summarize_input)
   providers/        provider-agnostic ToolSpec/registry + provider modules
     google/
       client.py         authorized Google API service builders
@@ -132,19 +132,28 @@ Run the server locally: `uv run uvicorn gateway.app:create_app --factory --reloa
   derive from that list.
 - **One uniform pipeline** (`providers/registry.py`) wraps every call:
   resolve identity → validate input → policy/confirm → execute handler →
-  write audit. This is the single chokepoint for identity enforcement and audit.
-- **Risk levels.** `RiskLevel.READ` executes directly. `RiskLevel.MUTATING` flows
-  through the confirmation gate: the first call returns a preview + short-lived
-  signed `confirmation_token`; the model must re-invoke with that token. Provide
-  a `preview_builder` on the spec for a human-readable confirmation message.
+  queue audit. This is the single chokepoint for identity enforcement and audit.
+- **Risk levels.** `RiskLevel.READ` executes directly. `RiskLevel.MUTATING` tools
+  have a tier (`RiskTier`): `LOW` executes directly, `MEDIUM` asks the user in chat.
+  `ToolSpec.default_tier` is MEDIUM unless `requires_confirmation=False`; each user may
+  override it per tool (`user_tool_settings`, set on `/access`, applies to every
+  OAuth client; `access.policy.effective_tier`). A MEDIUM call returns
+  `confirmation_required` with a `question`, `instructions` and a signed
+  `confirmation_token` (`CONFIRMATION_TOKEN_TTL_SECONDS`, 600): the model must ask the
+  user, and only after an explicit yes re-invoke with that token. Every mutating tool
+  therefore accepts `confirmation_token`. Provide a `preview_builder` on the spec for a
+  human-readable question. Outward-facing actions (sending email, etc.) must default to
+  MEDIUM.
 - **Audit must never leak secrets.** `audit/log.py` summarizes input from a
   per-tool whitelist of safe scalar fields; free-text (queries, summaries,
   descriptions) and tokens are dropped. Add a `_SAFE_FIELDS` entry for each new
   tool — default is "record nothing".
-- **One audit row per call**, including failures. Success/needs-confirmation
-  audits commit with the call; failures audit in a separate transaction because
-  the tool's own transaction rolls back (`_audit_error`). The user is resolved in
-  its own committed transaction first so the audit FK stays valid.
+- **One audit document per call**, including failures, written to Capella (scope
+  `CAPELLA_AUDIT_SCOPE`, collection `CAPELLA_AUDIT_COLLECTION`) with a per-document
+  expiry of `AUDIT_RETENTION_DAYS` (30). Records are queued after the call's outcome is
+  known and written best-effort on a background thread (`audit.log.record_audit`): an
+  audit failure or an unconfigured Capella never fails a tool call (Capella unset =
+  audit is disabled with one warning). There is no Postgres audit table.
 - **Tokens are encrypted at rest** (Fernet) and refreshed under a row lock.
   Open WebUI never receives Google tokens.
 - **Document storage (Capella).** Storage-backed providers use

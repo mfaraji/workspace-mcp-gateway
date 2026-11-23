@@ -16,4 +16,4 @@
 .account-sharing{flex-basis:100%;order:3}
 .sharing-panel{flex-basis:100%;order:4;display:grid;gap:8px;padding-top:8px;border-top:1px solid var(--line)}
 .label-list{display:grid;gap:4px;max-height:160px;overflow:auto;padding-inline-start:22px}
-.label-choice,.mode-choice{font-size:12px}
+.label-choice,.mode-choice{font-size:12px}.tier{margin-inline-start:auto;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);padding:2px 6px;font-size:10px}

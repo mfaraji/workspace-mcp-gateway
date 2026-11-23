@@ -1,18 +1,32 @@
 """Audit logging for tool invocations.
 
-Every tool call writes exactly one ``tool_audit_log`` row (success or failure)
-via the registry wrapper. Input summaries are built from a per-tool whitelist so
-that secrets, file contents, free-text queries, and full event descriptions are
-never persisted.
+Every tool call writes exactly one audit document (success or failure) to Capella
+via the registry wrapper. Each document carries an expiry (``AUDIT_RETENTION_DAYS``,
+30 by default), so retention is enforced by the database rather than a cleanup job.
+Input summaries are built from a per-tool whitelist so that secrets, file contents,
+free-text queries, and full event descriptions are never persisted.
+
+Writes are best-effort and happen on a background thread: an audit failure (or an
+unconfigured/unreachable Capella) must never fail or slow down the tool call itself.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, dataclass
+from datetime import timedelta
 
-from sqlalchemy.orm import Session
+from gateway.config import get_settings
+from gateway.storage.capella.client import get_client
+from gateway.storage.capella.models import utc_now_iso
+from gateway.storage.capella.repository import OwnedDocumentRepository
 
-from gateway.db.models import ToolAuditLog
+log = logging.getLogger(__name__)
+
+DOC_TYPE = "audit"
+SCHEMA_VERSION = 1
 
 # Fields safe to record per tool. Anything not listed is dropped from the summary.
 _SAFE_FIELDS: dict[str, set[str]] = {
@@ -24,7 +38,7 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "apex_wealth_list_workspaces": set(),
     "apex_create_invoice": {"workspace_id"},
     "apex_create_timesheet": {"workspace_id"},
-    "apex_mark_invoice_paid": {"workspace_id", "invoice_id", "paid_date"},
+    "apex_update_invoice_status": {"workspace_id", "invoice_id", "status", "paid_date"},
     "apex_update_timesheet": {"workspace_id"},
     "apex_list_clients": {"workspace_id"},
     "apex_list_timesheets": {"workspace_id"},
@@ -126,28 +140,96 @@ def summarize_input(tool_name: str, args: dict) -> str:
     return ", ".join(parts)
 
 
-def write_audit(
-    session: Session,
-    *,
-    user_id: uuid.UUID | None,
-    provider: str,
-    tool_name: str,
-    request_id: str | None,
-    input_summary: str,
-    result_status: str,
-    error_code: str | None = None,
-    auth_source: str | None = None,
-) -> None:
-    """Persist one audit row."""
-    session.add(
-        ToolAuditLog(
-            user_id=user_id,
-            provider=provider,
-            tool_name=tool_name,
-            auth_source=auth_source,
-            request_id=request_id,
-            input_summary=input_summary,
-            result_status=result_status,
-            error_code=error_code,
-        )
+@dataclass
+class AuditRecord:
+    """One tool call's outcome. Holds only redacted, non-secret fields."""
+
+    user_id: uuid.UUID
+    provider: str
+    tool_name: str
+    result_status: str  # ok | needs_confirmation | error
+    request_id: str | None = None
+    input_summary: str = ""
+    error_code: str | None = None
+    auth_source: str | None = None
+    # Effective tier for mutating tools ("low" / "medium"); None for read tools.
+    risk_tier: str | None = None
+    duration_ms: int | None = None
+    oauth_client_id: str | None = None
+    chat_id: str | None = None
+
+
+_executor: ThreadPoolExecutor | None = None
+_warned_unconfigured = False
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="audit")
+    return _executor
+
+
+def build_document(record: AuditRecord, doc_id: uuid.UUID) -> dict:
+    """The stored document: owner-scoped, versioned, no secrets."""
+    body = {k: v for k, v in asdict(record).items() if k != "user_id" and v is not None}
+    return {
+        "id": str(doc_id),
+        "owner_user_id": str(record.user_id),
+        "schema_version": SCHEMA_VERSION,
+        "type": DOC_TYPE,
+        "created_at": utc_now_iso(),
+        **body,
+    }
+
+
+def _write(record: AuditRecord) -> None:
+    settings = get_settings()
+    repo = OwnedDocumentRepository(
+        get_client(settings),
+        scope=settings.capella_audit_scope,
+        collection=settings.capella_audit_collection,
+        doc_type=DOC_TYPE,
     )
+    doc_id = uuid.uuid4()
+    repo.insert(
+        record.user_id,
+        doc_id,
+        build_document(record, doc_id),
+        expiry=timedelta(days=settings.audit_retention_days),
+    )
+
+
+def _safe_write(record: AuditRecord) -> None:
+    try:
+        _write(record)
+    except Exception as exc:  # audit must never raise into a tool call
+        log.warning("audit write failed (%s)", type(exc).__name__)
+
+
+def record_audit(record: AuditRecord) -> None:
+    """Queue one audit document for Capella; never raises, never blocks the caller."""
+    global _warned_unconfigured
+    if not get_settings().capella_configured:
+        if not _warned_unconfigured:
+            _warned_unconfigured = True
+            log.warning("Capella is not configured: tool-call audit is disabled")
+        return
+    try:
+        _get_executor().submit(_safe_write, record)
+    except RuntimeError:  # executor already shut down
+        pass
+
+
+def flush_audit() -> None:
+    """Wait for queued audit writes (shutdown and tests)."""
+    if _executor is not None:
+        _executor.submit(lambda: None).result()
+
+
+def shutdown_audit() -> None:
+    """Drain queued writes and stop the worker; call before closing the Capella client."""
+    global _executor
+    executor, _executor = _executor, None
+    if executor is not None:
+        executor.shutdown(wait=True)

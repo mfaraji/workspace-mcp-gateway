@@ -3,7 +3,7 @@
 The `recipes` connector is a personal recipe book for each gateway user. It is
 the first consumer of the gateway's reusable Couchbase Capella document storage
 (`src/gateway/storage/capella`). It runs inside the existing gateway process:
-same identity middleware, policy/confirmation layer, and PostgreSQL audit log.
+same identity middleware, policy/confirmation layer, and Capella audit log.
 It has no separate deployment or OAuth flow.
 
 ## Endpoints and tools
@@ -106,8 +106,9 @@ normalized text. It doesn't use Full Text Search, embeddings or a vector store.
 ## Partial-failure behaviour (Capella + PostgreSQL)
 
 Capella and PostgreSQL don't share a transaction. The pipeline writes to
-Capella inside the handler, then commits the audit row. If that commit fails,
-the recipe change is already stored, but the client gets `internal_error`.
+Capella inside the handler, then commits the Postgres transaction (grants,
+user rows). If that commit fails, the recipe change is already stored, but the
+client gets `internal_error`.
 Retries are safe:
 
 - **`recipes_save`:** pass an `idempotency_key`. The recipe id is derived from
@@ -224,3 +225,28 @@ Each line is `{"key": "...", "doc": {...}}`. The file holds full recipe
 contents, so protect it like the PostgreSQL dumps. To restore, use Capella's
 *Import* (JSON Lines, key from the `key` field) or `cbimport json --format lines`
 into the same keyspace.
+
+
+## Tool-call audit log
+
+Every tool call also writes one audit document to Capella: scope
+`CAPELLA_AUDIT_SCOPE` (default `audit`), collection `CAPELLA_AUDIT_COLLECTION`
+(`tool_calls`), key `user::<owner uuid>::audit::<uuid>`. Fields: tool, provider,
+result status, error code, risk tier, duration, OAuth client, chat id, auth source
+and the redacted input summary (`audit/log.py:_SAFE_FIELDS`; never free text,
+tokens or file contents).
+
+**Retention (30 days):** the gateway sets a per-document expiry of
+`AUDIT_RETENTION_DAYS` (default 30), so Capella removes old records itself; there
+is no cleanup job. Operator setup, once:
+
+1. Create the `audit` scope and `tool_calls` collection in the bucket (the
+   gateway never provisions anything) and grant the database user read/write on
+   them (the Free Tier user above is scoped to `recipes` only).
+2. Set the collection's Max TTL to 30 days as a backstop.
+3. `uv run python scripts/capella_admin.py create-indexes` (or run
+   `scripts/capella/audit_indexes.sqlpp`).
+
+Writes are queued and best-effort: Capella being down, paused, or unconfigured
+never fails a tool call; those records are lost (a warning is logged). Without
+`CAPELLA_*` settings audit is disabled.

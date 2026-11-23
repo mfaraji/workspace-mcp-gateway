@@ -14,9 +14,8 @@ from types import SimpleNamespace
 import pytest
 from couchbase import exceptions as cbx
 
-from gateway.audit.log import summarize_input
+from gateway.audit.log import AuditRecord, summarize_input
 from gateway.connectors.registry import by_slug, by_spec
-from gateway.db.models import ToolAuditLog
 from gateway.identity.models import AuthenticatedUser
 from gateway.mcp import context as mcp_context
 from gateway.providers import registry as registry_mod
@@ -63,11 +62,10 @@ GHORMEH = {
 
 
 class _FakeSession:
-    def __init__(self, sink: list) -> None:
-        self.sink = sink
+    """Stands in for the DB session; the risk-tier lookup finds no user override."""
 
-    def add(self, obj) -> None:
-        self.sink.append(obj)
+    def scalar(self, *_args, **_kwargs):
+        return None
 
 
 @pytest.fixture
@@ -78,17 +76,18 @@ def env(monkeypatch):
     client_mod.set_client(client)
     monkeypatch.setattr(common, "get_settings", lambda: settings)
 
-    audits: list[ToolAuditLog] = []
+    audits: list[AuditRecord] = []
     users: dict[str, uuid.UUID] = {}
 
     @contextmanager
     def session_scope():
-        yield _FakeSession(audits)
+        yield _FakeSession()
 
     def get_or_create_user(_session, auth):
         return SimpleNamespace(id=users.setdefault(auth.external_user_id, uuid.uuid4()))
 
     monkeypatch.setattr(registry_mod, "session_scope", session_scope)
+    monkeypatch.setattr(registry_mod, "record_audit", audits.append)
     monkeypatch.setattr(registry_mod, "get_or_create_user", get_or_create_user)
 
     registry = ToolRegistry()

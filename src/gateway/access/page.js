@@ -18,6 +18,30 @@ function summary() {
   const writes = inputs.length - reads;
   document.querySelector('#summary').textContent = `${reads} read ${reads === 1 ? 'tool' : 'tools'} · ${writes} write ${writes === 1 ? 'tool' : 'tools'} selected`;
 }
+function tierSelect(tool) {
+  const select = document.createElement('select'); select.className = 'tier';
+  select.setAttribute('aria-label', `Risk level for ${tool.name}`);
+  select.title = 'Low runs directly. Medium makes the assistant ask you in chat before it acts.';
+  for (const [value, text] of [['low', 'Low risk'], ['medium', 'Medium: ask me']]) {
+    const option = document.createElement('option'); option.value = value; option.textContent = text; select.append(option);
+  }
+  select.value = (data.risk || {})[tool.name] || tool.default_tier;
+  select.onclick = e => e.stopPropagation();
+  select.onchange = async () => {
+    select.disabled = true;
+    try {
+      const response = await fetch('/api/tool-risk', {
+        method: 'PUT', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': data.csrf},
+        body: JSON.stringify({tool: tool.name, tier: select.value})
+      });
+      if (!response.ok) throw Error();
+      data.risk = {...(data.risk || {}), [tool.name]: select.value};
+      message(`${tool.name} is now ${select.value} risk.`);
+    } catch { message('Unable to change the risk level. Refresh and try again.', true); }
+    finally { select.disabled = false; }
+  };
+  return select;
+}
 function setBusy(value) {
   busy = value;
   const personal=data?.connectors.some(c=>c.access_mode!=='authenticated_shared');
@@ -64,7 +88,9 @@ function render() {
       risk.textContent = tool.risk === 'read' ? 'Read' : 'Write';
       const description = document.createElement('span'); description.className = 'tool-description'; description.textContent = tool.description;
       const code = document.createElement('span'); code.className = 'tool-code'; code.textContent = tool.name;
-      top.append(title, risk); copy.append(top, description, code); label.append(input, copy); group.append(label);
+      top.append(title, risk);
+      if (tool.default_tier) top.append(tierSelect(tool));
+      copy.append(top, description, code); label.append(input, copy); group.append(label);
     }
     root.append(group);
   }

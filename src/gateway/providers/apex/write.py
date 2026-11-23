@@ -1,4 +1,4 @@
-"""Apex mutating tools: create invoices, mark them paid, and update timesheets."""
+"""Apex mutating tools: create invoices, send / mark them paid, and update timesheets."""
 
 from __future__ import annotations
 
@@ -119,15 +119,28 @@ class UpdateTimesheetInput(BaseModel):
     )
 
 
-class MarkInvoicePaidInput(BaseModel):
+class UpdateInvoiceStatusInput(BaseModel):
     workspace_id: str = Field(..., description=WORKSPACE_ID_DESC)
-    invoice_id: str = Field(..., description="Invoice UUID to mark as paid.")
+    invoice_id: str = Field(..., description="Invoice UUID whose status to change.")
+    status: Literal["SENT", "PAID"] = Field(
+        ...,
+        description=(
+            "Target status. SENT emails the invoice to the client; PAID records a payment."
+        ),
+    )
     paid_date: str | None = Field(
-        None, description="Date the payment was received, YYYY-MM-DD. Defaults to today."
+        None,
+        description="PAID only: date the payment was received, YYYY-MM-DD. Defaults to today.",
     )
     paid_amount: float | None = Field(
-        None, ge=0, description="Amount received. Defaults to the invoice total."
+        None, ge=0, description="PAID only: amount received. Defaults to the invoice total."
     )
+
+    @model_validator(mode="after")
+    def _payment_fields_only_when_paid(self) -> UpdateInvoiceStatusInput:
+        if self.status != "PAID" and (self.paid_date is not None or self.paid_amount is not None):
+            raise ValueError("paid_date and paid_amount can only be set when status is PAID")
+        return self
 
 
 def create_invoice(args: CreateInvoiceInput, ctx: CallContext, session: Session) -> Any:
@@ -205,8 +218,10 @@ def create_timesheet(args: CreateTimesheetInput, ctx: CallContext, session: Sess
     return apex_call(settings, creds, "POST", "/api/invoices", json=body)
 
 
-def mark_invoice_paid(args: MarkInvoicePaidInput, ctx: CallContext, session: Session) -> Any:
-    body: dict[str, Any] = {}
+def update_invoice_status(
+    args: UpdateInvoiceStatusInput, ctx: CallContext, session: Session
+) -> Any:
+    body: dict[str, Any] = {"status": args.status}
     if args.paid_date is not None:
         body["paidDate"] = args.paid_date
     if args.paid_amount is not None:
@@ -220,7 +235,7 @@ def mark_invoice_paid(args: MarkInvoicePaidInput, ctx: CallContext, session: Ses
         capability="invoicing",
     )
     return apex_call(
-        settings, creds, "POST", f"/api/invoices/{quote(args.invoice_id, safe='')}/paid", json=body
+        settings, creds, "PATCH", f"/api/invoices/{quote(args.invoice_id, safe='')}", json=body
     )
 
 
@@ -274,7 +289,13 @@ def _create_timesheet_preview(args: CreateTimesheetInput) -> str:
     )
 
 
-def _mark_paid_preview(args: MarkInvoicePaidInput) -> str:
+def _invoice_status_preview(args: UpdateInvoiceStatusInput) -> str:
+    if args.status == "SENT":
+        return (
+            f"SEND invoice '{args.invoice_id}' by email to the client now (PDF attached). "
+            f"The issue date is reset to today and the due date to today plus the "
+            f"client's payment terms."
+        )
     amount = f"{args.paid_amount:g}" if args.paid_amount is not None else "the full invoice total"
     when = args.paid_date or "today"
     return f"Mark invoice '{args.invoice_id}' as PAID: {amount} received on {when}."
@@ -329,20 +350,22 @@ def register(registry) -> None:
     )
     registry.add(
         ToolSpec(
-            name="apex_mark_invoice_paid",
+            name="apex_update_invoice_status",
             provider=PROVIDER,
             risk=RiskLevel.MUTATING,
             description=(
-                "Mark an Apex invoice as paid. Requires confirmation. Records the date the "
-                "payment was received (defaults to today) and the amount (defaults to the "
-                "invoice total); a paid invoice can no longer be edited or deleted, and a "
-                "void invoice cannot be marked paid. Use apex_list_timesheets or the "
-                "invoice id from apex_create_invoice to find the invoice."
+                "Change an Apex invoice's status. Invoices move DRAFT -> SENT -> PAID. "
+                "status=SENT EMAILS the invoice (PDF) to the client and resets its issue and "
+                "due dates, so it is a real, outward-facing action: ask the user first. "
+                "status=PAID records the payment (paid_date defaults to today, paid_amount to "
+                "the invoice total); a paid invoice can no longer be edited or deleted. "
+                "Void invoices can be neither sent nor marked paid. Use apex_list_timesheets "
+                "or the invoice id from apex_create_invoice to find the invoice."
             ),
-            input_model=MarkInvoicePaidInput,
-            handler=mark_invoice_paid,
+            input_model=UpdateInvoiceStatusInput,
+            handler=update_invoice_status,
             required_capability="invoicing",
-            preview_builder=_mark_paid_preview,
+            preview_builder=_invoice_status_preview,
         )
     )
     registry.add(

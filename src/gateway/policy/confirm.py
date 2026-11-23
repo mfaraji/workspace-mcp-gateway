@@ -1,14 +1,10 @@
 """Policy + confirmation layer.
 
-Read tools are allowed to execute immediately. Mutating tools (enabled in a later
-milestone) require a two-step confirmation: the first call returns a preview plus
-a short-lived signed ``confirmation_token``; the model must call again with that
-token to execute. This module owns minting/verifying those tokens so that turning
-a tool from read to mutating is a localized change.
-
-For the current vertical slice only read tools exist, so :func:`check` returns
-``Allow`` for them. The confirm-token machinery is implemented and unit-testable
-but not yet exercised by a registered tool.
+Read tools execute immediately. Mutating tools have a risk tier: ``LOW`` executes
+directly, ``MEDIUM`` requires a two-step confirmation. The first call returns a
+preview plus a signed ``confirmation_token``; the model must ask the *user* the
+question in chat and, only after an explicit yes, call again with that token. The
+tier defaults per tool (``ToolSpec.default_tier``) and each user may override it.
 """
 
 from __future__ import annotations
@@ -20,10 +16,9 @@ from dataclasses import dataclass
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from gateway.config import Settings
-from gateway.providers.base import CallContext, RiskLevel, ToolSpec
+from gateway.providers.base import CallContext, RiskLevel, RiskTier, ToolSpec
 
 _CONFIRM_SALT = "tool-confirmation"
-_CONFIRM_MAX_AGE_SECONDS = 60
 
 
 @dataclass
@@ -68,7 +63,9 @@ def verify_confirmation_token(
 ) -> bool:
     """Return True if ``token`` is a valid confirmation for this exact call."""
     try:
-        payload = _serializer(settings).loads(token, max_age=_CONFIRM_MAX_AGE_SECONDS)
+        payload = _serializer(settings).loads(
+            token, max_age=settings.confirmation_token_ttl_seconds
+        )
     except (SignatureExpired, BadSignature):
         return False
     return (
@@ -86,14 +83,17 @@ def check(
     *,
     confirmation_token: str | None = None,
     preview_builder=None,
+    tier: RiskTier | None = None,
 ) -> PolicyDecision:
     """Decide whether a tool call may proceed.
 
-    Read tools are always allowed. Mutating tools require a valid confirmation
-    token; absent one, a ``NeedsConfirmation`` carrying a fresh token (and an
-    optional human-readable preview) is returned.
+    Read tools and LOW-tier mutating tools are always allowed. MEDIUM-tier tools
+    require a valid confirmation token; absent one, a ``NeedsConfirmation`` carrying
+    a fresh token (and an optional human-readable preview) is returned. ``tier``
+    is the user's effective tier; ``None`` means the tool's default.
     """
-    if spec.risk is RiskLevel.READ or spec.requires_confirmation is False:
+    tier = tier or spec.default_tier
+    if spec.risk is RiskLevel.READ or tier is RiskTier.LOW:
         return Allow()
 
     if confirmation_token and verify_confirmation_token(
