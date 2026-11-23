@@ -69,6 +69,7 @@ def test_gmail_filter_registers_read_and_draft_tools_only():
         "google_gmail_search_messages",
         "google_gmail_get_message",
         "google_gmail_get_thread",
+        "google_gmail_download_attachment",
         "google_gmail_list_accounts",
         "google_gmail_list_drafts",
         "google_gmail_create_draft",
@@ -89,6 +90,9 @@ def test_apex_filter_registers_expected_apex_tools():
         "apex_create_timesheet",
         "apex_update_invoice_status",
         "apex_update_timesheet",
+        "apex_list_expense_categories",
+        "apex_create_expense",
+        "apex_upload_expense_receipt",
         "apex_list_workspaces",
     }
 

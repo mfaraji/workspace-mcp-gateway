@@ -275,3 +275,37 @@ class GmailAgentDraft(Base, TimestampMixin):
     google_account_id: Mapped[str] = mapped_column(String(255))
     draft_id: Mapped[str] = mapped_column(String(255))
     thread_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class StagedFile(Base):
+    """A short-lived, encrypted file handed between tools without passing through the model.
+
+    ``content`` is the Fernet-encrypted, base64-encoded file. Rows are single-use and
+    expire quickly; only the owning user may take one.
+    """
+
+    __tablename__ = "staged_files"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    mime_type: Mapped[str] = mapped_column(String(127))
+    size: Mapped[int] = mapped_column()
+    sha256: Mapped[str] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(32))
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class UsedUploadTicket(Base):
+    """Consumed one-time upload tickets (``jti``), kept until they would have expired."""
+
+    __tablename__ = "used_upload_tickets"
+
+    jti: Mapped[str] = mapped_column(String(64), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

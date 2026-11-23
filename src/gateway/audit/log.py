@@ -41,6 +41,10 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "apex_update_invoice_status": {"workspace_id", "invoice_id", "status", "paid_date"},
     "apex_update_timesheet": {"workspace_id"},
     "apex_list_clients": {"workspace_id"},
+    # Expenses: ids/enums only — never merchant, amount, notes or file contents.
+    "apex_list_expense_categories": {"kind"},
+    "apex_create_expense": {"category_id"},
+    "apex_upload_expense_receipt": {"expense_id"},
     "apex_list_timesheets": {"workspace_id"},
     "apex_get_last_timesheet": {"workspace_id"},
     "apex_wealth_list_accounts": {"workspace_id"},
@@ -96,6 +100,7 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "google_gmail_search_messages": {"max_results", "account"},
     "google_gmail_get_message": {"message_id", "account"},
     "google_gmail_get_thread": {"thread_id", "account"},
+    "google_gmail_download_attachment": {"message_id", "attachment_id", "account"},
     "google_gmail_list_drafts": {"account"},
     "google_gmail_create_draft": {"reply_to_message_id", "account"},
     "google_gmail_update_draft": {"draft_id", "account"},

@@ -13,6 +13,7 @@ from __future__ import annotations
 from gateway.config import Settings
 from gateway.connectors.base import AccessMode, Bundle, Connector
 from gateway.providers.apex import auth as apex_auth
+from gateway.providers.apex import expenses as apex_expenses
 from gateway.providers.apex import read as apex_read
 from gateway.providers.apex import wealth as apex_wealth
 from gateway.providers.apex import write as apex_write
@@ -61,6 +62,7 @@ def _register_gmail(registry: ToolRegistry, _settings: Settings) -> None:
 def _register_apex(registry: ToolRegistry, _settings: Settings) -> None:
     apex_read.register(registry)
     apex_write.register(registry)
+    apex_expenses.register(registry)
     apex_auth.register(registry)
 
 

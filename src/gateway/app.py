@@ -106,6 +106,7 @@ def create_app() -> FastAPI:
         for c in CONNECTORS
     ]
 
+    from gateway.api.apex_uploads import router as apex_uploads_router
     from gateway.api.drive import router as drive_api_router
     from gateway.api.telegram import router as telegram_api_router
     from gateway.oauth.clerk_routes import router as clerk_oauth_router
@@ -114,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(oauth_router)
     app.include_router(clerk_oauth_router)
     app.include_router(drive_api_router)
+    app.include_router(apex_uploads_router)
     app.include_router(telegram_api_router)
 
     @app.get("/", include_in_schema=False)

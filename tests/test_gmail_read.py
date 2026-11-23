@@ -57,6 +57,8 @@ class _Service:
             }
         )
         self.threads_res = _Resource({"get": lambda **k: (threads or {})[k["id"]]})
+        self.attachments_res = _Resource({"get": lambda **k: {"data": _b64("PDFBYTES")}})
+        self.messages_res.attachments = lambda: self.attachments_res
 
     def users(self):
         return self
@@ -91,7 +93,11 @@ def _msg(mid, labels, subject="Hi"):
                         {"mimeType": "text/html", "body": {"data": _b64("<b>html</b>")}},
                     ],
                 },
-                {"mimeType": "application/pdf", "filename": "a.pdf", "body": {"size": 12}},
+                {
+                    "mimeType": "application/pdf",
+                    "filename": "a.pdf",
+                    "body": {"size": 12, "attachmentId": "att1"},
+                },
             ],
         },
     }
@@ -140,7 +146,9 @@ def test_get_message_parses_multipart(monkeypatch, ctx):
     out = read.get_message(read.GetMessageInput(message_id="m"), ctx, None)
     assert out["body_text"] == "plain"
     assert out["body_html"] == "<b>html</b>"
-    assert out["attachments"] == [{"filename": "a.pdf", "mime_type": "application/pdf", "size": 12}]
+    assert out["attachments"] == [
+        {"filename": "a.pdf", "mime_type": "application/pdf", "size": 12, "attachment_id": "att1"}
+    ]
 
 
 def test_get_thread_filters_unlabelled(monkeypatch, ctx):
@@ -211,3 +219,57 @@ def test_normalize_sharing_validates():
             sharing.normalize(*bad)
     default = sharing.get_sharing({}, "agent-access")
     assert (default.mode, default.labels) == ("labels", ("agent-access",))
+
+
+def _stage_capture(monkeypatch):
+    staged = {}
+
+    def fake_stage(_session, user_id, **kw):
+        staged.update(kw, user_id=user_id)
+        return "ref-1", __import__("datetime").datetime(2030, 1, 1)
+
+    monkeypatch.setattr(read, "stage", fake_stage)
+    return staged
+
+
+def test_download_attachment_stages_file_and_returns_no_bytes(monkeypatch, ctx):
+    _patch(monkeypatch, _Service(LABELS, {"m": _msg("m", [LABEL])}))
+    staged = _stage_capture(monkeypatch)
+    inp = read.DownloadAttachmentInput(message_id="m", attachment_id="att1")
+    out = read.download_attachment(inp, ctx, None)
+    assert out["file_ref"] == "ref-1" and out["filename"] == "a.pdf"
+    assert out["size"] == len("PDFBYTES") and "data" not in out
+    assert staged["data"] == b"PDFBYTES" and staged["user_id"] == ctx.user_id
+
+
+def test_download_attachment_unshared_message_is_not_found(monkeypatch, ctx):
+    _patch(monkeypatch, _Service(LABELS, {"m": _msg("m", ["INBOX"])}))
+    _stage_capture(monkeypatch)
+    inp = read.DownloadAttachmentInput(message_id="m", attachment_id="att1")
+    with pytest.raises(ToolError) as e:
+        read.download_attachment(inp, ctx, None)
+    assert e.value.error_code == "not_found"
+
+
+def test_download_attachment_unknown_id_and_too_large(monkeypatch, ctx):
+    msg = _msg("m", [LABEL])
+    _patch(monkeypatch, _Service(LABELS, {"m": msg}))
+    _stage_capture(monkeypatch)
+    with pytest.raises(ToolError) as e:
+        read.download_attachment(
+            read.DownloadAttachmentInput(message_id="m", attachment_id="nope"), ctx, None
+        )
+    assert e.value.error_code == "not_found"
+    msg["payload"]["parts"][1]["body"]["size"] = 11 * 1024 * 1024
+    with pytest.raises(ToolError) as e:
+        read.download_attachment(
+            read.DownloadAttachmentInput(message_id="m", attachment_id="att1"), ctx, None
+        )
+    assert e.value.error_code == "too_large"
+
+
+def test_download_attachment_audit_records_ids_only():
+    out = summarize_input(
+        "google_gmail_download_attachment", {"message_id": "m", "attachment_id": "a", "x": "y"}
+    )
+    assert "m" in out and "x" not in out

@@ -46,6 +46,8 @@ SCOPE_CLIENTS_READ = "apex:clients.read"
 SCOPE_INVOICING_READ = "apex:invoicing.read"
 SCOPE_INVOICING_WRITE = "apex:invoicing.write"
 SCOPE_WEALTH_READ = "apex:wealth.read"
+SCOPE_EXPENSES_READ = "apex:expenses.read"
+SCOPE_EXPENSES_WRITE = "apex:expenses.write"
 
 # Capability sentinel: workspaces that hold wealth data (PERSONAL kind).
 CAP_WEALTH_WORKSPACE = "wealthWorkspace"
@@ -249,6 +251,50 @@ def apex_credentials(
         )
     token, jti = _mint(settings, ctx.clerk_subject, ctx.oauth_client_id, scopes, workspace_id)
     return ApexCredentials(token, {WORKSPACE_HEADER: workspace_id}, jti)
+
+
+def apex_user_credentials(
+    settings: Settings, ctx: CallContext, *, scopes: list[str]
+) -> ApexCredentials:
+    """Credentials for user-level (workspace-less) Apex routes such as the expense inbox.
+
+    No ``wid`` claim and no workspace header: the expense inbox belongs to the user and
+    the workspace is chosen when they review it in Apex.
+    """
+    from gateway.providers.registry import ToolError
+
+    if user_workspaces(settings, ctx.clerk_subject, ctx.oauth_client_id) is None:
+        raise ToolError("forbidden", "Apex does not recognize your account or is unreachable")
+    token, jti = _mint(settings, ctx.clerk_subject, ctx.oauth_client_id, scopes, None)
+    return ApexCredentials(token, {}, jti)
+
+
+def apex_upload(
+    settings: Settings,
+    creds: ApexCredentials,
+    path: str,
+    *,
+    filename: str,
+    mime_type: str,
+    data: bytes,
+) -> Any:
+    """POST one file to Apex as multipart field ``file``; errors map like :func:`apex_request`."""
+    from gateway.providers.registry import ToolError
+
+    url = f"{settings.apex_base_url.rstrip('/')}{path}"
+    headers = {"Authorization": f"Bearer {creds.token}", **creds.headers}
+    try:
+        response = httpx.post(
+            url, headers=headers, files={"file": (filename, data, mime_type)}, timeout=60.0
+        )
+    except httpx.HTTPError as exc:
+        raise ToolError("provider_error", f"apex request failed: {exc}") from exc
+    if response.status_code >= 400:
+        raise ToolError(
+            _STATUS_ERROR_CODES.get(response.status_code, "provider_error"),
+            f"apex request failed ({response.status_code}): {response.text[:500]}",
+        )
+    return response.json() if response.content else None
 
 
 class ApexUpstream:

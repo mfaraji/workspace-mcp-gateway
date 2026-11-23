@@ -41,7 +41,9 @@ with Open WebUI's native tool-server UI:
   `/connections` page via session + CSRF, "all mail" needs explicit confirmation, never by a
   model-visible tool; unshared = `not_found`). Writes are drafts only
   (HTML supported); there is no send tool, and update/delete only touch drafts
-  recorded in `gmail_agent_drafts`.
+  recorded in `gmail_agent_drafts`. `google_gmail_download_attachment` (label-scoped like
+  reads, max 10 MB) never returns bytes: it stores the file encrypted in `staged_files`
+  (15 min, single use, owner-only) and returns a `file_ref` for other tools.
 - `/mcp/telegram` registers `system_get_current_time`,
   `telegram_list_destinations`, and `telegram_send_message`. Bot credentials are
   configured through the private HTTP API, never through a model-visible tool.
@@ -57,6 +59,13 @@ with Open WebUI's native tool-server UI:
   `aud` = `APEX_MCP_AUDIENCE`), signed with `GATEWAY_SIGNING_KEY`; Apex verifies it
   against `/.well-known/apex-jwks.json`. Never log or audit minted tokens (only `jti`,
   scopes, `workspace_id`).
+- Expense tools (`providers/apex/expenses.py`) are user-level: no `wid`, no workspace
+  (`apex_user_credentials`, scopes `apex:expenses.read|write`). `apex_create_expense` adds
+  an item to the user's Apex review inbox (workspace chosen at review; Apex AI-scans an
+  attached receipt to fill blank merchant/amount/date) and is LOW tier because the review
+  is the human gate. Receipts arrive via `receipt_file_ref` (from the Gmail download) or
+  `apex_upload_expense_receipt`, which without a `file_ref` returns a signed single-use
+  ticket for `POST /uploads/apex-receipt` (bearer ticket, 10 min, never logged).
 - Every workspace-scoped Apex tool takes a required `workspace_id` (from
   `apex_list_workspaces` / `apex_wealth_list_workspaces`). A tool is *permitted* when
   one of the caller's Apex workspaces has its `ToolSpec.required_capability`

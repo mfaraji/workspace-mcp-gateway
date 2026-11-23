@@ -72,9 +72,7 @@ def resolve_scope(service, conn) -> Scope:
         return Scope(all_mail=True)
     wanted = {n.lower() for n in sharing.labels}
     labels = service.users().labels().list(userId="me").execute().get("labels", [])
-    ids = tuple(
-        label["id"] for label in labels if str(label.get("name", "")).lower() in wanted
-    )
+    ids = tuple(label["id"] for label in labels if str(label.get("name", "")).lower() in wanted)
     if not ids:
         names = ", ".join(f"'{n}'" for n in sharing.labels)
         raise ToolError(
@@ -123,7 +121,12 @@ def _walk(part: dict, acc: dict[str, Any]) -> None:
     filename = part.get("filename") or ""
     if filename:
         acc["attachments"].append(
-            {"filename": filename, "mime_type": mime, "size": body.get("size")}
+            {
+                "filename": filename,
+                "mime_type": mime,
+                "size": body.get("size"),
+                "attachment_id": body.get("attachmentId"),
+            }
         )
     elif mime in ("text/plain", "text/html") and body.get("data"):
         key = "text" if mime == "text/plain" else "html"
