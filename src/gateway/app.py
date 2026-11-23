@@ -12,7 +12,7 @@ import contextlib
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -23,6 +23,21 @@ from gateway.logging import configure_logging
 from gateway.mcp.context import IdentityMiddleware
 from gateway.mcp.server import build_mcp, product_tool_filter
 from gateway.storage.capella.client import close_client as close_capella
+
+
+class _McpTrailingSlash:
+    """Pure ASGI middleware: rewrite an exact MCP mount path to its trailing-slash form."""
+
+    def __init__(self, app, paths: set[str]) -> None:
+        self.app = app
+        self.paths = paths
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] in ("http", "websocket") and scope["path"] in self.paths:
+            scope = dict(scope, path=scope["path"] + "/")
+            if scope.get("raw_path"):
+                scope["raw_path"] = scope["raw_path"] + b"/"
+        await self.app(scope, receive, send)
 
 
 def create_app() -> FastAPI:
@@ -127,13 +142,15 @@ def create_app() -> FastAPI:
 
     connector_slugs = {connector.slug for connector in CONNECTORS} | {b.slug for b in BUNDLES}
 
+    # Some MCP clients (e.g. Claude's connector probe) POST to the exact URL they were given and
+    # never follow a redirect, so they would miss the 401 + resource_metadata challenge. Serve
+    # /mcp and /mcp/{slug} directly by internally adding the trailing slash the mounts expect.
+    app.add_middleware(_McpTrailingSlash, paths={"/mcp", *(f"/mcp/{s}" for s in connector_slugs)})
+
     @app.api_route("/mcp/{product}", methods=["GET", "POST", "DELETE"])
-    async def redirect_product_mcp_root(product: str, request: Request) -> RedirectResponse:
-        """Match /mcp/{product} behavior to /mcp by redirecting to the app root."""
-        if product not in connector_slugs:
-            return RedirectResponse("/mcp/", status_code=307)
-        query = f"?{request.url.query}" if request.url.query else ""
-        return RedirectResponse(f"/mcp/{product}/{query}", status_code=307)
+    async def redirect_unknown_product_mcp(product: str) -> RedirectResponse:
+        """Unknown /mcp/{product} falls back to the all-tools endpoint."""
+        return RedirectResponse("/mcp/", status_code=307)
 
     # Mount MCP Streamable HTTP apps behind identity enforcement: every request
     # must carry a trustworthy Open WebUI user identity. Connector-specific
