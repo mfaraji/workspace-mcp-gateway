@@ -117,6 +117,29 @@ def test_create_expense_without_receipt_requires_details():
         expenses.CreateExpenseInput(merchant="x")
 
 
+def test_create_expense_with_workspace_validates_it_and_sends_workspace_id(monkeypatch, captured):
+    seen = {}
+
+    def fake_creds(settings, ctx, *, scopes, workspace_id, capability):
+        seen.update(workspace_id=workspace_id, capability=capability)
+        return apex_client.ApexCredentials("tok", {"X-Workspace-Id": workspace_id})
+
+    monkeypatch.setattr(expenses, "apex_credentials", fake_creds)
+    args = expenses.CreateExpenseInput(
+        merchant="HD", amount=5, date="2026-11-20", workspace_id="w1"
+    )
+    expenses.create_expense(args, _ctx(), None)
+    assert seen == {"workspace_id": "w1", "capability": "receiptReview"}
+    assert captured[0]["json"]["workspaceId"] == "w1"
+
+
+def test_create_expense_without_workspace_sends_none_and_uses_user_credentials(captured):
+    expenses.create_expense(
+        expenses.CreateExpenseInput(merchant="HD", amount=5, date="2026-11-20"), _ctx(), None
+    )
+    assert "workspaceId" not in captured[0]["json"]
+
+
 def test_create_expense_rejects_bad_input():
     with pytest.raises(ValueError):
         expenses.CreateExpenseInput(merchant="x", amount=0, date="2026-11-20")

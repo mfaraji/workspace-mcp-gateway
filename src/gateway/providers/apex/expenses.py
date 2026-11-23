@@ -20,6 +20,7 @@ from gateway.providers.apex.client import (
     SCOPE_EXPENSES_READ,
     SCOPE_EXPENSES_WRITE,
     apex_call,
+    apex_credentials,
     apex_upload,
     apex_user_credentials,
 )
@@ -53,8 +54,15 @@ class CreateExpenseInput(BaseModel):
     description: str | None = Field(None, max_length=500)
     notes: str | None = Field(None, max_length=2000)
     is_business: bool | None = Field(None, description="Hint that this is a business expense.")
-    suggested_workspace_ids: list[str] | None = Field(
-        None, max_length=20, description="Optional workspaces to pre-select at review."
+    workspace_id: str | None = Field(
+        None,
+        description=(
+            "Apex workspace this expense is for (from apex_list_workspaces; needs receipt "
+            "review, i.e. a business or rental workspace). With it the attached receipt is "
+            "scanned and categorized against that workspace's categories and the workspace "
+            "is pre-selected at review. Without it the scan still fills merchant, amount and "
+            "date but leaves the category empty."
+        ),
     )
     receipt_file_ref: str | None = Field(
         None, description="file_ref from google_gmail_download_attachment to attach as receipt."
@@ -104,10 +112,20 @@ def _upload_to_expense(settings, creds, expense_id: str, filename: str, mime: st
 def create_expense(args: CreateExpenseInput, ctx: CallContext, session: Session) -> Any:
     settings = get_settings()
     staged = take(session, ctx.user_id, args.receipt_file_ref) if args.receipt_file_ref else None
-    creds = apex_user_credentials(settings, ctx, scopes=[SCOPE_EXPENSES_WRITE])
+    if args.workspace_id:
+        # Validates the workspace belongs to the user and supports receipt review.
+        creds = apex_credentials(
+            settings,
+            ctx,
+            scopes=[SCOPE_EXPENSES_WRITE],
+            workspace_id=args.workspace_id,
+            capability="receiptReview",
+        )
+    else:
+        creds = apex_user_credentials(settings, ctx, scopes=[SCOPE_EXPENSES_WRITE])
     # Stable key so an agent retry returns the same inbox item instead of a duplicate.
     sha = staged.sha256 if staged else ""
-    ref_src = f"{ctx.user_id}|{args.merchant}|{args.amount}|{args.date}|{sha}"
+    ref_src = f"{ctx.user_id}|{args.merchant}|{args.amount}|{args.date}|{args.workspace_id}|{sha}"
     body: dict[str, Any] = {"externalRef": hashlib.sha256(ref_src.encode()).hexdigest()}
     for key, value in (
         ("merchant", args.merchant),
@@ -118,7 +136,7 @@ def create_expense(args: CreateExpenseInput, ctx: CallContext, session: Session)
         ("description", args.description),
         ("notes", args.notes),
         ("isBusiness", args.is_business),
-        ("suggestedWorkspaceIds", args.suggested_workspace_ids),
+        ("workspaceId", args.workspace_id),
     ):
         if value is not None:
             body[key] = value
@@ -204,7 +222,9 @@ def register(registry) -> None:
                 "emailed receipt. Pass receipt_file_ref from google_gmail_download_attachment "
                 "to attach the receipt in the same call; Apex scans the receipt with AI, so "
                 "merchant/amount/date may then be omitted and are filled from it (values you "
-                "give win)." + _INBOX_NOTE
+                "give win). Pass workspace_id (from apex_list_workspaces) to have the scan "
+                "also pick a category from that workspace; without it the category stays "
+                "empty and is chosen at review." + _INBOX_NOTE
             ),
             input_model=CreateExpenseInput,
             handler=create_expense,
