@@ -16,8 +16,8 @@ with a ``register(registry)`` entrypoint.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -69,6 +69,10 @@ class Connector:
     # Tool-name prefixes owned by a sibling connector whose own prefix extends this one
     # (e.g. ``apex_`` vs ``apex_wealth_``).
     exclude_prefixes: tuple[str, ...] = ()
+    # Internal tool name -> the bare name Google's own MCP server uses. When set, this
+    # connector's own ``/mcp/<slug>`` mount exposes exactly these tools under those names
+    # (no widgets, no extras); grants, tiers and audit keep the internal names.
+    google_names: Mapping[str, str] = field(default_factory=dict)
 
     def matches(self, spec: ToolSpec) -> bool:
         """Whether a tool spec belongs to this connector."""

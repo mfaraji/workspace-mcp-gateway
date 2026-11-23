@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from gateway.config import Settings, get_settings
 from gateway.connectors.upstream import OAuthStrategy
-from gateway.oauth.google import DRIVE_SCOPES
+from gateway.oauth.google import DRIVE_READ_SCOPES, DRIVE_WRITE_SCOPE
 from gateway.providers.base import CallContext
 from gateway.providers.google.client import build_drive_service
 
@@ -73,12 +73,12 @@ class PreparedDownload:
 
 def required_scopes_present(scopes: list[str] | None) -> bool:
     """Return whether a connection has every read-only Drive scope."""
-    return set(DRIVE_SCOPES).issubset(set(scopes or []))
+    return set(DRIVE_READ_SCOPES).issubset(set(scopes or []))
 
 
 DRIVE_OAUTH = OAuthStrategy(
     upstream_provider=PROVIDER,
-    required_scopes=DRIVE_SCOPES,
+    required_scopes=DRIVE_READ_SCOPES,
     display_name="Google Drive",
     product="drive",
     missing_scope_hint="missing required read scopes",
@@ -88,6 +88,20 @@ DRIVE_OAUTH = OAuthStrategy(
 def drive_service(session: Session, ctx: CallContext):
     """Resolve the caller's scoped Google connection and build Drive v3."""
     creds = DRIVE_OAUTH.get_credentials(session, ctx, get_settings())
+    return build_drive_service(creds)
+
+
+def drive_write_service(session: Session, ctx: CallContext):
+    """Like :func:`drive_service` for write tools: also requires the full ``drive`` scope."""
+    from gateway.providers.registry import ToolError
+
+    creds, conn = DRIVE_OAUTH.get_connection_credentials(session, ctx, get_settings())
+    if DRIVE_WRITE_SCOPE not in set(conn.scopes or []):
+        raise ToolError(
+            "reauth_required",
+            "Google Drive write access has not been granted; reconnect here: "
+            f"{DRIVE_OAUTH.connect_url(get_settings(), ctx.external_user_id)}",
+        )
     return build_drive_service(creds)
 
 

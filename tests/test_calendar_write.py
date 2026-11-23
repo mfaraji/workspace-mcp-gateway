@@ -44,6 +44,7 @@ def test_write_tools_are_registered_as_mutating():
         "google_calendar_create_event",
         "google_calendar_update_event",
         "google_calendar_delete_event",
+        "google_calendar_respond_to_event",
     }
     assert all(s.risk is RiskLevel.MUTATING for s in specs.values())
     assert all(s.preview_builder is not None for s in specs.values())

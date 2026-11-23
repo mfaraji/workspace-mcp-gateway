@@ -24,7 +24,9 @@ from gateway.providers.google.calendar import read as google_calendar_read
 from gateway.providers.google.calendar import write as google_calendar_write
 from gateway.providers.google.calendar.common import CALENDAR_OAUTH
 from gateway.providers.google.drive import read as google_drive_read
+from gateway.providers.google.drive import write as google_drive_write
 from gateway.providers.google.drive.common import DRIVE_OAUTH
+from gateway.providers.google.gmail import manage as google_gmail_manage
 from gateway.providers.google.gmail import read as google_gmail_read
 from gateway.providers.google.gmail import write as google_gmail_write
 from gateway.providers.google.gmail.common import GMAIL_OAUTH
@@ -47,6 +49,7 @@ def _register_calendar(registry: ToolRegistry, _settings: Settings) -> None:
 
 def _register_drive(registry: ToolRegistry, _settings: Settings) -> None:
     google_drive_read.register(registry)
+    google_drive_write.register(registry)
 
 
 def _register_tasks(registry: ToolRegistry, _settings: Settings) -> None:
@@ -57,6 +60,38 @@ def _register_tasks(registry: ToolRegistry, _settings: Settings) -> None:
 def _register_gmail(registry: ToolRegistry, _settings: Settings) -> None:
     google_gmail_read.register(registry)
     google_gmail_write.register(registry)
+    google_gmail_manage.register(registry)
+
+
+def _google_names(prefix: str, names: list[str], **overrides: str) -> dict[str, str]:
+    """Internal ``<prefix><name>`` -> Google's bare ``<name>`` (``overrides``: internal -> bare)."""
+    mapping = {f"{prefix}{n}": n for n in names}
+    mapping.update({f"{prefix}{k}": v for k, v in overrides.items()})
+    return mapping
+
+
+# Exactly the tools Google's own MCP servers expose (names verbatim). The gateway's own
+# extras (list_accounts, search_messages, widgets) stay on /mcp and the bundle only.
+GOOGLE_CALENDAR_TOOLS = [
+    "get_event", "list_calendars", "list_events", "search_events", "suggest_time",
+    "create_event", "delete_event", "respond_to_event", "update_event",
+]  # fmt: skip
+GOOGLE_DRIVE_TOOLS = [
+    "download_file_content", "get_file_metadata", "get_file_permissions",
+    "get_shared_drive_metadata", "list_file_revisions", "list_recent_files",
+    "list_shared_drives", "read_file_content", "search_files",
+    "copy_file", "create_file", "request_access", "share_file", "trash_file", "update_file",
+]  # fmt: skip
+# Drafts only: send_message, reply and forward are intentionally not offered.
+GOOGLE_GMAIL_TOOLS = [
+    "get_draft", "get_message", "get_thread", "list_drafts", "list_labels", "search_threads",
+    "apply_sensitive_message_label", "apply_sensitive_thread_label", "create_draft",
+    "create_label", "delete_draft", "delete_label", "label_message", "label_thread",
+    "mark_message_spam", "mark_thread_spam", "trash_message", "trash_thread",
+    "unlabel_message", "unlabel_thread", "unmark_message_spam", "unmark_thread_spam",
+    "untrash_message", "untrash_thread", "update_draft", "update_label",
+    "update_message_labels",
+]  # fmt: skip
 
 
 def _register_apex(registry: ToolRegistry, _settings: Settings) -> None:
@@ -110,6 +145,7 @@ CONNECTORS: list[Connector] = [
         register=_register_calendar,
         upstream=CALENDAR_OAUTH,
         error_classifier=_google_classify_error,
+        google_names=_google_names("google_calendar_", GOOGLE_CALENDAR_TOOLS),
     ),
     Connector(
         slug="drive",
@@ -119,6 +155,7 @@ CONNECTORS: list[Connector] = [
         register=_register_drive,
         upstream=DRIVE_OAUTH,
         error_classifier=_google_classify_error,
+        google_names=_google_names("google_drive_", GOOGLE_DRIVE_TOOLS),
     ),
     Connector(
         slug="tasks",
@@ -137,6 +174,9 @@ CONNECTORS: list[Connector] = [
         register=_register_gmail,
         upstream=GMAIL_OAUTH,
         error_classifier=_google_classify_error,
+        google_names=_google_names(
+            "google_gmail_", GOOGLE_GMAIL_TOOLS, download_attachment="download_gmail_attachment"
+        ),
     ),
     Connector(
         slug="apex",

@@ -16,7 +16,7 @@ import inspect
 import json
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any
 
@@ -60,17 +60,29 @@ class ToolRegistry:
         mcp: FastMCP,
         settings: Settings,
         predicate: Callable[[ToolSpec], bool] | None = None,
+        names: Mapping[str, str] | None = None,
     ) -> None:
+        """Register tools on ``mcp``; ``names`` maps internal -> exposed (bare) tool names.
+
+        With ``names`` only the mapped tools (plus the system tool) are exposed, under
+        their exposed names and without widget metadata. Calls still run the spec's
+        pipeline, so grants, tiers and audit use the internal name.
+        """
         for spec in self._specs:
             if predicate is not None and not predicate(spec):
                 continue
+            exposed = spec.name
+            widgets = settings.mcp_apps_enabled
+            if names is not None and spec.name != "system_get_current_time":
+                if spec.name not in names:
+                    continue
+                exposed = names[spec.name]
+                widgets = False
             mcp.add_tool(
                 self._build_callable(spec, settings),
-                name=spec.name,
-                description=(
-                    spec.description if settings.mcp_apps_enabled else _plain(spec.description)
-                ),
-                meta=spec.tool_meta if settings.mcp_apps_enabled else None,
+                name=exposed,
+                description=spec.description if widgets else _plain(spec.description),
+                meta=spec.tool_meta if widgets else None,
             )
 
     def _build_callable(self, spec: ToolSpec, settings: Settings):

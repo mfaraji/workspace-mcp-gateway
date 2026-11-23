@@ -8,7 +8,7 @@ must re-invoke with that token to actually apply the change.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field
@@ -96,6 +96,20 @@ class UpdateEventInput(GoogleAccountInput):
 class DeleteEventInput(GoogleAccountInput):
     calendar_id: str = Field("primary", description="Calendar id, or 'primary'.")
     event_id: str = Field(..., description="The event id to delete.")
+
+
+class RespondToEventInput(GoogleAccountInput):
+    calendar_id: str = Field("primary", description="Calendar id, or 'primary'.")
+    event_id: str = Field(..., description="The event id to respond to.")
+    response: Literal["accepted", "declined", "tentative"] = Field(
+        ..., description="Your RSVP for this event."
+    )
+    comment: str | None = Field(
+        None, max_length=1000, description="Optional note to the organizer."
+    )
+    send_updates: Literal["all", "externalOnly", "none"] = Field(
+        "all", description="Who is notified of the response; 'all' tells the organizer."
+    )
 
 
 def _time_field(value: str, time_zone: str | None) -> dict[str, Any]:
@@ -213,6 +227,48 @@ def delete_event(args: DeleteEventInput, ctx: CallContext, session: Session) -> 
     return {"status": "deleted", "event_id": args.event_id, "calendar_id": args.calendar_id}
 
 
+def respond_to_event(
+    args: RespondToEventInput, ctx: CallContext, session: Session
+) -> dict[str, Any]:
+    from gateway.providers.registry import ToolError
+
+    service = calendar_service(session, ctx)
+    ev = service.events().get(calendarId=args.calendar_id, eventId=args.event_id).execute()
+    if ev.get("attendeesOmitted"):
+        raise ToolError(
+            "invalid_input", "this event has too many attendees to update the response safely"
+        )
+    attendees = [dict(a) for a in ev.get("attendees", [])]
+    me = next((a for a in attendees if a.get("self")), None)
+    if me is None:
+        raise ToolError(
+            "invalid_input", "you are not an attendee of this event, so you cannot respond"
+        )
+    me["responseStatus"] = args.response
+    if args.comment is not None:
+        me["comment"] = args.comment
+    # PATCH replaces the attendees array, so the full (otherwise unchanged) list is sent.
+    updated = (
+        service.events()
+        .patch(
+            calendarId=args.calendar_id,
+            eventId=args.event_id,
+            body={"attendees": attendees},
+            sendUpdates=args.send_updates,
+        )
+        .execute()
+    )
+    return {**trim_event(updated), "status": "responded", "response": args.response}
+
+
+def _respond_preview(args: RespondToEventInput) -> str:
+    notify = "" if args.send_updates == "none" else " The organizer will be notified."
+    return (
+        f"Respond '{args.response}' to event '{args.event_id}' on calendar "
+        f"'{args.calendar_id}'.{notify}"
+    )
+
+
 def _create_preview(args: CreateEventInput) -> str:
     return (
         f"Create event '{args.summary}' ({args.start} -> {args.end}) "
@@ -260,6 +316,21 @@ def register(registry) -> None:
             preview_builder=_update_preview,
             ui_resource=CALENDAR_UI,
             ui_app_callable=True,
+        )
+    )
+    registry.add(
+        ToolSpec(
+            name="google_calendar_respond_to_event",
+            provider=PROVIDER,
+            risk=RiskLevel.MUTATING,
+            description=(
+                "Accept, decline or tentatively accept a Google calendar invitation for the "
+                "user. Notifies the organizer unless send_updates is 'none'. Requires "
+                "confirmation."
+            ),
+            input_model=RespondToEventInput,
+            handler=respond_to_event,
+            preview_builder=_respond_preview,
         )
     )
     registry.add(

@@ -27,10 +27,24 @@ WebUI admins can register separate tool servers and users can select products
 with Open WebUI's native tool-server UI:
 
 - `/mcp` remains the backward-compatible "all enabled tools" endpoint.
-- `/mcp/calendar` registers `system_get_current_time` plus `google_calendar_*`.
-- `/mcp/drive` registers `system_get_current_time` plus `google_drive_*` when
-  Drive provider modules exist; until then it intentionally exposes only system
-  tools.
+- `/mcp/calendar` registers `system_get_current_time` plus exactly Google's Calendar MCP
+  tool set under Google's bare names (`get_event`, `list_calendars`, `list_events`,
+  `search_events`, `suggest_time`, `create_event`, `update_event`, `delete_event`,
+  `respond_to_event`; see `Connector.google_names`) and its five prompts
+  (`schedule_meeting`, `quick_meeting_today`, `recurring_1on1`, `team_meeting_scheduler`,
+  `analyze_availability`, in `mcp/calendar_prompts.py`). The bare names are an alias layer:
+  grants, tiers and audit still use the internal `google_calendar_*` names, and `/mcp` and
+  the `/mcp/google` bundle keep the prefixed names, `google_calendar_list_accounts` and
+  widgets. `respond_to_event` notifies the organizer, so it defaults to MEDIUM.
+- `/mcp/drive` registers `system_get_current_time` plus exactly Google's Drive MCP tool set
+  under Google's bare names (`search_files`, `read_file_content`, `share_file`, ...); the
+  internal specs stay `google_drive_*` for grants, tiers and audit (`Connector.google_names`),
+  and `/mcp` keeps the prefixed names. Reads use the read-only scopes; the write tools
+  (create/copy/update/trash/share/request_access) need the full `drive` scope and return
+  `reauth_required` until the user reconnects. `share_file` only grants reader/commenter/
+  writer to a named user or group (no link/domain sharing, no ownership transfer);
+  `trash_file` is recoverable and nothing is permanently deleted. `download_file_content`
+  and `create_file(file_ref=...)` move files through `staged_files` handles, never the model.
 - `/mcp/tasks` registers `system_get_current_time` plus `google_tasks_*` when
   Tasks provider modules exist; until then it intentionally exposes only system
   tools.
@@ -44,6 +58,16 @@ with Open WebUI's native tool-server UI:
   recorded in `gmail_agent_drafts`. `google_gmail_download_attachment` (label-scoped like
   reads, max 10 MB) never returns bytes: it stores the file encrypted in `staged_files`
   (15 min, single use, owner-only) and returns a `file_ref` for other tools.
+  Google parity (`providers/google/gmail/manage.py`): labels (create/update/delete,
+  label/unlabel message and thread, `update_message_labels`), trash/untrash, spam/unspam and
+  `apply_sensitive_*_label` (applies `GMAIL_SENSITIVE_LABEL`, default `Sensitive`; our reading
+  of Google's tool). Every write checks the message is shared (unshared = `not_found`); thread
+  tools act on the shared messages of a thread one by one; the sharing label(s) can never be
+  added, removed, renamed or deleted by a tool, and SPAM/TRASH/DRAFT/SENT cannot be set via
+  label tools. These need `gmail.modify` (or `gmail.labels` for label CRUD): connections that
+  predate it keep reading/drafting and get `reauth_required` only on these tools. Still no
+  send/reply/forward. The own `/mcp/gmail` mount exposes exactly Google's tool names (bare, no
+  widgets; see `Connector.google_names`); `/mcp` and `/mcp/google` keep `google_gmail_*`.
 - `/mcp/telegram` registers `system_get_current_time`,
   `telegram_list_destinations`, and `telegram_send_message`. Bot credentials are
   configured through the private HTTP API, never through a model-visible tool.

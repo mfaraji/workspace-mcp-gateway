@@ -25,10 +25,16 @@ CALENDAR_READ_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 CALENDAR_WRITE_SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 CALENDAR_SCOPES = CALENDAR_READ_SCOPES + CALENDAR_WRITE_SCOPES
 
-DRIVE_SCOPES = [
+# Read tools and the private /api/drive routes only need the read scopes, so connections made
+# before write tools existed keep working. The write tools (create/update/copy/trash/share)
+# need the full ``drive`` scope (``drive.file`` cannot touch files the app did not create);
+# such a connection is asked to reconnect (``reauth_required``) when it lacks it.
+DRIVE_READ_SCOPES = [
     "https://www.googleapis.com/auth/drive.metadata.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
 ]
+DRIVE_WRITE_SCOPE = "https://www.googleapis.com/auth/drive"
+DRIVE_SCOPES = [*DRIVE_READ_SCOPES, DRIVE_WRITE_SCOPE]
 
 TASKS_SCOPES = [
     "https://www.googleapis.com/auth/tasks.readonly",
@@ -42,14 +48,18 @@ GMAIL_TOOL_SCOPES = [
     GMAIL_READ_SCOPE,
     "https://www.googleapis.com/auth/gmail.compose",
 ]
+# ``gmail.modify`` backs label, trash and spam management. It is requested with the rest
+# but is NOT required by the base tools, so connections made before it existed keep
+# reading and drafting; only the management tools ask such a connection to reconnect.
+GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
 # ``gmail.labels`` only manages labels (no message access). It lets the callback create
 # the access label for the user. Tools do not require it, so connections made before it
 # existed keep working and are never forced to reauthorize.
 GMAIL_LABEL_SCOPE = "https://www.googleapis.com/auth/gmail.labels"
-GMAIL_SCOPES = [*GMAIL_TOOL_SCOPES, GMAIL_LABEL_SCOPE]
+GMAIL_SCOPES = [*GMAIL_TOOL_SCOPES, GMAIL_MODIFY_SCOPE, GMAIL_LABEL_SCOPE]
 
-# Scopes requested by the current build. Drive is read-only: ``drive.file`` is
-# intentionally excluded until a Drive write tool exists.
+# Scopes requested by the current build. Drive requests the full ``drive`` scope for its
+# write tools (restricted scope: users re-consent once to enable them).
 DEFAULT_SCOPES = OPENID_SCOPES + CALENDAR_SCOPES + DRIVE_SCOPES + TASKS_SCOPES + GMAIL_SCOPES
 
 PRODUCT_SCOPES: dict[GoogleProduct, list[str]] = {

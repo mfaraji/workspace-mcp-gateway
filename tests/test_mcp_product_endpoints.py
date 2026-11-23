@@ -38,14 +38,16 @@ def test_product_filters_register_expected_calendar_tools():
     )
 
 
-def test_drive_filter_registers_drive_read_tools():
-    settings = _settings()
+def test_drive_filter_registers_prefixed_drive_tools():
+    # Without a connector (the `/mcp` style registration) names stay prefixed and the
+    # gateway's own list_accounts extra is present; the bare Google mount is covered in
+    # tests/test_drive_google_parity.py.
+    from gateway.connectors.registry import GOOGLE_DRIVE_TOOLS
 
-    assert _tool_names(settings, "drive") == {
+    assert _tool_names(_settings(), "drive") == {
         "system_get_current_time",
-        "google_drive_search_files",
-        "google_drive_get_file_metadata",
         "google_drive_list_accounts",
+        *(f"google_drive_{n}" for n in GOOGLE_DRIVE_TOOLS),
     }
 
 
@@ -71,6 +73,27 @@ def test_gmail_filter_registers_read_and_draft_tools_only():
         "google_gmail_get_thread",
         "google_gmail_download_attachment",
         "google_gmail_list_accounts",
+        "google_gmail_search_threads",
+        "google_gmail_get_draft",
+        "google_gmail_list_labels",
+        "google_gmail_create_label",
+        "google_gmail_update_label",
+        "google_gmail_delete_label",
+        "google_gmail_label_message",
+        "google_gmail_unlabel_message",
+        "google_gmail_update_message_labels",
+        "google_gmail_label_thread",
+        "google_gmail_unlabel_thread",
+        "google_gmail_trash_message",
+        "google_gmail_untrash_message",
+        "google_gmail_trash_thread",
+        "google_gmail_untrash_thread",
+        "google_gmail_mark_message_spam",
+        "google_gmail_unmark_message_spam",
+        "google_gmail_mark_thread_spam",
+        "google_gmail_unmark_thread_spam",
+        "google_gmail_apply_sensitive_message_label",
+        "google_gmail_apply_sensitive_thread_label",
         "google_gmail_list_drafts",
         "google_gmail_create_draft",
         "google_gmail_update_draft",

@@ -17,7 +17,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import Tool as MCPTool
 
 from gateway.config import Settings
-from gateway.connectors.base import AccessMode
+from gateway.connectors.base import AccessMode, Connector
 from gateway.connectors.registry import CONNECTORS, by_slug, connector_slugs_for
 from gateway.providers.base import RiskLevel, ToolSpec
 
@@ -53,7 +53,7 @@ class GatewayFastMCP(FastMCP):
                 return allowed_tools(session, user.id, self.gateway_settings, auth)
 
         names = await anyio.to_thread.run_sync(permitted)
-        specs = {spec.name: spec for spec in self.gateway_specs}
+        specs = self.gateway_exposed  # exposed (possibly bare) tool name -> spec
         granted = [t for t in tools if tool_allowed(specs[t.name], auth, names)]
 
         def upstream_filtered():
@@ -84,7 +84,7 @@ class GatewayFastMCP(FastMCP):
         """Widgets are served only when a tool the caller may use references them."""
         import anyio
 
-        if not self.gateway_settings.mcp_apps_enabled:
+        if not self.gateway_settings.mcp_apps_enabled or self.gateway_bare:
             return set()
 
         from gateway.access.policy import allowed_tools, tool_allowed, upstream_permits
@@ -125,8 +125,17 @@ class GatewayFastMCP(FastMCP):
         return await super().read_resource(uri)
 
 
-def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> FastMCP:
-    """Build and return the configured FastMCP server."""
+def build_mcp(
+    settings: Settings,
+    tool_filter: ToolFilter | None = None,
+    connector: Connector | None = None,
+) -> FastMCP:
+    """Build and return the configured FastMCP server.
+
+    With a ``connector`` that defines ``google_names`` this is that connector's own
+    mount: it exposes exactly Google's tool set under Google's bare names (and the
+    connector's prompts) instead of the gateway's prefixed tools and widgets.
+    """
     mcp = GatewayFastMCP(
         name="workspace-mcp-gateway",
         oauth_enabled=bool(settings.clerk_issuer),
@@ -142,21 +151,35 @@ def build_mcp(settings: Settings, tool_filter: ToolFilter | None = None) -> Fast
     registry = ToolRegistry()
 
     system_time.register(registry)
-    for connector in CONNECTORS:
-        connector.register(registry, settings)
+    for each in CONNECTORS:
+        each.register(registry, settings)
 
-    for connector in CONNECTORS:
-        if connector.access_mode is AccessMode.AUTHENTICATED_SHARED and any(
-            connector.matches(spec) and spec.risk is not RiskLevel.READ for spec in registry._specs
+    for each in CONNECTORS:
+        if each.access_mode is AccessMode.AUTHENTICATED_SHARED and any(
+            each.matches(spec) and spec.risk is not RiskLevel.READ for spec in registry._specs
         ):
-            raise ValueError(f"Shared connector {connector.slug} must contain only read tools")
+            raise ValueError(f"Shared connector {each.slug} must contain only read tools")
 
     mcp.gateway_filter = tool_filter or (lambda _: True)
     mcp.gateway_settings = settings
     mcp.gateway_specs = registry._specs
-    registry.register_all(mcp, settings, predicate=tool_filter)
+    names = (
+        dict(connector.google_names) if connector is not None and connector.google_names else None
+    )
+    mcp.gateway_bare = names is not None
+    registry.register_all(mcp, settings, predicate=tool_filter, names=names)
+    mcp.gateway_exposed = {
+        (names.get(spec.name, spec.name) if names is not None else spec.name): spec
+        for spec in registry._specs
+        if mcp.gateway_filter(spec)
+        and (names is None or spec.name in names or spec.name == "system_get_current_time")
+    }
+    if names is not None:
+        from gateway.mcp.prompts import register_prompts
 
-    if settings.mcp_apps_enabled:
+        register_prompts(mcp, connector.slug)
+
+    if settings.mcp_apps_enabled and not mcp.gateway_bare:
         from gateway.mcp.ui import register_ui
 
         register_ui(

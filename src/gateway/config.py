@@ -36,6 +36,8 @@ class Settings(BaseSettings):
 
     # Only Gmail messages carrying this label are visible to the Gmail tools.
     gmail_access_label: str = "agent-access"
+    # Label applied by the Gmail ``apply_sensitive_*_label`` tools (created on demand).
+    gmail_sensitive_label: str = "Sensitive"
     # MCP Apps: serve interactive ``ui://`` widgets in chat. Off by default; tools then
     # return plain results with no widget metadata. See docs/mcp-apps.md.
     mcp_apps_enabled: bool = False

@@ -51,7 +51,9 @@ def create_app() -> FastAPI:
 
     mcp_servers = {"all": build_mcp(settings)}
     for connector in CONNECTORS:
-        mcp_servers[connector.slug] = build_mcp(settings, product_tool_filter(connector.slug))
+        mcp_servers[connector.slug] = build_mcp(
+            settings, product_tool_filter(connector.slug), connector=connector
+        )
     for bundle in BUNDLES:
         mcp_servers[bundle.slug] = build_mcp(settings, product_tool_filter(bundle.slug))
     # Accessing streamable_http_app() lazily creates each session manager.

@@ -13,6 +13,7 @@ from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from gateway.config import get_settings
 from gateway.db.models import GmailAgentDraft
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 from gateway.providers.google.common import GoogleAccountInput, make_list_accounts_spec
@@ -27,6 +28,8 @@ from gateway.providers.google.gmail.common import (
     resolve_scope,
     with_text_fallback,
 )
+from gateway.providers.google.gmail.sharing import get_sharing
+from gateway.providers.google.gmail.write import _owned_service
 from gateway.providers.registry import ToolError
 from gateway.storage.staged_files import MAX_FILE_BYTES, stage
 
@@ -48,6 +51,18 @@ class GetThreadInput(GoogleAccountInput):
 
 
 class ListDraftsInput(GoogleAccountInput):
+    pass
+
+
+class SearchThreadsInput(SearchMessagesInput):
+    pass
+
+
+class GetDraftInput(GoogleAccountInput):
+    draft_id: str = Field(..., min_length=1, max_length=255)
+
+
+class ListLabelsInput(GoogleAccountInput):
     pass
 
 
@@ -103,6 +118,81 @@ def search_messages(
         if in_scope(msg, scope):
             messages.append(_summary(msg))
     return {"messages": messages[: args.max_results], "next_page_token": next_token}
+
+
+def search_threads(
+    args: SearchThreadsInput, ctx: CallContext, session: Session
+) -> dict[str, Any]:
+    """Threads with at least one shared message; only the shared messages are returned."""
+    service, conn = gmail_service_and_connection(session, ctx)
+    scope = resolve_scope(service, conn)
+    base: dict[str, Any] = {"userId": "me", "maxResults": args.max_results}
+    if args.query:
+        base["q"] = args.query
+
+    next_token = None
+    if scope.all_mail or len(scope.label_ids) == 1:
+        params = dict(base)
+        if not scope.all_mail:
+            params["labelIds"] = list(scope.label_ids)
+        if args.page_token:
+            params["pageToken"] = args.page_token
+        resp = service.users().threads().list(**params).execute()
+        refs = resp.get("threads", []) or []
+        next_token = resp.get("nextPageToken")
+    else:
+        seen: dict[str, dict] = {}
+        for label_id in scope.label_ids:
+            resp = service.users().threads().list(**base, labelIds=[label_id]).execute()
+            for ref in resp.get("threads", []) or []:
+                seen.setdefault(ref["id"], ref)
+        refs = list(seen.values())
+    threads = []
+    for ref in refs:
+        thread = (
+            service.users().threads().get(userId="me", id=ref["id"], format="metadata").execute()
+        )
+        shared = [m for m in thread.get("messages", []) if in_scope(m, scope)]
+        if shared:
+            threads.append(
+                {
+                    "thread_id": ref["id"],
+                    "snippet": shared[-1].get("snippet", ""),
+                    "messages": [_summary(m) for m in shared],
+                }
+            )
+    return {"threads": threads[: args.max_results], "next_page_token": next_token}
+
+
+def get_draft(args: GetDraftInput, ctx: CallContext, session: Session) -> dict[str, Any]:
+    """Read one draft created through this gateway (other drafts are reported as missing)."""
+    row, service = _owned_service(session, ctx, args.draft_id)
+    draft = service.users().drafts().get(userId="me", id=row.draft_id, format="full").execute()
+    parsed = with_text_fallback(parse_message(draft.get("message", {})))
+    return {"draft_id": row.draft_id, **parsed}
+
+
+def list_labels(_args: ListLabelsInput, ctx: CallContext, session: Session) -> dict[str, Any]:
+    """The account's labels; ``shared`` marks the sharing label(s) the agent cannot change."""
+    service, conn = gmail_service_and_connection(session, ctx)
+    shared_names = {
+        n.lower()
+        for n in get_sharing(
+            getattr(conn, "connection_metadata", None), get_settings().gmail_access_label
+        ).labels
+    }
+    rows = service.users().labels().list(userId="me").execute().get("labels", [])
+    return {
+        "labels": [
+            {
+                "id": label["id"],
+                "name": label.get("name"),
+                "type": label.get("type"),
+                "shared": str(label.get("name", "")).lower() in shared_names,
+            }
+            for label in rows
+        ]
+    }
 
 
 def get_message(args: GetMessageInput, ctx: CallContext, session: Session) -> dict[str, Any]:
@@ -229,6 +319,42 @@ def register(registry) -> None:
             handler=search_messages,
             ui_resource=GMAIL_UI,
             ui_app_callable=True,
+        )
+    )
+    registry.add(
+        ToolSpec(
+            name="google_gmail_search_threads",
+            provider=PROVIDER,
+            risk=RiskLevel.READ,
+            description=(
+                "Search Gmail threads (Gmail search syntax) among the mail the user shares; "
+                "returns each thread's shared messages." + _UNTRUSTED
+            ),
+            input_model=SearchThreadsInput,
+            handler=search_threads,
+        )
+    )
+    registry.add(
+        ToolSpec(
+            name="google_gmail_get_draft",
+            provider=PROVIDER,
+            risk=RiskLevel.READ,
+            description="Read a draft created through this gateway." + _UNTRUSTED,
+            input_model=GetDraftInput,
+            handler=get_draft,
+        )
+    )
+    registry.add(
+        ToolSpec(
+            name="google_gmail_list_labels",
+            provider=PROVIDER,
+            risk=RiskLevel.READ,
+            description=(
+                "List Gmail labels (id, name, type). shared=true marks the label(s) that "
+                "control what you may see; they cannot be changed."
+            ),
+            input_model=ListLabelsInput,
+            handler=list_labels,
         )
     )
     registry.add(
