@@ -126,6 +126,8 @@ def _walk(part: dict, acc: dict[str, Any]) -> None:
                 "mime_type": mime,
                 "size": body.get("size"),
                 "attachment_id": body.get("attachmentId"),
+                # Gmail issues a new attachmentId on every fetch; partId is stable.
+                "part_id": part.get("partId"),
             }
         )
     elif mime in ("text/plain", "text/html") and body.get("data"):

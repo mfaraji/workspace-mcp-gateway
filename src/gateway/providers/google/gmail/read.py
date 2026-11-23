@@ -68,9 +68,15 @@ class ListLabelsInput(GoogleAccountInput):
 
 class DownloadAttachmentInput(GoogleAccountInput):
     message_id: str = Field(..., min_length=1, max_length=255)
-    attachment_id: str = Field(
-        ..., min_length=1, max_length=1024, description="From google_gmail_get_message."
+    attachment_id: str | None = Field(
+        None,
+        max_length=1024,
+        description="From get_message. Changes on every fetch, so also pass part_id or filename.",
     )
+    part_id: str | None = Field(
+        None, max_length=64, description="Stable part_id from get_message (preferred)."
+    )
+    filename: str | None = Field(None, max_length=255, description="Attachment file name.")
 
 
 def _summary(msg: dict) -> dict[str, Any]:
@@ -216,6 +222,30 @@ def get_thread(args: GetThreadInput, ctx: CallContext, session: Session) -> dict
     }
 
 
+def _find_attachment(attachments: list[dict], args: DownloadAttachmentInput) -> dict:
+    """Pick the requested attachment from a freshly fetched message.
+
+    Gmail issues a new ``attachmentId`` on every fetch, so an ID from an earlier
+    ``get_message`` rarely equals the one just fetched. The stable ``part_id`` and the
+    filename identify the attachment too; a lone attachment needs no selector.
+    """
+    candidates = [a for a in attachments if a.get("attachment_id")]
+    for key in ("part_id", "attachment_id", "filename"):
+        wanted = getattr(args, key)
+        if wanted:
+            hits = [a for a in candidates if a.get(key) == wanted]
+            if len(hits) == 1:
+                return hits[0]
+    if len(candidates) == 1 and not (args.part_id or args.filename):
+        return candidates[0]
+    available = ", ".join(f"{a['filename']} (part_id {a.get('part_id')})" for a in candidates)
+    raise ToolError(
+        "not_found",
+        "attachment not found on this message; attachment_id changes on every fetch, so pass "
+        f"part_id or filename. Available: {available or 'none'}",
+    )
+
+
 def download_attachment(
     args: DownloadAttachmentInput, ctx: CallContext, session: Session
 ) -> dict[str, Any]:
@@ -224,23 +254,14 @@ def download_attachment(
     scope = resolve_scope(service, conn)
     msg = service.users().messages().get(userId="me", id=args.message_id, format="full").execute()
     require_in_scope(msg, scope)
-    meta = next(
-        (
-            a
-            for a in parse_message(msg)["attachments"]
-            if a.get("attachment_id") == args.attachment_id
-        ),
-        None,
-    )
-    if meta is None:
-        raise ToolError("not_found", "attachment not found on this message")
+    meta = _find_attachment(parse_message(msg)["attachments"], args)
     if (meta.get("size") or 0) > MAX_FILE_BYTES:
         raise ToolError("too_large", "attachment exceeds the 10 MB limit")
     body = (
         service.users()
         .messages()
         .attachments()
-        .get(userId="me", messageId=args.message_id, id=args.attachment_id)
+        .get(userId="me", messageId=args.message_id, id=meta["attachment_id"])
         .execute()
     )
     raw = body.get("data") or ""

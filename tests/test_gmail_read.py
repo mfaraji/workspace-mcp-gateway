@@ -147,7 +147,13 @@ def test_get_message_parses_multipart(monkeypatch, ctx):
     assert out["body_text"] == "plain"
     assert out["body_html"] == "<b>html</b>"
     assert out["attachments"] == [
-        {"filename": "a.pdf", "mime_type": "application/pdf", "size": 12, "attachment_id": "att1"}
+        {
+            "filename": "a.pdf",
+            "mime_type": "application/pdf",
+            "size": 12,
+            "attachment_id": "att1",
+            "part_id": None,
+        }
     ]
 
 
@@ -251,16 +257,64 @@ def test_download_attachment_unshared_message_is_not_found(monkeypatch, ctx):
     assert e.value.error_code == "not_found"
 
 
-def test_download_attachment_unknown_id_and_too_large(monkeypatch, ctx):
-    msg = _msg("m", [LABEL])
+def _two_attachments(msg):
+    msg["payload"]["parts"][1]["partId"] = "1"
+    msg["payload"]["parts"].append(
+        {
+            "mimeType": "image/png",
+            "filename": "b.png",
+            "partId": "2",
+            "body": {"size": 5, "attachmentId": "att2"},
+        }
+    )
+    return msg
+
+
+def test_download_attachment_stale_id_resolves_by_part_id_or_filename(monkeypatch, ctx):
+    """Gmail issues new attachment ids on every fetch; the ones from an earlier read are stale."""
+    msg = _two_attachments(_msg("m", [LABEL]))
+    svc = _Service(LABELS, {"m": msg})
+    _patch(monkeypatch, svc)
+    _stage_capture(monkeypatch)
+    for kwargs in (
+        {"part_id": "1"},
+        {"filename": "a.pdf"},
+        {"attachment_id": "stale", "part_id": "1"},
+    ):
+        out = read.download_attachment(
+            read.DownloadAttachmentInput(message_id="m", **kwargs), ctx, None
+        )
+        assert out["filename"] == "a.pdf"
+    assert svc.attachments_res.calls["get"][-1]["id"] == "att1"  # the freshly fetched id
+
+
+def test_download_attachment_single_attachment_needs_no_selector(monkeypatch, ctx):
+    _patch(monkeypatch, _Service(LABELS, {"m": _msg("m", [LABEL])}))
+    _stage_capture(monkeypatch)
+    out = read.download_attachment(
+        read.DownloadAttachmentInput(message_id="m", attachment_id="stale"), ctx, None
+    )
+    assert out["filename"] == "a.pdf"
+
+
+def test_download_attachment_ambiguous_or_unknown_lists_available(monkeypatch, ctx):
+    msg = _two_attachments(_msg("m", [LABEL]))
     _patch(monkeypatch, _Service(LABELS, {"m": msg}))
     _stage_capture(monkeypatch)
-    with pytest.raises(ToolError) as e:
-        read.download_attachment(
-            read.DownloadAttachmentInput(message_id="m", attachment_id="nope"), ctx, None
-        )
-    assert e.value.error_code == "not_found"
+    for kwargs in ({"attachment_id": "stale"}, {}, {"part_id": "9"}):
+        with pytest.raises(ToolError) as e:
+            read.download_attachment(
+                read.DownloadAttachmentInput(message_id="m", **kwargs), ctx, None
+            )
+        assert e.value.error_code == "not_found"
+        assert "a.pdf" in str(e.value) and "part_id" in str(e.value)
+
+
+def test_download_attachment_too_large(monkeypatch, ctx):
+    msg = _msg("m", [LABEL])
     msg["payload"]["parts"][1]["body"]["size"] = 11 * 1024 * 1024
+    _patch(monkeypatch, _Service(LABELS, {"m": msg}))
+    _stage_capture(monkeypatch)
     with pytest.raises(ToolError) as e:
         read.download_attachment(
             read.DownloadAttachmentInput(message_id="m", attachment_id="att1"), ctx, None

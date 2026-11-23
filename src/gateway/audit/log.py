@@ -160,7 +160,7 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "google_gmail_unmark_thread_spam": {"thread_id", "account"},
     "google_gmail_apply_sensitive_message_label": {"message_id", "account"},
     "google_gmail_apply_sensitive_thread_label": {"thread_id", "account"},
-    "google_gmail_download_attachment": {"message_id", "attachment_id", "account"},
+    "google_gmail_download_attachment": {"message_id", "attachment_id", "part_id", "account"},
     "google_gmail_list_drafts": {"account"},
     "google_gmail_create_draft": {"reply_to_message_id", "account"},
     "google_gmail_update_draft": {"draft_id", "account"},
