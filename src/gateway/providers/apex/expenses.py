@@ -53,6 +53,24 @@ class CreateExpenseInput(BaseModel):
     description: str | None = Field(None, max_length=500)
     notes: str | None = Field(None, max_length=2000)
     is_business: bool | None = Field(None, description="Hint that this is a business expense.")
+    business_share_percent: float | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description=(
+            "Optional. Percent of the expense that is business (0-100). Defaults to 100. "
+            "Applies to business workspaces."
+        ),
+    )
+    gst_percent: float | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description=(
+            "Optional. GST/HST rate already included in the amount, in percent. Defaults to 13 "
+            "(HST, included). Pass 0 when the expense has no GST/HST."
+        ),
+    )
     workspace_id: str = Field(
         ...,
         min_length=1,
@@ -150,7 +168,17 @@ def create_expense(args: CreateExpenseInput, ctx: CallContext, session: Session)
     sha = staged.sha256 if staged else ""
     ref_src = "|".join(
         str(p)
-        for p in (ctx.user_id, args.merchant, args.amount, args.date, args.workspace_id, *also, sha)
+        for p in (
+            ctx.user_id,
+            args.merchant,
+            args.amount,
+            args.date,
+            args.workspace_id,
+            *also,
+            args.business_share_percent,
+            args.gst_percent,
+            sha,
+        )
     )
     body: dict[str, Any] = {"externalRef": hashlib.sha256(ref_src.encode()).hexdigest()}
     for key, value in (
@@ -162,6 +190,8 @@ def create_expense(args: CreateExpenseInput, ctx: CallContext, session: Session)
         ("description", args.description),
         ("notes", args.notes),
         ("isBusiness", args.is_business),
+        ("businessSharePercent", args.business_share_percent),
+        ("gstPercent", args.gst_percent),
         ("workspaceId", args.workspace_id),
     ):
         if value is not None:
@@ -267,7 +297,9 @@ def register(registry) -> None:
                 "picks the category from that workspace's categories. The expense is booked right "
                 "away as a needs-review expense in that workspace (rental workspaces link it to "
                 "their default property) and also listed in the user's Apex inbox; rejecting it "
-                "there moves it to the trash. An expense can belong to a rental and a business "
+                "there moves it to the trash. Optional business_share_percent (default 100) and "
+                "gst_percent (GST/HST included in the amount, default 13; 0 for none) are saved "
+                "on business workspaces. An expense can belong to a rental and a business "
                 "workspace: pass the others in also_workspace_ids." + _INBOX_NOTE
             ),
             input_model=CreateExpenseInput,

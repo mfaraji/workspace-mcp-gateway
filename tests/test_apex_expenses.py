@@ -112,6 +112,19 @@ def test_create_expense_builds_body_and_stable_external_ref(captured):
     assert first["workspaceId"] == "w1" and first["externalRef"] == second["externalRef"]
 
 
+def test_create_expense_passes_business_share_and_gst_only_when_given(captured):
+    base = {"merchant": "Home Depot", "amount": 10, "date": "2026-11-20", "workspace_id": "w1"}
+    expenses.create_expense(expenses.CreateExpenseInput(**base), _ctx(), None)
+    expenses.create_expense(
+        expenses.CreateExpenseInput(**base, business_share_percent=60, gst_percent=0),
+        _ctx(),
+        None,
+    )
+    plain, custom = (c["json"] for c in _api(captured))
+    assert "businessSharePercent" not in plain and "gstPercent" not in plain
+    assert custom["businessSharePercent"] == 60 and custom["gstPercent"] == 0
+
+
 def test_create_expense_from_receipt_alone_omits_scannable_fields(monkeypatch, captured):
     monkeypatch.setattr(
         expenses,
@@ -177,6 +190,11 @@ def test_unknown_workspace_is_rejected_before_calling_apex(monkeypatch, captured
 
 
 def test_create_expense_rejects_bad_input():
+    base = {"merchant": "x", "amount": 1, "date": "2026-11-20", "workspace_id": "w"}
+    with pytest.raises(ValueError):
+        expenses.CreateExpenseInput(**base, business_share_percent=101)
+    with pytest.raises(ValueError):
+        expenses.CreateExpenseInput(**base, gst_percent=-1)
     with pytest.raises(ValueError):
         expenses.CreateExpenseInput(merchant="x", amount=0, date="2026-11-20", workspace_id="w")
     with pytest.raises(ValueError):

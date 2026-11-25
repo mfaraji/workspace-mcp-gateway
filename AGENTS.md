@@ -92,7 +92,10 @@ with Open WebUI's native tool-server UI:
   away as a NEEDS_REVIEW transaction in that workspace (counted as valid, highlighted in
   expense lists, also shown in the user's Apex inbox; rental workspaces link it to their
   default property; `also_workspace_ids` links it to further workspaces, e.g. rental +
-  business) once amount and date are known (given or AI-scanned from the receipt). Rejecting
+  business) once amount and date are known (given or AI-scanned from the receipt). Optional
+  `business_share_percent` (default 100) and `gst_percent` (GST/HST included in the amount,
+  default 13, 0 = none) are sent as `businessSharePercent`/`gstPercent` and saved on business
+  workspaces (native or linked). Rejecting
   in the inbox moves it to the Apex trash. LOW tier because the review is the human gate. Receipts arrive via `receipt_file_ref` (from the Gmail download) or
   `apex_upload_expense_receipt`, which without a `file_ref` returns a signed single-use
   ticket for `POST /uploads/apex-receipt` (bearer ticket, 10 min, never logged).
