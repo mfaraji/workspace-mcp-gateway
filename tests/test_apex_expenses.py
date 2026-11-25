@@ -62,10 +62,20 @@ def captured(monkeypatch):
     monkeypatch.setattr(expenses, "get_settings", _settings)
     monkeypatch.setattr(expenses, "apex_call", fake_call)
     monkeypatch.setattr(expenses, "apex_upload", fake_upload)
+    def fake_creds(settings, ctx, *, scopes, workspace_id, capability):
+        calls.append({"kind": "creds", "workspace_id": workspace_id, "capability": capability})
+        return apex_client.ApexCredentials("tok", {"X-Workspace-Id": workspace_id})
+
     monkeypatch.setattr(
         expenses, "apex_user_credentials", lambda *a, **k: apex_client.ApexCredentials("tok")
     )
+    monkeypatch.setattr(expenses, "apex_credentials", fake_creds)
     return calls
+
+
+def _api(captured):
+    """Calls that reached Apex, without the credential checks."""
+    return [c for c in captured if c["kind"] != "creds"]
 
 
 def test_tools_registered_with_expected_tiers():
@@ -91,14 +101,15 @@ def test_list_categories_passes_kind(captured):
 def test_create_expense_builds_body_and_stable_external_ref(captured):
     ctx = _ctx()
     args = expenses.CreateExpenseInput(
-        merchant="Home Depot", amount=42.5, date="2026-11-20", category_id="c1"
+        merchant="Home Depot", amount=42.5, date="2026-11-20", category_id="c1", workspace_id="w1"
     )
     expenses.create_expense(args, ctx, None)
     expenses.create_expense(args, ctx, None)
-    first, second = captured[0]["json"], captured[1]["json"]
-    assert captured[0]["path"] == "/api/expense-inbox"
+    calls = _api(captured)
+    first, second = calls[0]["json"], calls[1]["json"]
+    assert calls[0]["path"] == "/api/expense-inbox"
     assert first["merchant"] == "Home Depot" and first["categoryId"] == "c1"
-    assert "workspaceId" not in first and first["externalRef"] == second["externalRef"]
+    assert first["workspaceId"] == "w1" and first["externalRef"] == second["externalRef"]
 
 
 def test_create_expense_from_receipt_alone_omits_scannable_fields(monkeypatch, captured):
@@ -107,56 +118,82 @@ def test_create_expense_from_receipt_alone_omits_scannable_fields(monkeypatch, c
         "take",
         lambda *_: staged_files.StagedContent("r.pdf", "application/pdf", b"x", "s"),
     )
-    expenses.create_expense(expenses.CreateExpenseInput(receipt_file_ref="ref"), _ctx(), None)
-    assert set(captured[0]["json"]) == {"externalRef"}
-    assert captured[1]["kind"] == "upload"
+    expenses.create_expense(
+        expenses.CreateExpenseInput(receipt_file_ref="ref", workspace_id="w1"), _ctx(), None
+    )
+    calls = _api(captured)
+    assert set(calls[0]["json"]) == {"externalRef", "workspaceId"}
+    assert calls[1]["kind"] == "upload"
 
 
 def test_create_expense_without_receipt_requires_details():
     with pytest.raises(ValueError):
-        expenses.CreateExpenseInput(merchant="x")
+        expenses.CreateExpenseInput(merchant="x", workspace_id="w1")
 
 
-def test_create_expense_with_workspace_validates_it_and_sends_workspace_id(monkeypatch, captured):
-    seen = {}
-
-    def fake_creds(settings, ctx, *, scopes, workspace_id, capability):
-        seen.update(workspace_id=workspace_id, capability=capability)
-        return apex_client.ApexCredentials("tok", {"X-Workspace-Id": workspace_id})
-
-    monkeypatch.setattr(expenses, "apex_credentials", fake_creds)
+def test_create_expense_validates_workspace_for_receipt_review(captured):
     args = expenses.CreateExpenseInput(
         merchant="HD", amount=5, date="2026-11-20", workspace_id="w1"
     )
     expenses.create_expense(args, _ctx(), None)
-    assert seen == {"workspace_id": "w1", "capability": "receiptReview"}
-    assert captured[0]["json"]["workspaceId"] == "w1"
+    assert captured[0] == {"kind": "creds", "workspace_id": "w1", "capability": "receiptReview"}
+    assert _api(captured)[0]["json"]["workspaceId"] == "w1"
 
 
-def test_create_expense_without_workspace_sends_none_and_uses_user_credentials(captured):
-    expenses.create_expense(
-        expenses.CreateExpenseInput(merchant="HD", amount=5, date="2026-11-20"), _ctx(), None
+def test_also_workspaces_are_validated_and_sent(captured):
+    args = expenses.CreateExpenseInput(
+        merchant="HD",
+        amount=5,
+        date="2026-11-20",
+        workspace_id="rent",
+        also_workspace_ids=["biz", "rent", "biz"],
     )
-    assert "workspaceId" not in captured[0]["json"]
+    expenses.create_expense(args, _ctx(), None)
+    creds = [c["workspace_id"] for c in captured if c["kind"] == "creds"]
+    assert creds == ["rent", "biz"]
+    assert _api(captured)[0]["json"]["suggestedWorkspaceIds"] == ["biz"]
+
+
+def test_workspace_id_is_mandatory():
+    with pytest.raises(ValueError):
+        expenses.CreateExpenseInput(merchant="HD", amount=5, date="2026-11-20")
+    with pytest.raises(ValueError):
+        expenses.CreateExpenseInput(merchant="HD", amount=5, date="2026-11-20", workspace_id="")
+    with pytest.raises(ValueError):
+        expenses.UploadExpenseReceiptInput(expense_id="e1")
+
+
+def test_unknown_workspace_is_rejected_before_calling_apex(monkeypatch, captured):
+    def deny(*a, **k):
+        raise ToolError("invalid_input", "workspace_id is not one of your Apex workspaces")
+
+    monkeypatch.setattr(expenses, "apex_credentials", deny)
+    args = expenses.CreateExpenseInput(
+        merchant="HD", amount=5, date="2026-11-20", workspace_id="nope"
+    )
+    with pytest.raises(ToolError):
+        expenses.create_expense(args, _ctx(), None)
+    assert captured == []
 
 
 def test_create_expense_rejects_bad_input():
     with pytest.raises(ValueError):
-        expenses.CreateExpenseInput(merchant="x", amount=0, date="2026-11-20")
+        expenses.CreateExpenseInput(merchant="x", amount=0, date="2026-11-20", workspace_id="w")
     with pytest.raises(ValueError):
-        expenses.CreateExpenseInput(merchant="x", amount=1, date="20/11/2026")
+        expenses.CreateExpenseInput(merchant="x", amount=1, date="20/11/2026", workspace_id="w")
 
 
 def test_create_expense_with_file_ref_uploads_receipt(monkeypatch, captured):
     staged = staged_files.StagedContent("r.pdf", "application/pdf", b"%PDF", "sha")
     monkeypatch.setattr(expenses, "take", lambda _s, _u, ref: staged)
     args = expenses.CreateExpenseInput(
-        merchant="HD", amount=5, date="2026-11-20", receipt_file_ref="ref"
+        merchant="HD", amount=5, date="2026-11-20", receipt_file_ref="ref", workspace_id="w1"
     )
     out = expenses.create_expense(args, _ctx(), None)
     assert out["receipt_uploaded"] is True
-    assert captured[1]["path"] == "/api/expense-inbox/exp%2F1/receipt"
-    assert captured[1]["data"] == b"%PDF"
+    upload = _api(captured)[1]
+    assert upload["path"] == "/api/expense-inbox/exp%2F1/receipt?workspaceId=w1"
+    assert upload["data"] == b"%PDF"
 
 
 def test_create_expense_reports_receipt_failure_without_losing_expense(monkeypatch, captured):
@@ -171,7 +208,7 @@ def test_create_expense_reports_receipt_failure_without_losing_expense(monkeypat
 
     monkeypatch.setattr(expenses, "apex_upload", boom)
     args = expenses.CreateExpenseInput(
-        merchant="HD", amount=5, date="2026-11-20", receipt_file_ref="ref"
+        merchant="HD", amount=5, date="2026-11-20", receipt_file_ref="ref", workspace_id="w1"
     )
     out = expenses.create_expense(args, _ctx(), None)
     assert out["id"] == "exp/1" and out["receipt_uploaded"] is False
@@ -179,20 +216,37 @@ def test_create_expense_reports_receipt_failure_without_losing_expense(monkeypat
 
 
 def test_upload_without_file_ref_returns_one_time_ticket(captured):
-    out = expenses.upload_receipt(expenses.UploadExpenseReceiptInput(expense_id="e1"), _ctx(), None)
+    out = expenses.upload_receipt(
+        expenses.UploadExpenseReceiptInput(expense_id="e1", workspace_id="w1"), _ctx(), None
+    )
     assert out["status"] == "upload_required"
     assert out["upload_url"] == "http://gw.local/uploads/apex-receipt"
-    assert captured == []  # nothing sent to Apex yet
+    assert _api(captured) == []  # nothing sent to Apex yet
+    assert captured[0]["workspace_id"] == "w1"  # workspace validated when the ticket is issued
+
+
+def test_upload_with_file_ref_sends_workspace(monkeypatch, captured):
+    staged = staged_files.StagedContent("r.pdf", "application/pdf", b"%PDF", "sha")
+    monkeypatch.setattr(expenses, "take", lambda _s, _u, ref: staged)
+    args = expenses.UploadExpenseReceiptInput(expense_id="e1", workspace_id="w1", file_ref="ref")
+    expenses.upload_receipt(args, _ctx(), None)
+    assert _api(captured)[0]["path"] == "/api/expense-inbox/e1/receipt?workspaceId=w1"
 
 
 def test_ticket_roundtrip_and_tamper():
     settings = _settings()
     uid = uuid.uuid4()
     token = mint_ticket(
-        settings, user_id=uid, clerk_subject="u", oauth_client_id="c", expense_id="e1"
+        settings,
+        user_id=uid,
+        clerk_subject="u",
+        oauth_client_id="c",
+        expense_id="e1",
+        workspace_id="w1",
     )
     ticket = verify_ticket(settings, token)
     assert ticket and ticket.user_id == uid and ticket.expense_id == "e1"
+    assert ticket.workspace_id == "w1"
     assert verify_ticket(settings, token + "x") is None
     assert verify_ticket(settings, "garbage") is None
 
@@ -302,11 +356,17 @@ def route(monkeypatch):
     monkeypatch.setattr(
         apex_uploads,
         "_upload_to_expense",
-        lambda s, c, eid, name, mime, data: state["uploads"].append((eid, name, mime, data)) or {},
+        lambda s, c, eid, wid, name, mime, data: state["uploads"].append((eid, name, mime, data))
+        or {},
     )
     monkeypatch.setattr(apex_uploads, "record_audit", state["audits"].append)
     ticket = mint_ticket(
-        settings, user_id=uuid.uuid4(), clerk_subject="u", oauth_client_id="c", expense_id="e1"
+        settings,
+        user_id=uuid.uuid4(),
+        clerk_subject="u",
+        oauth_client_id="c",
+        expense_id="e1",
+        workspace_id="w1",
     )
     return TestClient(app), ticket, state
 

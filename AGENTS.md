@@ -83,11 +83,17 @@ with Open WebUI's native tool-server UI:
   `aud` = `APEX_MCP_AUDIENCE`), signed with `GATEWAY_SIGNING_KEY`; Apex verifies it
   against `/.well-known/apex-jwks.json`. Never log or audit minted tokens (only `jti`,
   scopes, `workspace_id`).
-- Expense tools (`providers/apex/expenses.py`) are user-level: no `wid`, no workspace
-  (`apex_user_credentials`, scopes `apex:expenses.read|write`). `apex_create_expense` adds
-  an item to the user's Apex review inbox (workspace chosen at review; Apex AI-scans an
-  attached receipt to fill blank merchant/amount/date) and is LOW tier because the review
-  is the human gate. Receipts arrive via `receipt_file_ref` (from the Gmail download) or
+- Expense tools (`providers/apex/expenses.py`): `apex_list_expense_categories` is user-level
+  (`apex_user_credentials`, scopes `apex:expenses.read|write`). `apex_create_expense` and
+  `apex_upload_expense_receipt` **require `workspace_id`** (from `apex_list_workspaces`),
+  validated with `apex_credentials(capability="receiptReview")`; it is sent to Apex
+  (`workspaceId` in the body / `?workspaceId=` on the receipt upload, and inside the upload
+  ticket) so the AI scan categorizes against that workspace. Apex books the expense right
+  away as a NEEDS_REVIEW transaction in that workspace (counted as valid, highlighted in
+  expense lists, also shown in the user's Apex inbox; rental workspaces link it to their
+  default property; `also_workspace_ids` links it to further workspaces, e.g. rental +
+  business) once amount and date are known (given or AI-scanned from the receipt). Rejecting
+  in the inbox moves it to the Apex trash. LOW tier because the review is the human gate. Receipts arrive via `receipt_file_ref` (from the Gmail download) or
   `apex_upload_expense_receipt`, which without a `file_ref` returns a signed single-use
   ticket for `POST /uploads/apex-receipt` (bearer ticket, 10 min, never logged).
 - Every workspace-scoped Apex tool takes a required `workspace_id` (from

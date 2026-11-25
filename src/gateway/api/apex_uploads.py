@@ -78,6 +78,7 @@ async def upload_apex_receipt(request: Request, file: UploadFile) -> JSONRespons
             settings,
             ApexCredentials(token_str, {}, jti),
             ticket.expense_id,
+            ticket.workspace_id,
             file.filename or "receipt",
             mime,
             data,
@@ -91,7 +92,9 @@ async def upload_apex_receipt(request: Request, file: UploadFile) -> JSONRespons
             provider="apex",
             tool_name=_TOOL,
             result_status=status,
-            input_summary=summarize_input(_TOOL, {"expense_id": ticket.expense_id}),
+            input_summary=summarize_input(
+                _TOOL, {"expense_id": ticket.expense_id, "workspace_id": ticket.workspace_id}
+            ),
             error_code=code,
             auth_source="upload_ticket",
             risk_tier="low",

@@ -24,6 +24,7 @@ class UploadTicket:
     clerk_subject: str
     oauth_client_id: str | None
     expense_id: str
+    workspace_id: str
     jti: str
 
 
@@ -38,6 +39,7 @@ def mint_ticket(
     clerk_subject: str,
     oauth_client_id: str | None,
     expense_id: str,
+    workspace_id: str,
 ) -> str:
     return _serializer(settings).dumps(
         {
@@ -45,6 +47,7 @@ def mint_ticket(
             "sub": clerk_subject,
             "cid": oauth_client_id,
             "eid": expense_id,
+            "wsid": workspace_id,
             "jti": uuid.uuid4().hex,
         }
     )
@@ -54,6 +57,8 @@ def verify_ticket(settings: Settings, token: str) -> UploadTicket | None:
     """Return the ticket's claims, or ``None`` when it is invalid or expired."""
     try:
         p = _serializer(settings).loads(token, max_age=TICKET_TTL_SECONDS)
-        return UploadTicket(uuid.UUID(p["uid"]), p["sub"], p.get("cid"), p["eid"], p["jti"])
+        return UploadTicket(
+            uuid.UUID(p["uid"]), p["sub"], p.get("cid"), p["eid"], p["wsid"], p["jti"]
+        )
     except (BadSignature, SignatureExpired, KeyError, ValueError, TypeError):
         return None

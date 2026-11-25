@@ -30,8 +30,7 @@ from gateway.providers.registry import ToolError
 from gateway.storage.staged_files import take
 
 _INBOX_NOTE = (
-    " The expense is added to the user's Apex review inbox (it belongs to no workspace); "
-    "the user chooses the workspace when reviewing it in Apex."
+    " It stays flagged for the user's review in the Apex inbox until they approve it."
 )
 
 
@@ -54,14 +53,23 @@ class CreateExpenseInput(BaseModel):
     description: str | None = Field(None, max_length=500)
     notes: str | None = Field(None, max_length=2000)
     is_business: bool | None = Field(None, description="Hint that this is a business expense.")
-    workspace_id: str | None = Field(
-        None,
+    workspace_id: str = Field(
+        ...,
+        min_length=1,
         description=(
-            "Apex workspace this expense is for (from apex_list_workspaces; needs receipt "
-            "review, i.e. a business or rental workspace). With it the attached receipt is "
+            "Required. Apex workspace this expense is for (from apex_list_workspaces; needs "
+            "receipt review, i.e. a business or rental workspace). The attached receipt is "
             "scanned and categorized against that workspace's categories and the workspace "
-            "is pre-selected at review. Without it the scan still fills merchant, amount and "
-            "date but leaves the category empty."
+            "is pre-selected at review."
+        ),
+    )
+    also_workspace_ids: list[str] = Field(
+        default_factory=list,
+        max_length=5,
+        description=(
+            "Other workspaces (from apex_list_workspaces, receipt review) the same expense also "
+            "belongs to, e.g. a business workspace for a rental expense. The expense is booked "
+            "once (in the rental workspace when one is involved) and linked to these."
         ),
     )
     receipt_file_ref: str | None = Field(
@@ -83,6 +91,14 @@ class UploadExpenseReceiptInput(BaseModel):
     expense_id: str = Field(
         ..., min_length=1, max_length=128, description="From apex_create_expense."
     )
+    workspace_id: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Required. Apex workspace the expense is for (from apex_list_workspaces; needs "
+            "receipt review). The receipt is scanned and categorized against its categories."
+        ),
+    )
     file_ref: str | None = Field(
         None,
         description=(
@@ -98,34 +114,44 @@ def list_categories(args: ListExpenseCategoriesInput, ctx: CallContext, session:
     return apex_call(settings, creds, "GET", "/api/expense-categories", params={"kind": args.kind})
 
 
-def _upload_to_expense(settings, creds, expense_id: str, filename: str, mime: str, data: bytes):
+def _upload_to_expense(
+    settings, creds, expense_id: str, workspace_id: str, filename: str, mime: str, data: bytes
+):
     return apex_upload(
         settings,
         creds,
-        f"/api/expense-inbox/{quote(expense_id, safe='')}/receipt",
+        f"/api/expense-inbox/{quote(expense_id, safe='')}/receipt"
+        f"?workspaceId={quote(workspace_id, safe='')}",
         filename=filename,
         mime_type=mime,
         data=data,
     )
 
 
+def _workspace_credentials(settings, ctx: CallContext, workspace_id: str):
+    """Validates the workspace belongs to the user and supports receipt review."""
+    return apex_credentials(
+        settings,
+        ctx,
+        scopes=[SCOPE_EXPENSES_WRITE],
+        workspace_id=workspace_id,
+        capability="receiptReview",
+    )
+
+
 def create_expense(args: CreateExpenseInput, ctx: CallContext, session: Session) -> Any:
     settings = get_settings()
     staged = take(session, ctx.user_id, args.receipt_file_ref) if args.receipt_file_ref else None
-    if args.workspace_id:
-        # Validates the workspace belongs to the user and supports receipt review.
-        creds = apex_credentials(
-            settings,
-            ctx,
-            scopes=[SCOPE_EXPENSES_WRITE],
-            workspace_id=args.workspace_id,
-            capability="receiptReview",
-        )
-    else:
-        creds = apex_user_credentials(settings, ctx, scopes=[SCOPE_EXPENSES_WRITE])
+    creds = _workspace_credentials(settings, ctx, args.workspace_id)
+    also = [w for w in dict.fromkeys(args.also_workspace_ids) if w != args.workspace_id]
+    for other in also:  # each must be the user's workspace with receipt review
+        _workspace_credentials(settings, ctx, other)
     # Stable key so an agent retry returns the same inbox item instead of a duplicate.
     sha = staged.sha256 if staged else ""
-    ref_src = f"{ctx.user_id}|{args.merchant}|{args.amount}|{args.date}|{args.workspace_id}|{sha}"
+    ref_src = "|".join(
+        str(p)
+        for p in (ctx.user_id, args.merchant, args.amount, args.date, args.workspace_id, *also, sha)
+    )
     body: dict[str, Any] = {"externalRef": hashlib.sha256(ref_src.encode()).hexdigest()}
     for key, value in (
         ("merchant", args.merchant),
@@ -140,12 +166,20 @@ def create_expense(args: CreateExpenseInput, ctx: CallContext, session: Session)
     ):
         if value is not None:
             body[key] = value
+    if also:
+        body["suggestedWorkspaceIds"] = also
     expense = apex_call(settings, creds, "POST", "/api/expense-inbox", json=body)
     if staged is None or not isinstance(expense, dict) or not expense.get("id"):
         return expense
     try:
         _upload_to_expense(
-            settings, creds, str(expense["id"]), staged.filename, staged.mime_type, staged.data
+            settings,
+            creds,
+            str(expense["id"]),
+            args.workspace_id,
+            staged.filename,
+            staged.mime_type,
+            staged.data,
         )
         return {**expense, "receipt_uploaded": True}
     except ToolError as exc:
@@ -161,11 +195,17 @@ def create_expense(args: CreateExpenseInput, ctx: CallContext, session: Session)
 
 def upload_receipt(args: UploadExpenseReceiptInput, ctx: CallContext, session: Session) -> Any:
     settings = get_settings()
-    creds = apex_user_credentials(settings, ctx, scopes=[SCOPE_EXPENSES_WRITE])
+    creds = _workspace_credentials(settings, ctx, args.workspace_id)
     if args.file_ref:
         staged = take(session, ctx.user_id, args.file_ref)
         return _upload_to_expense(
-            settings, creds, args.expense_id, staged.filename, staged.mime_type, staged.data
+            settings,
+            creds,
+            args.expense_id,
+            args.workspace_id,
+            staged.filename,
+            staged.mime_type,
+            staged.data,
         )
     if not ctx.clerk_subject:
         raise ToolError("not_connected", "Apex needs a signed-in Clerk user.")
@@ -175,6 +215,7 @@ def upload_receipt(args: UploadExpenseReceiptInput, ctx: CallContext, session: S
         clerk_subject=ctx.clerk_subject,
         oauth_client_id=ctx.oauth_client_id,
         expense_id=args.expense_id,
+        workspace_id=args.workspace_id,
     )
     url = f"{settings.base_url.rstrip('/')}/uploads/apex-receipt"
     return {
@@ -192,7 +233,7 @@ def upload_receipt(args: UploadExpenseReceiptInput, ctx: CallContext, session: S
 def _create_preview(args: CreateExpenseInput) -> str:
     what = f"'{args.merchant}' {args.amount:g} on {args.date}" if args.amount else "from a receipt"
     return (
-        f"Add expense {what} to your Apex review inbox (you choose the workspace when reviewing)."
+        f"Add expense {what} to your Apex review inbox (workspace {args.workspace_id})."
     )
 
 
@@ -222,9 +263,12 @@ def register(registry) -> None:
                 "emailed receipt. Pass receipt_file_ref from google_gmail_download_attachment "
                 "to attach the receipt in the same call; Apex scans the receipt with AI, so "
                 "merchant/amount/date may then be omitted and are filled from it (values you "
-                "give win). Pass workspace_id (from apex_list_workspaces) to have the scan "
-                "also pick a category from that workspace; without it the category stays "
-                "empty and is chosen at review." + _INBOX_NOTE
+                "give win). workspace_id (from apex_list_workspaces) is required: the scan "
+                "picks the category from that workspace's categories. The expense is booked right "
+                "away as a needs-review expense in that workspace (rental workspaces link it to "
+                "their default property) and also listed in the user's Apex inbox; rejecting it "
+                "there moves it to the trash. An expense can belong to a rental and a business "
+                "workspace: pass the others in also_workspace_ids." + _INBOX_NOTE
             ),
             input_model=CreateExpenseInput,
             handler=create_expense,

@@ -43,8 +43,8 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     "apex_list_clients": {"workspace_id"},
     # Expenses: ids/enums only — never merchant, amount, notes or file contents.
     "apex_list_expense_categories": {"kind"},
-    "apex_create_expense": {"category_id"},
-    "apex_upload_expense_receipt": {"expense_id"},
+    "apex_create_expense": {"category_id", "workspace_id"},
+    "apex_upload_expense_receipt": {"expense_id", "workspace_id"},
     "apex_list_timesheets": {"workspace_id"},
     "apex_get_last_timesheet": {"workspace_id"},
     "apex_wealth_list_accounts": {"workspace_id"},
