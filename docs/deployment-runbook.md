@@ -188,6 +188,23 @@ sudo SERVER_NAME=mcp.ashpazi.shop \
 and strips `X-Gateway-Auth` + `X-Open-WebUI-User-*` on the public path. Cert auto-renews
 via certbot's timer; nginx reload on renew may need a deploy hook.
 
+**Host with a `stream` SNI router owning :443** (this host: `/etc/nginx/stream-conf.d/sni-router.conf`
+forwards TLS to `127.0.0.1:9444`): do not let the site listen on 443. Add `TLS_LISTEN` so the
+TLS server binds the router's target instead (the cert may live under a different name than the
+domain, e.g. `live/navak.top/`):
+
+```bash
+sudo SERVER_NAME=mcp.navak.top TLS_LISTEN=127.0.0.1:9444 \
+  SSL_CERT=/etc/letsencrypt/live/navak.top/fullchain.pem \
+  SSL_KEY=/etc/letsencrypt/live/navak.top/privkey.pem \
+  bash /home/orion/workspace-mcp-gateway/scripts/setup-nginx.sh
+```
+
+Without `TLS_LISTEN` the script emits no TLS listener on 9444, and the router's `:443` traffic
+fails with `Connection refused` (public symptom: TLS handshake error / connector 502). The
+script backs up the previous site file and restores it if `nginx -t` fails. `PRINT_ONLY=true`
+prints the generated config without root or touching nginx.
+
 If command 1 says "could not find a VirtualHost", the site's `server_name` isn't
 `mcp.ashpazi.shop` — use the `--webroot` variant instead.
 

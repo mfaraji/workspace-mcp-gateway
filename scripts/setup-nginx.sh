@@ -13,6 +13,18 @@ DEFAULT_SERVER="${DEFAULT_SERVER:-false}"
 SSL_CERT="${SSL_CERT:-}"
 SSL_KEY="${SSL_KEY:-}"
 
+# Loopback TLS: when something else owns public :443 (e.g. an nginx `stream` SNI router in
+# /etc/nginx/stream-conf.d/ that forwards TLS to a local port), set TLS_LISTEN to the address
+# it forwards to, e.g. TLS_LISTEN=127.0.0.1:9444. The TLS server then listens there instead of
+# on 443 (together with SSL_CERT/SSL_KEY), and the plain-HTTP server on LISTEN_PORT is kept
+# as a proxy instead of becoming a redirect. PLAIN_SERVER_NAME names that plain server
+# (default `_`).
+TLS_LISTEN="${TLS_LISTEN:-}"
+PLAIN_SERVER_NAME="${PLAIN_SERVER_NAME:-_}"
+
+# PRINT_ONLY=true prints the generated site file to stdout and exits (no root, no nginx).
+PRINT_ONLY="${PRINT_ONLY:-false}"
+
 SITES_AVAILABLE="${SITES_AVAILABLE:-/etc/nginx/sites-available}"
 SITES_ENABLED="${SITES_ENABLED:-/etc/nginx/sites-enabled}"
 SITE_FILE="${SITES_AVAILABLE}/${SITE_NAME}"
@@ -28,47 +40,13 @@ if [[ -n "${SSL_CERT}" && -n "${SSL_KEY}" ]]; then
   USE_TLS="true"
 fi
 
-REDIRECT_SERVER=""
-if [[ "${USE_TLS}" == "true" ]]; then
-  LISTEN_DIRECTIVE="listen 443 ssl${DEFAULT_SUFFIX};"
-  TLS_DIRECTIVES=$(cat <<TLS
-    ssl_certificate ${SSL_CERT};
-    ssl_certificate_key ${SSL_KEY};
-    ssl_protocols TLSv1.2 TLSv1.3;
-TLS
-)
-  REDIRECT_SERVER=$(cat <<REDIRECT
-server {
-    listen 80${DEFAULT_SUFFIX};
-    server_name ${SERVER_NAME};
-    return 301 https://\$host\$request_uri;
-}
-
-REDIRECT
-)
-else
-  LISTEN_DIRECTIVE="listen ${LISTEN_PORT}${DEFAULT_SUFFIX};"
-  TLS_DIRECTIVES=""
-fi
-
-if [[ "${EUID}" -ne 0 ]]; then
-  echo "Run this script with sudo:" >&2
-  echo "  sudo SERVER_NAME=${SERVER_NAME} UPSTREAM=${UPSTREAM} $0" >&2
+if [[ -n "${TLS_LISTEN}" && "${USE_TLS}" != "true" ]]; then
+  echo "TLS_LISTEN needs SSL_CERT and SSL_KEY" >&2
   exit 1
 fi
 
-if ! command -v nginx >/dev/null 2>&1; then
-  echo "nginx is not installed or not on PATH" >&2
-  exit 1
-fi
-
-mkdir -p "${SITES_AVAILABLE}" "${SITES_ENABLED}"
-
-cat >"${SITE_FILE}" <<NGINX
-${REDIRECT_SERVER}server {
-    ${LISTEN_DIRECTIVE}
-    server_name ${SERVER_NAME};
-${TLS_DIRECTIVES}
+# The location blocks are identical for every server block.
+IFS= read -r -d '' SERVER_BODY <<BODY || true
     client_max_body_size 16m;  # inline receipts: 10 MB file = ~14 MB base64 JSON
 
     location /health {
@@ -122,11 +100,93 @@ ${TLS_DIRECTIVES}
         proxy_set_header X-OpenWebUI-Automation-Id "";
         proxy_set_header X-Gateway-Auth "";
     }
+BODY
+SERVER_BODY="${SERVER_BODY%$'\n'}"
+
+TLS_DIRECTIVES="    ssl_certificate ${SSL_CERT};
+    ssl_certificate_key ${SSL_KEY};
+    ssl_protocols TLSv1.2 TLSv1.3;
+"
+
+if [[ -n "${TLS_LISTEN}" ]]; then
+  # Public :443 belongs to the stream SNI router; terminate TLS on loopback for it.
+  SITE_CONFIG="# Public :443 is owned by the nginx stream SNI router, which forwards
+# ${SERVER_NAME} TLS traffic to ${TLS_LISTEN}. Do not listen on 443 here.
+server {
+    listen ${TLS_LISTEN} ssl;
+    server_name ${SERVER_NAME};
+
+${TLS_DIRECTIVES}
+${SERVER_BODY}
 }
-NGINX
+
+server {
+    listen ${LISTEN_PORT}${DEFAULT_SUFFIX};
+    server_name ${PLAIN_SERVER_NAME};
+
+${SERVER_BODY}
+}
+"
+elif [[ "${USE_TLS}" == "true" ]]; then
+  SITE_CONFIG="server {
+    listen 80${DEFAULT_SUFFIX};
+    server_name ${SERVER_NAME};
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl${DEFAULT_SUFFIX};
+    server_name ${SERVER_NAME};
+
+${TLS_DIRECTIVES}
+${SERVER_BODY}
+}
+"
+else
+  SITE_CONFIG="server {
+    listen ${LISTEN_PORT}${DEFAULT_SUFFIX};
+    server_name ${SERVER_NAME};
+
+${SERVER_BODY}
+}
+"
+fi
+
+if [[ "${PRINT_ONLY}" == "true" ]]; then
+  printf '%s' "${SITE_CONFIG}"
+  exit 0
+fi
+
+if [[ "${EUID}" -ne 0 ]]; then
+  echo "Run this script with sudo:" >&2
+  echo "  sudo SERVER_NAME=${SERVER_NAME} UPSTREAM=${UPSTREAM} $0" >&2
+  exit 1
+fi
+
+if ! command -v nginx >/dev/null 2>&1; then
+  echo "nginx is not installed or not on PATH" >&2
+  exit 1
+fi
+
+mkdir -p "${SITES_AVAILABLE}" "${SITES_ENABLED}"
+
+# Keep the previous site file so a bad regeneration can be rolled back.
+if [[ -f "${SITE_FILE}" ]]; then
+  BACKUP_FILE="${SITE_FILE}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+  cp -p "${SITE_FILE}" "${BACKUP_FILE}"
+  echo "Backed up previous site file to ${BACKUP_FILE}"
+fi
+
+printf '%s' "${SITE_CONFIG}" >"${SITE_FILE}"
 
 ln -sf "${SITE_FILE}" "${ENABLED_FILE}"
-nginx -t
+if ! nginx -t; then
+  if [[ -n "${BACKUP_FILE:-}" ]]; then
+    cp -p "${BACKUP_FILE}" "${SITE_FILE}"
+    echo "nginx -t failed; restored ${BACKUP_FILE}" >&2
+  fi
+  exit 1
+fi
 
 if command -v systemctl >/dev/null 2>&1; then
   systemctl reload nginx
