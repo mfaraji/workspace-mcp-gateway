@@ -429,3 +429,126 @@ def test_apex_user_credentials_mints_without_workspace(monkeypatch):
     )
     creds = apex_client.apex_user_credentials(_settings(), _ctx(), scopes=["apex:expenses.read"])
     assert seen["wid"] is None and creds.headers == {}
+
+
+# --- inline receipts (base64Content) ---------------------------------------------------
+
+import base64  # noqa: E402
+
+
+def _b64(data: bytes) -> str:
+    return base64.b64encode(data).decode()
+
+
+def _no_staged(monkeypatch):
+    def fail(*_a):
+        raise AssertionError("file_ref must not be consulted")
+
+    monkeypatch.setattr(expenses, "take", fail)
+
+
+def test_create_expense_inline_pdf_uploads_receipt(monkeypatch, captured):
+    _no_staged(monkeypatch)
+    args = expenses.CreateExpenseInput(
+        workspace_id="w1",
+        base64Content=_b64(b"%PDF-1.4 hi"),
+        contentMimeType="application/pdf",
+        fileName="r.pdf",
+    )  # details may be omitted: Apex scans the receipt
+    out = expenses.create_expense(args, _ctx(), None)
+    assert out["receipt_uploaded"] is True
+    upload = _api(captured)[1]
+    assert upload["path"] == "/api/expense-inbox/exp%2F1/receipt?workspaceId=w1"
+    assert upload["data"] == b"%PDF-1.4 hi" and upload["filename"] == "r.pdf"
+
+
+def test_upload_receipt_inline_pdf(monkeypatch, captured):
+    _no_staged(monkeypatch)
+    args = expenses.UploadExpenseReceiptInput(
+        expense_id="e1",
+        workspace_id="w1",
+        base64Content=_b64(b"%PDF-1.4"),
+        contentMimeType="application/pdf",
+    )
+    assert expenses.upload_receipt(args, _ctx(), None) == {"ok": True}
+    up = _api(captured)[0]
+    assert up["path"] == "/api/expense-inbox/e1/receipt?workspaceId=w1"
+    assert up["data"] == b"%PDF-1.4" and up["filename"] == "receipt"
+
+
+def test_inline_file_ref_takes_precedence(monkeypatch, captured):
+    staged = staged_files.StagedContent("s.pdf", "application/pdf", b"STAGED", "sha")
+    monkeypatch.setattr(expenses, "take", lambda *_: staged)
+    args = expenses.UploadExpenseReceiptInput(
+        expense_id="e1",
+        workspace_id="w1",
+        file_ref="ref",
+        base64Content=_b64(b"inline"),
+        contentMimeType="application/pdf",
+    )
+    expenses.upload_receipt(args, _ctx(), None)
+    assert _api(captured)[0]["data"] == b"STAGED"
+
+
+def test_inline_requires_mime_type_and_rejects_bad_one():
+    with pytest.raises(ValueError):
+        expenses.UploadExpenseReceiptInput(
+            expense_id="e1", workspace_id="w1", base64Content=_b64(b"x")
+        )
+    for model, extra in (
+        (expenses.UploadExpenseReceiptInput, {"expense_id": "e1"}),
+        (expenses.CreateExpenseInput, {}),
+    ):
+        with pytest.raises(ValueError):
+            model(workspace_id="w1", base64Content=_b64(b"x"), contentMimeType="text/html", **extra)
+    with pytest.raises(ToolError) as err:  # handler-level guard too
+        expenses.decode_inline_receipt(_b64(b"x"), "text/html", None)
+    assert err.value.error_code == "invalid_input"
+
+
+@pytest.mark.parametrize("which", ["create", "upload"])
+def test_inline_oversize_rejected_before_calling_apex(captured, which):
+    big = _b64(b"0" * (staged_files.MAX_FILE_BYTES + 1))
+    common = {"workspace_id": "w1", "base64Content": big, "contentMimeType": "image/png"}
+    with pytest.raises(ToolError) as err:
+        if which == "create":
+            expenses.create_expense(expenses.CreateExpenseInput(**common), _ctx(), None)
+        else:
+            args = expenses.UploadExpenseReceiptInput(expense_id="e1", **common)
+            expenses.upload_receipt(args, _ctx(), None)
+    assert err.value.error_code == "too_large"
+    assert _api(captured) == []  # no expense booked
+
+
+def test_inline_exactly_10mb_is_accepted(captured):
+    args = expenses.UploadExpenseReceiptInput(
+        expense_id="e1",
+        workspace_id="w1",
+        base64Content=_b64(b"0" * staged_files.MAX_FILE_BYTES),
+        contentMimeType="image/jpeg",
+    )
+    expenses.upload_receipt(args, _ctx(), None)
+    assert len(_api(captured)[0]["data"]) == staged_files.MAX_FILE_BYTES
+
+
+@pytest.mark.parametrize("bad", ["not base64!!", "data:application/pdf;base64,AAAA", "AAA", "  "])
+def test_inline_invalid_base64_rejected(captured, bad):
+    args = expenses.CreateExpenseInput(
+        workspace_id="w1", base64Content=bad, contentMimeType="application/pdf"
+    )
+    with pytest.raises(ToolError) as err:
+        expenses.create_expense(args, _ctx(), None)
+    assert err.value.error_code == "invalid_input" and "base64" in str(err.value)
+    assert _api(captured) == []
+
+
+def test_descriptions_start_with_file_references_sentence():
+    registry = ToolRegistry()
+    expenses.register(registry)
+    for name in ("apex_create_expense", "apex_upload_expense_receipt"):
+        spec = {x.name: x for x in registry._specs}[name]
+        assert spec.description.startswith(
+            "FILE REFERENCES: to upload a file you can read here, don't type its base64; set "
+            "base64Content to a file reference, sha256:<64 lowercase hex>:<its absolute path>. "
+            "The app fills in the file's content when the call runs."
+        )

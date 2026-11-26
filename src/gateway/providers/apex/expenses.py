@@ -7,6 +7,8 @@ workspace; the user picks the workspace when reviewing. Credentials are user-lev
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 from typing import Any, Literal
 from urllib.parse import quote
@@ -27,11 +29,70 @@ from gateway.providers.apex.client import (
 from gateway.providers.apex.tickets import TICKET_TTL_SECONDS, mint_ticket
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 from gateway.providers.registry import ToolError
-from gateway.storage.staged_files import take
+from gateway.storage.staged_files import MAX_FILE_BYTES, StagedContent, take
 
 _INBOX_NOTE = (
     " It stays flagged for the user's review in the Apex inbox until they approve it."
 )
+
+_FILE_REFERENCES = (
+    "FILE REFERENCES: to upload a file you can read here, don't type its base64; set "
+    "base64Content to a file reference, sha256:<64 lowercase hex>:<its absolute path>. "
+    "The app fills in the file's content when the call runs. "
+)
+InlineMime = Literal["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic"]
+_INLINE_MIMES = frozenset(InlineMime.__args__)  # type: ignore[attr-defined]
+# base64 inflates by 4/3; allow the padding and a little slack before decoding anything.
+_MAX_INLINE_CHARS = (MAX_FILE_BYTES + 2) // 3 * 4 + 4
+
+
+class _InlineReceipt(BaseModel):
+    """Optional inline file, same parameter names as Google Drive's create_file."""
+
+    base64Content: str | None = Field(
+        None,
+        description=(
+            "The receipt file, base64 encoded (max 10 MB decoded). Requires contentMimeType."
+        ),
+    )
+    contentMimeType: InlineMime | None = Field(
+        None, description="Required with base64Content: the file's MIME type."
+    )
+    fileName: str | None = Field(None, min_length=1, max_length=255, description="File name.")
+
+    @model_validator(mode="after")
+    def _inline_complete(self):
+        if self.base64Content is not None and not self.contentMimeType:
+            raise ValueError("contentMimeType is required when base64Content is set")
+        return self
+
+
+def decode_inline_receipt(
+    base64_content: str, mime: str | None, file_name: str | None
+) -> StagedContent:
+    """Decode and check an inline receipt; raises ``ToolError`` with a clear message."""
+    if mime not in _INLINE_MIMES:
+        raise ToolError(
+            "invalid_input",
+            "contentMimeType must be one of: " + ", ".join(sorted(_INLINE_MIMES)) + ".",
+        )
+    if len(base64_content) > _MAX_INLINE_CHARS:
+        raise ToolError("too_large", "File exceeds the 10 MB limit.")
+    try:
+        data = base64.b64decode(base64_content, validate=True)
+    except (binascii.Error, ValueError):
+        raise ToolError(
+            "invalid_input",
+            "base64Content is not valid base64 (standard alphabet, no data: prefix or "
+            "whitespace).",
+        ) from None
+    if not data:
+        raise ToolError("invalid_input", "base64Content decodes to an empty file.")
+    if len(data) > MAX_FILE_BYTES:
+        raise ToolError("too_large", "File exceeds the 10 MB limit.")
+    return StagedContent(
+        file_name or "receipt", mime, data, hashlib.sha256(data).hexdigest()
+    )
 
 
 class ListExpenseCategoriesInput(BaseModel):
@@ -40,7 +101,7 @@ class ListExpenseCategoriesInput(BaseModel):
     )
 
 
-class CreateExpenseInput(BaseModel):
+class CreateExpenseInput(_InlineReceipt):
     merchant: str | None = Field(None, min_length=1, max_length=200)
     amount: float | None = Field(None, gt=0, description="Total amount paid, positive.")
     date: str | None = Field(
@@ -97,15 +158,15 @@ class CreateExpenseInput(BaseModel):
     @model_validator(mode="after")
     def _details_or_receipt(self):
         missing = [n for n in ("merchant", "amount", "date") if getattr(self, n) is None]
-        if missing and not self.receipt_file_ref:
+        if missing and not (self.receipt_file_ref or self.base64Content):
             raise ValueError(
-                f"{', '.join(missing)} required unless receipt_file_ref is given "
+                f"{', '.join(missing)} required unless receipt_file_ref or base64Content is given "
                 "(Apex scans the receipt to fill them in)"
             )
         return self
 
 
-class UploadExpenseReceiptInput(BaseModel):
+class UploadExpenseReceiptInput(_InlineReceipt):
     expense_id: str = Field(
         ..., min_length=1, max_length=128, description="From apex_create_expense."
     )
@@ -121,7 +182,7 @@ class UploadExpenseReceiptInput(BaseModel):
         None,
         description=(
             "file_ref from google_gmail_download_attachment. Omit it when the file is on your "
-            "own machine: you then get an upload_url to POST the file to."
+            "own machine: send base64Content, or you get an upload_url to POST the file to."
         ),
     )
 
@@ -159,7 +220,11 @@ def _workspace_credentials(settings, ctx: CallContext, workspace_id: str):
 
 def create_expense(args: CreateExpenseInput, ctx: CallContext, session: Session) -> Any:
     settings = get_settings()
-    staged = take(session, ctx.user_id, args.receipt_file_ref) if args.receipt_file_ref else None
+    staged = None
+    if args.receipt_file_ref:
+        staged = take(session, ctx.user_id, args.receipt_file_ref)
+    elif args.base64Content is not None:
+        staged = decode_inline_receipt(args.base64Content, args.contentMimeType, args.fileName)
     creds = _workspace_credentials(settings, ctx, args.workspace_id)
     also = [w for w in dict.fromkeys(args.also_workspace_ids) if w != args.workspace_id]
     for other in also:  # each must be the user's workspace with receipt review
@@ -218,7 +283,7 @@ def create_expense(args: CreateExpenseInput, ctx: CallContext, session: Session)
             "receipt_uploaded": False,
             "receipt_error": exc.error_code,
             "hint": (
-                "Expense created; re-download the attachment and call apex_upload_expense_receipt."
+                "Expense created; send the receipt again with apex_upload_expense_receipt."
             ),
         }
 
@@ -228,6 +293,17 @@ def upload_receipt(args: UploadExpenseReceiptInput, ctx: CallContext, session: S
     creds = _workspace_credentials(settings, ctx, args.workspace_id)
     if args.file_ref:
         staged = take(session, ctx.user_id, args.file_ref)
+        return _upload_to_expense(
+            settings,
+            creds,
+            args.expense_id,
+            args.workspace_id,
+            staged.filename,
+            staged.mime_type,
+            staged.data,
+        )
+    if args.base64Content is not None:
+        staged = decode_inline_receipt(args.base64Content, args.contentMimeType, args.fileName)
         return _upload_to_expense(
             settings,
             creds,
@@ -289,11 +365,14 @@ def register(registry) -> None:
             provider=PROVIDER,
             risk=RiskLevel.MUTATING,
             description=(
-                "Create an expense (merchant, amount, date, optional category) from e.g. an "
+                _FILE_REFERENCES
+                + "Create an expense (merchant, amount, date, optional category) from e.g. an "
                 "emailed receipt. Pass receipt_file_ref from google_gmail_download_attachment "
-                "to attach the receipt in the same call; Apex scans the receipt with AI, so "
-                "merchant/amount/date may then be omitted and are filled from it (values you "
-                "give win). workspace_id (from apex_list_workspaces) is required: the scan "
+                "to attach the receipt in the same call (or base64Content + contentMimeType for "
+                "an inline file; file_ref wins when both are given); Apex scans the receipt "
+                "with AI, so merchant/amount/date may then be omitted and are filled from it "
+                "(values you give win). workspace_id (from apex_list_workspaces) is required: the "
+                "scan "
                 "picks the category from that workspace's categories. The expense is booked right "
                 "away as a needs-review expense in that workspace (rental workspaces link it to "
                 "their default property) and also listed in the user's Apex inbox; rejecting it "
@@ -315,10 +394,12 @@ def register(registry) -> None:
             provider=PROVIDER,
             risk=RiskLevel.MUTATING,
             description=(
-                "Attach a receipt file (PDF/image, max 10 MB) to an expense created with "
+                _FILE_REFERENCES
+                + "Attach a receipt file (PDF/image, max 10 MB) to an expense created with "
                 "apex_create_expense; Apex scans it with AI to fill blank details. With file_ref "
-                "the gateway uploads it directly; without it you get a one-time upload_url and "
-                "curl command for a file on your machine."
+                "the gateway uploads it directly; else with base64Content + contentMimeType "
+                "(optional fileName) the file is sent inline; else you get a one-time upload_url "
+                "and curl command for a file on your machine."
             ),
             input_model=UploadExpenseReceiptInput,
             handler=upload_receipt,

@@ -69,7 +69,7 @@ ${REDIRECT_SERVER}server {
     ${LISTEN_DIRECTIVE}
     server_name ${SERVER_NAME};
 ${TLS_DIRECTIVES}
-    client_max_body_size 10m;
+    client_max_body_size 16m;  # inline receipts: 10 MB file = ~14 MB base64 JSON
 
     location /health {
         allow 127.0.0.1;
