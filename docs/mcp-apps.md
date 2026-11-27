@@ -19,7 +19,7 @@ checklist you tick, an agenda, and so on. Clients without support still get the 
 ## Security model
 
 - Widgets add no permissions. A `ui://` resource is listed and readable only if the caller has a grant for
-  at least one tool that references it (`GatewayFastMCP.list_resources/read_resource`).
+  at least one tool that references it (`GatewayMCPServer.list_resources/read_resource`).
 - The sandbox has no network: widgets are self-contained (no CDN, no `fetch`). Tests enforce this and that
   data is never written with `innerHTML`.
 - Never render Gmail `body_html`; show text only.

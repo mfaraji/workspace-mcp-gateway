@@ -1,6 +1,6 @@
 """MCP server construction.
 
-``build_mcp`` creates the ``FastMCP`` instance, collects tools from the
+``build_mcp`` creates the ``MCPServer`` instance, collects tools from the
 registered connectors into a :class:`~gateway.providers.registry.ToolRegistry`,
 and registers them. Connectors self-register via their ``register(registry)``
 entrypoint, so adding or removing one is a single entry in
@@ -12,7 +12,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from urllib.parse import urlparse
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ResourceNotFoundError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import Tool as MCPTool
 
@@ -24,12 +25,26 @@ from gateway.providers.base import RiskLevel, ToolSpec
 ToolFilter = Callable[[ToolSpec], bool]
 
 
-class GatewayFastMCP(FastMCP):
+class GatewayMCPServer(MCPServer):
     """Advertise only the tools granted to this OAuth user and application."""
 
-    def __init__(self, *args, oauth_enabled: bool = False, **kwargs) -> None:
+    def __init__(
+        self,
+        *args,
+        oauth_enabled: bool = False,
+        transport_security: TransportSecuritySettings | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.oauth_enabled = oauth_enabled
+        self._transport_security = transport_security
+
+    def streamable_http_app(self, **kwargs):
+        """Stateless, mounted at its own root; mcp 2.x takes these per app, not per server."""
+        kwargs.setdefault("stateless_http", True)
+        kwargs.setdefault("streamable_http_path", "/")
+        kwargs.setdefault("transport_security", self._transport_security)
+        return super().streamable_http_app(**kwargs)
 
     async def list_tools(self) -> list[MCPTool]:
         tools = await super().list_tools()
@@ -74,10 +89,13 @@ class GatewayFastMCP(FastMCP):
                     self.gateway_settings, auth
                 )
         if self.oauth_enabled:
+            # mcp 2.x drops unknown top-level tool fields, so the scheme rides in ``_meta``
+            # (the Apps SDK reads ``_meta.securitySchemes`` as well as the top-level field).
             for tool in tools:
-                tool.__pydantic_extra__["securitySchemes"] = [
-                    {"type": "oauth2", "scopes": ["mcp:tools"]}
-                ]
+                tool.meta = {
+                    **(tool.meta or {}),
+                    "securitySchemes": [{"type": "oauth2", "scopes": ["mcp:tools"]}],
+                }
         return tools
 
     async def _granted_ui_uris(self) -> set[str]:
@@ -119,28 +137,26 @@ class GatewayFastMCP(FastMCP):
         uris = await self._granted_ui_uris()
         return [r for r in await super().list_resources() if str(r.uri) in uris]
 
-    async def read_resource(self, uri):
+    async def read_resource(self, uri, context=None):
         if str(uri) not in await self._granted_ui_uris():
-            raise ValueError(f"Unknown resource: {uri}")
-        return await super().read_resource(uri)
+            raise ResourceNotFoundError(f"Unknown resource: {uri}")
+        return await super().read_resource(uri, context)
 
 
 def build_mcp(
     settings: Settings,
     tool_filter: ToolFilter | None = None,
     connector: Connector | None = None,
-) -> FastMCP:
-    """Build and return the configured FastMCP server.
+) -> MCPServer:
+    """Build and return the configured MCP server.
 
     With a ``connector`` that defines ``google_names`` this is that connector's own
     mount: it exposes exactly Google's tool set under Google's bare names (and the
     connector's prompts) instead of the gateway's prefixed tools and widgets.
     """
-    mcp = GatewayFastMCP(
+    mcp = GatewayMCPServer(
         name="workspace-mcp-gateway",
         oauth_enabled=bool(settings.clerk_issuer),
-        stateless_http=True,
-        streamable_http_path="/",
         transport_security=_transport_security(settings),
     )
 
@@ -204,16 +220,6 @@ def product_tool_filter(product: str) -> ToolFilter:
         return spec.name == "system_get_current_time" or any(c.matches(spec) for c in members)
 
     return allow
-
-
-def build_mcp_skeleton(settings: Settings) -> FastMCP:
-    """Build a FastMCP with no tools registered (used until providers land)."""
-    return FastMCP(
-        name="workspace-mcp-gateway",
-        stateless_http=True,
-        streamable_http_path="/",
-        transport_security=_transport_security(settings),
-    )
 
 
 def _transport_security(settings: Settings) -> TransportSecuritySettings:

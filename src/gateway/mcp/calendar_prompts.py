@@ -7,7 +7,7 @@ themselves: the message tells the model to confirm with the user before ``create
 
 from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 _CONFIRM = (
     "Before calling create_event, show the user the proposed title, date and time (with "
@@ -91,8 +91,8 @@ def analyze_availability(timeframe: str = "this week", attendees: str = "") -> s
     )
 
 
-def register(mcp: FastMCP) -> None:
-    """Register the Calendar prompts on a FastMCP server."""
+def register(mcp: MCPServer) -> None:
+    """Register the Calendar prompts on an MCPServer."""
     for fn, description in (
         (schedule_meeting, "Find a time and schedule a meeting with attendees."),
         (quick_meeting_today, "Set up a short meeting later today."),

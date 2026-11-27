@@ -144,7 +144,7 @@ src/gateway/
   db/               engine + session_scope, ORM models, Base
   crypto/           Fernet token encryption (get_cipher)
   identity/         AuthenticatedUser, header-based identity resolution
-  mcp/              FastMCP server build + IdentityMiddleware / current-user ContextVar
+  mcp/              MCPServer build + IdentityMiddleware / current-user ContextVar
   oauth/            Google OAuth flow (scopes, Flow, signed state) + routes
   policy/           confirmation-token policy seam (confirm.check)
   audit/            Capella audit writer (30-day expiry) + input redaction (summarize_input)
@@ -237,7 +237,7 @@ Run the server locally: `uv run uvicorn gateway.app:create_app --factory --reloa
   (`providers.registry.published_schema`): field descriptions, limits, enums and defaults, plus
   `confirmation_token` on mutating tools. Put guidance in `Field(description=...)` and limits in
   the model. Validation still happens only in the pipeline (`invalid_input`, audited), never in
-  FastMCP.
+  MCPServer.
 - **Minimal OAuth scopes.** Only request scopes for tools actually registered in
   `build_mcp()` (incremental authorization). Product-specific OAuth starts use
   the relevant product scopes only. When you wire up a new provider module, union
@@ -277,3 +277,12 @@ for user-owned data, including Recipes. Market (`/mcp/finance`) explicitly uses
 `AccessMode.AUTHENTICATED_SHARED` for generic read-only data available to all signed-in
 OAuth users. Never infer shared access from absent upstream credentials. Shared
 connectors must contain only READ tools; MCP construction validates this invariant.
+
+## MCP SDK
+
+The gateway runs on `mcp` 2.x (`MCPServer`, formerly `FastMCP`; pinned `>=2,<3`). Things that differ from
+1.x and that the code relies on: `ToolError` in `providers/registry.py` subclasses the SDK's, because any
+other exception reaches the model only as `Error executing tool <name>`; stateless HTTP, the mount path and
+transport security are arguments of `streamable_http_app()` (set by `GatewayMCPServer`); resource URIs are
+plain strings; the OAuth `securitySchemes` hint is published in each tool's `_meta`, since 2.x drops unknown
+top-level tool fields. The schema helper reaches `_tool_manager` (no public hook for a hand-built schema).

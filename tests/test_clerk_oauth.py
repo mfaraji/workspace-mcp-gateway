@@ -95,7 +95,7 @@ async def test_tools_advertise_oauth_when_enabled(monkeypatch):
         "telegram_send_message",
     }
     assert all(
-        tool.model_dump()["securitySchemes"] == [{"type": "oauth2", "scopes": ["mcp:tools"]}]
+        tool.meta["securitySchemes"] == [{"type": "oauth2", "scopes": ["mcp:tools"]}]
         for tool in tools
     )
 

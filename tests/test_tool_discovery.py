@@ -1,6 +1,6 @@
 """What an agent can learn from ``tools/list``: schemas, descriptions and tool names.
 
-These tests read the registered tools directly (``FastMCP.list_tools``) so they do not
+These tests read the registered tools directly (``MCPServer.list_tools``) so they do not
 depend on grants or a database. Naming rules: ``spec.md`` §Tool Naming.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from gateway.connectors.registry import BUNDLES, CONNECTORS, by_slug
 from gateway.db.models import ClientGrant
@@ -31,8 +31,8 @@ from tests.test_client_access import auth, store  # noqa: F401 (store is a fixtu
 _IDENT = re.compile(r"[a-z][a-z0-9_]*")
 
 
-async def _published(mcp: FastMCP) -> dict:
-    return {t.name: t for t in await FastMCP.list_tools(mcp)}
+async def _published(mcp: MCPServer) -> dict:
+    return {t.name: t for t in await MCPServer.list_tools(mcp)}
 
 
 def _strings(value, path=""):
@@ -52,7 +52,7 @@ def _strings(value, path=""):
 @pytest.mark.asyncio
 async def test_summarize_publishes_descriptions_limits_enums_and_defaults():
     mcp = build_mcp(_settings(), product_tool_filter("apex-transactions"))
-    schema = (await _published(mcp))["apex_transactions_summarize"].inputSchema
+    schema = (await _published(mcp))["apex_transactions_summarize"].input_schema
     props = schema["properties"]
 
     assert set(props) == set(transactions.SummarizeInput.model_fields)
@@ -72,23 +72,23 @@ async def test_summarize_publishes_descriptions_limits_enums_and_defaults():
 async def test_mutating_tools_advertise_the_confirmation_token():
     mcp = build_mcp(_settings(), product_tool_filter("apex"))
     tools = await _published(mcp)
-    token = tools["apex_update_invoice_status"].inputSchema["properties"]["confirmation_token"]
+    token = tools["apex_update_invoice_status"].input_schema["properties"]["confirmation_token"]
     assert "confirmation_token" in token["description"]
     assert token["default"] is None
-    assert "confirmation_token" not in tools["apex_list_clients"].inputSchema["properties"]
-    assert "confirmation_token" not in tools["apex_list_clients"].inputSchema.get("required", [])
+    assert "confirmation_token" not in tools["apex_list_clients"].input_schema["properties"]
+    assert "confirmation_token" not in tools["apex_list_clients"].input_schema.get("required", [])
 
 
 @pytest.mark.asyncio
 async def test_bare_mounts_publish_the_same_field_guidance():
     mcp = build_mcp(_settings(), product_tool_filter("drive"), connector=by_slug("drive"))
-    props = (await _published(mcp))["create_file"].inputSchema["properties"]
+    props = (await _published(mcp))["create_file"].input_schema["properties"]
     assert props["name"]["description"] and props["file_ref"]["description"]
     assert props["mime_type"]["anyOf"][0]["maxLength"] == 127
 
 
 def test_limits_are_enforced_by_the_pipeline_not_by_fastmcp():
-    """FastMCP must not pre-validate: that would skip the audit record and echo input values."""
+    """MCPServer must not pre-validate: that would skip the audit record and echo input values."""
     mcp = build_mcp(_settings(), product_tool_filter("apex-transactions"))
     tool = mcp._tool_manager.get_tool("apex_transactions_summarize")
     parsed = tool.fn_metadata.arg_model.model_validate(
@@ -176,7 +176,10 @@ async def test_no_mount_tells_the_model_to_call_a_tool_it_does_not_have():
         internal = {spec.name for spec in mcp.gateway_specs}
         tools = await _published(mcp)
         for tool in tools.values():
-            texts = [("description", tool.description or ""), *_strings(tool.inputSchema, "schema")]
+            texts = [
+                ("description", tool.description or ""),
+                *_strings(tool.input_schema, "schema"),
+            ]
             for path, text in texts:
                 for word in set(_IDENT.findall(text)):
                     if word in internal and word not in tools:
@@ -193,7 +196,7 @@ async def test_bare_mounts_name_their_own_tools_by_bare_name():
     assert "google_drive_create_file" not in drive["download_file_content"].description
     assert (
         "download_file_content"
-        in drive["create_file"].inputSchema["properties"]["file_ref"]["description"]
+        in drive["create_file"].input_schema["properties"]["file_ref"]["description"]
     )
 
     gmail = await _published(
@@ -237,7 +240,7 @@ def test_duplicate_exposed_names_on_one_mount_are_rejected():
     registry = ToolRegistry()
     registry.add(_spec("google_x_a"))
     registry.add(_spec("google_x_b"))
-    mcp = FastMCP(name="t")
+    mcp = MCPServer(name="t")
     with pytest.raises(ValueError, match="duplicate exposed tool names: same"):
         registry.register_all(mcp, _settings(), names={"google_x_a": "same", "google_x_b": "same"})
 
@@ -247,7 +250,7 @@ def test_alias_for_an_unregistered_tool_fails_construction():
     registry.add(_spec("google_x_a"))
     with pytest.raises(ValueError, match="unregistered tools: google_x_missing"):
         registry.register_all(
-            FastMCP(name="t"),
+            MCPServer(name="t"),
             _settings(),
             names={"google_x_a": "a", "google_x_missing": "missing"},
         )

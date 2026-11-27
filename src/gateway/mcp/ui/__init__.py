@@ -10,9 +10,8 @@ from __future__ import annotations
 from functools import cache
 from importlib import resources
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.resources import FunctionResource
-from pydantic import AnyUrl
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.resources import FunctionResource
 
 MIME_TYPE = "text/html;profile=mcp-app"
 
@@ -47,7 +46,7 @@ def render_widget(uri: str) -> str:
     )
 
 
-def register_ui(mcp: FastMCP, uris: set[str]) -> None:
+def register_ui(mcp: MCPServer, uris: set[str]) -> None:
     """Add one resource per widget that a registered tool references."""
     for uri in sorted(uris):
         if uri not in WIDGETS:
@@ -55,7 +54,7 @@ def register_ui(mcp: FastMCP, uris: set[str]) -> None:
         _, title = WIDGETS[uri]
         mcp.add_resource(
             FunctionResource(
-                uri=AnyUrl(uri),
+                uri=uri,
                 name=uri.removeprefix("ui://").replace("/", "-"),
                 title=title,
                 description=f"Interactive widget: {title}",

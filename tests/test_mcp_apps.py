@@ -6,6 +6,7 @@ import re
 from contextlib import contextmanager
 
 import pytest
+from mcp.server.mcpserver.exceptions import ResourceNotFoundError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -106,7 +107,7 @@ def test_widget_tool_returns_text_and_structured_content(monkeypatch):
 
     tool = registry.ToolRegistry()._build_callable(spec, _settings())
     result = anyio.run(lambda: tool(x=1))
-    assert result.structuredContent == {"tasks": [{"title": "پرداخت"}]}
+    assert result.structured_content == {"tasks": [{"title": "پرداخت"}]}
     assert "پرداخت" in result.content[0].text  # model-visible text keeps the data, unescaped
     # Confirmation prompts and non-dict results are not wrapped.
     monkeypatch.setattr(registry, "_run_pipeline", lambda *a: "Authorization required: ...")
@@ -143,7 +144,7 @@ async def test_widget_resource_is_served_only_with_a_granted_tool(store):
     )
     try:
         assert await mcp.list_resources() == []
-        with pytest.raises(ValueError):
+        with pytest.raises(ResourceNotFoundError):
             await mcp.read_resource(TASKS_URI)
 
         with scope() as session:
@@ -157,7 +158,7 @@ async def test_widget_resource_is_served_only_with_a_granted_tool(store):
             )
         listed = await mcp.list_resources()
         assert [str(r.uri) for r in listed] == [TASKS_URI]
-        assert listed[0].mimeType == ui.MIME_TYPE
+        assert listed[0].mime_type == ui.MIME_TYPE
         (content,) = await mcp.read_resource(TASKS_URI)
         assert content.mime_type == ui.MIME_TYPE
         assert content.meta["ui"]["csp"] == {}

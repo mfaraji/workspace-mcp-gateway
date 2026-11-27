@@ -22,7 +22,8 @@ from dataclasses import replace
 from typing import Any
 
 import anyio
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError as _McpToolError
 from mcp.types import CallToolResult, TextContent
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
@@ -40,8 +41,12 @@ from gateway.providers.base import CallContext, RiskLevel, RiskTier, ToolSpec
 _CONFIRM_PARAM = "confirmation_token"
 
 
-class ToolError(Exception):
-    """A tool failure surfaced to the MCP client, carrying a stable error code."""
+class ToolError(_McpToolError):
+    """A tool failure surfaced to the MCP client, carrying a stable error code.
+
+    Subclasses the SDK's ``ToolError`` so mcp 2.x reports its message to the model; any other
+    exception is treated as a crash and reduced to "Error executing tool <name>".
+    """
 
     def __init__(self, error_code: str, message: str) -> None:
         super().__init__(message)
@@ -51,10 +56,10 @@ class ToolError(Exception):
 _SYSTEM_TOOL = "system_get_current_time"
 
 
-def _publish_schema(mcp: FastMCP, exposed: str, schema: dict[str, Any]) -> None:
-    """Replace the schema FastMCP advertises for one registered tool.
+def _publish_schema(mcp: MCPServer, exposed: str, schema: dict[str, Any]) -> None:
+    """Replace the schema the MCP server advertises for one registered tool.
 
-    FastMCP has no public hook for a hand-built schema, so this touches its tool manager.
+    MCPServer has no public hook for a hand-built schema, so this touches its tool manager.
     ``pyproject.toml`` caps the ``mcp`` version this was written against; fail loudly if the
     internals move.
     """
@@ -80,7 +85,7 @@ def _validation_message(exc: Exception) -> str:
 
 
 class ToolRegistry:
-    """Collects ``ToolSpec``s and registers them onto a FastMCP server."""
+    """Collects ``ToolSpec``s and registers them onto an MCPServer."""
 
     def __init__(self) -> None:
         self._specs: list[ToolSpec] = []
@@ -90,7 +95,7 @@ class ToolRegistry:
 
     def register_all(
         self,
-        mcp: FastMCP,
+        mcp: MCPServer,
         settings: Settings,
         predicate: Callable[[ToolSpec], bool] | None = None,
         names: Mapping[str, str] | None = None,
@@ -144,7 +149,7 @@ class ToolRegistry:
             )
             # Advertise the provider model's own schema (field descriptions, limits,
             # defaults). Runtime validation stays in the pipeline, which reports
-            # ``invalid_input`` and writes the audit record; FastMCP only needs the
+            # ``invalid_input`` and writes the audit record; MCPServer only needs the
             # permissive signature below to pass the arguments through.
             _publish_schema(mcp, exposed, schema)
 
