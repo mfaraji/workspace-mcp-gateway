@@ -233,7 +233,9 @@ def summarize_input(tool_name: str, args: dict) -> str:
     """Build a redacted, human-readable summary of tool input.
 
     Only whitelisted scalar fields are included. For time-range style inputs we
-    record presence, not the values.
+    record presence, not the values. Each field gets exactly one disposition: a field
+    in the tool's whitelist is recorded by value (and never also as ``<set>``); a
+    presence-only field is recorded as ``<set>``; anything else is dropped.
     """
     allowed = _SAFE_FIELDS.get(tool_name, set())
     parts: list[str] = []
@@ -243,7 +245,7 @@ def summarize_input(tool_name: str, args: dict) -> str:
 
     # Record presence (not values) of time-range / query inputs.
     for key in ("time_min", "time_max", "query", "due_min", "due_max", "updated_min"):
-        if args.get(key):
+        if key not in allowed and args.get(key):
             parts.append(f"{key}=<set>")
 
     return ", ".join(parts)
