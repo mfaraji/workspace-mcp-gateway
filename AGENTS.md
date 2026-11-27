@@ -229,7 +229,8 @@ Run the server locally: `uv run uvicorn gateway.app:create_app --factory --reloa
   (`Connector.google_names`) are an alias layer only: write descriptions and field help with
   internal names and the mount rewrites them (`providers.registry.resolve_names`). Never name a
   tool from another connector in model-visible text; say what to pass ("a file_ref from an email
-  attachment download"). `tests/test_tool_discovery.py` fails when a mount's text names a tool
+  attachment download"). The one exception is `ToolSpec.related_tools`: a sentence naming another
+  tool that is appended only on mounts that serve that tool. `tests/test_tool_discovery.py` fails when a mount's text names a tool
   that is not on it. Two tools may not share an exposed name on one mount, and an alias for an
   unregistered tool fails construction.
 - **Discovery schema.** `tools/list` advertises the provider input model's JSON schema
