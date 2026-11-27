@@ -111,6 +111,12 @@ class ToolRegistry:
             duplicated = sorted({n for n in exposed_names if exposed_names.count(n) > 1})
             if duplicated:
                 raise ValueError(f"duplicate exposed tool names: {', '.join(duplicated)}")
+        present = {
+            spec.name
+            for spec in self._specs
+            if (predicate is None or predicate(spec))
+            and (names is None or spec.name in names or spec.name == _SYSTEM_TOOL)
+        }
         for spec in self._specs:
             if predicate is not None and not predicate(spec):
                 continue
@@ -122,13 +128,16 @@ class ToolRegistry:
                 exposed = names[spec.name]
                 widgets = False
             description = spec.description if widgets else _plain(spec.description)
+            hints = [text for other, text in spec.related_tools if other in present]
+            if hints:
+                description = " ".join([description, *hints])
             schema = published_schema(spec)
             if names is not None:
                 # Model-visible text must name tools by what this mount calls them.
                 description = resolve_names(description, names)
                 schema = resolve_names(schema, names)
             mcp.add_tool(
-                self._build_callable(spec, settings, exposed),
+                self._build_callable(spec, settings, exposed, names),
                 name=exposed,
                 description=description,
                 meta=spec.tool_meta if widgets else None,
@@ -139,14 +148,26 @@ class ToolRegistry:
             # permissive signature below to pass the arguments through.
             _publish_schema(mcp, exposed, schema)
 
-    def _build_callable(self, spec: ToolSpec, settings: Settings, exposed: str | None = None):
+    def _build_callable(
+        self,
+        spec: ToolSpec,
+        settings: Settings,
+        exposed: str | None = None,
+        names: Mapping[str, str] | None = None,
+    ):
         """Create an MCP-facing async function with a flat, model-derived schema."""
 
         async def tool(**kwargs: Any) -> Any:
             confirmation_token = kwargs.pop(_CONFIRM_PARAM, None)
-            result = await anyio.to_thread.run_sync(
-                lambda: _run_pipeline(spec, settings, kwargs, confirmation_token, exposed)
-            )
+            try:
+                result = await anyio.to_thread.run_sync(
+                    lambda: _run_pipeline(spec, settings, kwargs, confirmation_token, exposed)
+                )
+            except ToolError as exc:
+                if not names:
+                    raise
+                # Runtime text is shown to the model too: use this mount's tool names.
+                raise ToolError(exc.error_code, resolve_names(str(exc), names)) from exc
             if settings.mcp_apps_enabled and spec.ui_resource and isinstance(result, dict | list):
                 return _with_structured_content(result)
             return result

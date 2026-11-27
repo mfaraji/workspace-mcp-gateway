@@ -421,6 +421,18 @@ def register(registry) -> None:
             ),
             input_model=DownloadAttachmentInput,
             handler=download_attachment,
+            related_tools=(
+                (
+                    "apex_create_expense",
+                    "To book a receipt as an Apex expense, pass this file_ref as "
+                    "receipt_file_ref to apex_create_expense.",
+                ),
+                (
+                    "apex_upload_expense_receipt",
+                    "To attach a receipt to an existing Apex expense, pass this file_ref to "
+                    "apex_upload_expense_receipt.",
+                ),
+            ),
         )
     )
     registry.add(

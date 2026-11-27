@@ -81,6 +81,10 @@ class ToolSpec:
     # Upstream capability a workspace must have for the user to be permitted this tool
     # (Apex workspace capability, e.g. "invoicing"). None = no per-workspace requirement.
     required_capability: str | None = None
+    # (other tool's internal name, sentence naming it). A sentence is appended to this tool's
+    # description only on a mount that also serves that other tool, so guidance never points
+    # at a tool the mount lacks. Write the sentence with internal names; mounts rewrite them.
+    related_tools: tuple[tuple[str, str], ...] = ()
 
     @property
     def default_tier(self) -> RiskTier | None:

@@ -319,3 +319,36 @@ def test_confirmation_fallback_preview_uses_the_exposed_name():
     assert decision.preview == "Confirm delete_event"
     plain = confirm.check(_settings(), spec, {}, ctx)
     assert plain.preview == "Confirm google_calendar_delete_event"
+
+
+# --- cross-connector hints and runtime text ----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_related_tool_hints_appear_only_where_both_tools_are_served():
+    everything = await _published(build_mcp(_settings()))
+    text = everything["google_gmail_download_attachment"].description
+    assert "receipt_file_ref to apex_create_expense" in text
+    assert "apex_upload_expense_receipt" in text
+
+    google = await _published(build_mcp(_settings(), product_tool_filter("google")))
+    assert "apex" not in google["google_gmail_download_attachment"].description.lower()
+    gmail = await _published(
+        build_mcp(_settings(), product_tool_filter("gmail"), connector=by_slug("gmail"))
+    )
+    assert "apex" not in gmail["download_gmail_attachment"].description.lower()
+
+
+@pytest.mark.asyncio
+async def test_runtime_errors_on_a_bare_mount_use_that_mounts_tool_names(monkeypatch):
+    import gateway.providers.registry as pipeline
+
+    def failing(spec, settings, args, token, exposed=None):
+        raise ToolError("invalid_input", "retry with google_drive_search_files first")
+
+    monkeypatch.setattr(pipeline, "_run_pipeline", failing)
+    mcp = build_mcp(_settings(), product_tool_filter("drive"), connector=by_slug("drive"))
+    with pytest.raises(Exception) as exc_info:
+        await mcp.call_tool("get_file_metadata", {"file_id": "f1"})
+    message = str(exc_info.value)
+    assert "search_files first" in message and "google_drive_search_files" not in message
