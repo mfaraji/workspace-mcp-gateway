@@ -167,7 +167,7 @@ Dev tooling runs in the host virtualenv (`.venv`), **not** in the Docker image â
 the image is the lean runtime (`uv sync --no-dev`, no tests, no pytest/ruff).
 
 ```bash
-uv sync                                  # install deps into .venv (incl. dev)
+uv sync --extra dev                      # install deps into .venv (dev tools are an extra)
 cp .env.example .env                     # then fill in real values
 # provision the local Postgres role + db (credentials per .env):
 sudo -u postgres psql -c "CREATE ROLE workspace_mcp LOGIN PASSWORD 'wmcp_local_dev_pw';" \
