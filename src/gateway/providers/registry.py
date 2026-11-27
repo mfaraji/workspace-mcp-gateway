@@ -23,6 +23,7 @@ from typing import Any
 import anyio
 from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult, TextContent
+from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from gateway.audit.log import AuditRecord, record_audit, summarize_input
@@ -44,6 +45,19 @@ class ToolError(Exception):
     def __init__(self, error_code: str, message: str) -> None:
         super().__init__(message)
         self.error_code = error_code
+
+
+def _validation_message(exc: Exception) -> str:
+    """One short line per problem; never the submitted values or library internals."""
+    if isinstance(exc, ValidationError):
+        parts = []
+        for err in exc.errors(include_input=False, include_url=False, include_context=False):
+            msg = str(err.get("msg", "invalid value")).removeprefix("Value error, ")
+            loc = ".".join(str(p) for p in err.get("loc", ()))
+            parts.append(f"{loc}: {msg}" if loc else msg)
+        if parts:
+            return "; ".join(parts)
+    return "the arguments do not match the tool's input schema"
 
 
 class ToolRegistry:
@@ -264,7 +278,7 @@ def _execute(
         try:
             model = spec.input_model(**raw_args)
         except Exception as exc:  # pydantic ValidationError et al.
-            raise ToolError("invalid_input", f"invalid input: {exc}") from exc
+            raise ToolError("invalid_input", f"invalid input: {_validation_message(exc)}") from exc
         account = getattr(model, "account", None)
         if account:
             ctx = replace(ctx, account=account)

@@ -56,6 +56,7 @@ def _get(
         scopes=[SCOPE_WEALTH_READ],
         workspace_id=workspace_id,
         capability=capability,
+        list_tool="apex_wealth_list_workspaces",
     )
     return apex_call(settings, creds, "GET", path, params=params or None)
 

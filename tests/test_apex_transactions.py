@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -14,7 +15,7 @@ from gateway.connectors.registry import by_spec
 from gateway.providers.apex import auth, transactions
 from gateway.providers.apex import client as apex_client
 from gateway.providers.base import CallContext, RiskLevel
-from gateway.providers.registry import ToolError, ToolRegistry
+from gateway.providers.registry import ToolError, ToolRegistry, _validation_message
 
 EXPECTED_TOOLS = {
     "apex_transactions_find_categories",
@@ -236,6 +237,7 @@ def test_each_call_mints_the_read_scope_for_the_workspace(
             scopes=["apex:transactions.read"],
             workspace_id="w1",
             capability=capability,
+            list_tool="apex_transactions_list_workspaces",
         )
     ]
 
@@ -413,3 +415,61 @@ def test_audit_notes_that_a_query_was_given_without_recording_it():
     assert "therapy" not in summary
     assert "query=<set>" in summary
     assert summarize_input("apex_transactions_list_workspaces", {"x": "y"}) == ""
+
+
+# --- error messages ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "apex_message,tool",
+    [
+        (
+            'Unknown category id "x". Look ids up with GET /api/transactions/categories.',
+            "apex_transactions_find_categories",
+        ),
+        (
+            'Unknown property id "x". Look ids up with GET /api/transactions/properties.',
+            "apex_transactions_list_properties",
+        ),
+    ],
+)
+def test_unknown_ids_point_at_the_lookup_tool_not_an_internal_route(
+    monkeypatch, captured, apex_message, tool
+):
+    def rejected(settings, token, method, path, params=None, json=None, extra_headers=None):
+        response = httpx.Response(400, json={"message": apex_message, "statusCode": 400})
+        apex_client._raise_for_apex_status(response)
+
+    monkeypatch.setattr(apex_client, "apex_request", rejected)
+    with pytest.raises(ToolError) as exc_info:
+        transactions.summarize(transactions.SummarizeInput(workspace_id="w1"), _ctx(), None)
+    text = str(exc_info.value)
+    assert exc_info.value.error_code == "invalid_input"
+    assert tool in text
+    assert "/api/" not in text and "statusCode" not in text and "{" not in text
+
+
+def test_unknown_workspace_names_the_connectors_own_list_tool(monkeypatch):
+    monkeypatch.setattr(apex_client, "user_workspaces", lambda *a, **k: [PERSONAL])
+    with pytest.raises(ToolError) as exc_info:
+        apex_client.apex_credentials(
+            _settings(),
+            _ctx(),
+            scopes=["s"],
+            workspace_id="nope",
+            capability="transactionInsights",
+            list_tool="apex_transactions_list_workspaces",
+        )
+    assert "apex_transactions_list_workspaces" in str(exc_info.value)
+    assert "call apex_list_workspaces" not in str(exc_info.value)
+
+
+def test_from_after_to_is_a_plain_message_without_library_internals():
+    with pytest.raises(ValidationError) as exc_info:
+        transactions.SummarizeInput(
+            workspace_id="secret-ws", from_date=date(2026, 6, 30), to_date=date(2026, 1, 1)
+        )
+    message = _validation_message(exc_info.value)
+    assert message == "from_date must not be after to_date"
+    for leaked in ("pydantic", "SummarizeInput", "input_value", "secret-ws", "http"):
+        assert leaked not in message

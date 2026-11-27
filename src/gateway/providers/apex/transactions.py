@@ -281,6 +281,12 @@ def _compact(params: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in params.items() if v is not None and v != []}
 
 
+_LOOKUP_HINTS = (
+    ("Unknown category id", "Look category ids up with apex_transactions_find_categories."),
+    ("Unknown property id", "Look property ids up with apex_transactions_list_properties."),
+)
+
+
 def _get(
     ctx: CallContext,
     workspace_id: str,
@@ -296,8 +302,17 @@ def _get(
         scopes=[SCOPE_TRANSACTIONS_READ],
         workspace_id=workspace_id,
         capability=capability,
+        list_tool="apex_transactions_list_workspaces",
     )
-    return apex_call(settings, creds, "GET", path, params=params or None)
+    from gateway.providers.registry import ToolError
+
+    try:
+        return apex_call(settings, creds, "GET", path, params=params or None)
+    except ToolError as exc:
+        hint = next((h for needle, h in _LOOKUP_HINTS if needle in str(exc)), None)
+        if exc.error_code == "invalid_input" and hint:
+            raise ToolError("invalid_input", f"{exc} {hint}") from exc
+        raise
 
 
 def find_categories(args: FindCategoriesInput, ctx: CallContext, session: Session) -> Any:

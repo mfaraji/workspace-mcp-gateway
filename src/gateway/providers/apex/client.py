@@ -12,6 +12,7 @@ in the apex repo for the route/schema reference.
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -32,6 +33,7 @@ WEALTH_PROVIDER = "apex_wealth"
 TRANSACTIONS_PROVIDER = "apex_transactions"
 
 _STATUS_ERROR_CODES = {
+    400: "invalid_input",
     401: "unauthorized",
     403: "forbidden",
     404: "not_found",
@@ -116,6 +118,35 @@ def _mint(
         raise ToolError("provider_error", "Apex access is not configured on the gateway") from exc
 
 
+_ROUTE_HINT = re.compile(r"\s*Look \w+ up with (?:GET|POST) /\S+", re.IGNORECASE)
+
+
+def apex_error_message(response: httpx.Response) -> str:
+    """The human message from an Apex error body: no raw JSON, no internal REST routes."""
+    text = ""
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if isinstance(body, dict):
+        message = body.get("message")
+        if isinstance(message, list):
+            text = "; ".join(str(m) for m in message)
+        elif isinstance(message, str):
+            text = message
+    return _ROUTE_HINT.sub("", text).strip()[:300] or "no details were returned"
+
+
+def _raise_for_apex_status(response: httpx.Response) -> None:
+    from gateway.providers.registry import ToolError
+
+    if response.status_code >= 400:
+        raise ToolError(
+            _STATUS_ERROR_CODES.get(response.status_code, "provider_error"),
+            f"apex request failed ({response.status_code}): {apex_error_message(response)}",
+        )
+
+
 def apex_request(
     settings: Settings,
     token: str,
@@ -145,11 +176,7 @@ def apex_request(
     except httpx.HTTPError as exc:
         raise ToolError("provider_error", f"apex request failed: {exc}") from exc
 
-    if response.status_code >= 400:
-        raise ToolError(
-            _STATUS_ERROR_CODES.get(response.status_code, "provider_error"),
-            f"apex request failed ({response.status_code}): {response.text[:500]}",
-        )
+    _raise_for_apex_status(response)
     if not response.content:
         return None
     return response.json()
@@ -233,6 +260,7 @@ def apex_credentials(
     scopes: list[str],
     workspace_id: str,
     capability: str | None,
+    list_tool: str = "apex_list_workspaces",
 ) -> ApexCredentials:
     """Validate ``workspace_id`` against the user's workspaces, then mint credentials.
 
@@ -248,7 +276,7 @@ def apex_credentials(
     if chosen is None:
         raise ToolError(
             "invalid_input",
-            "workspace_id is not one of your Apex workspaces; call apex_list_workspaces.",
+            f"workspace_id is not one of your Apex workspaces; call {list_tool}.",
         )
     if not workspace_has(chosen, capability):
         raise ToolError(
@@ -295,11 +323,7 @@ def apex_upload(
         )
     except httpx.HTTPError as exc:
         raise ToolError("provider_error", f"apex request failed: {exc}") from exc
-    if response.status_code >= 400:
-        raise ToolError(
-            _STATUS_ERROR_CODES.get(response.status_code, "provider_error"),
-            f"apex request failed ({response.status_code}): {response.text[:500]}",
-        )
+    _raise_for_apex_status(response)
     return response.json() if response.content else None
 
 
