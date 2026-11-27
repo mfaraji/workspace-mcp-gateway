@@ -42,6 +42,7 @@ _STATUS_ERROR_CODES = {
 
 WORKSPACE_HEADER = "X-Workspace-Id"
 WORKSPACE_ID_DESC = "Apex workspace id (from apex_list_workspaces)."
+WEALTH_WORKSPACE_ID_DESC = "Apex workspace id (from apex_wealth_list_workspaces)."
 
 # Downstream scopes (must match the @McpAccessible scopes in the apex repo).
 SCOPE_WORKSPACES_READ = "apex:workspaces.read"

@@ -408,7 +408,9 @@ def register(registry) -> None:
         (
             "apex_transactions_summarize",
             (
-                "Answer 'how much' for any filter: total, count and optional breakdown. With "
+                "Answers 'how much' (use apex_transactions_search for 'which transactions'): "
+                "total, count and optional breakdown for any filter, calculated by Apex and "
+                "never by you. With "
                 "only workspace_id it is total spending year to date. Typical call: category_ids "
                 "from apex_transactions_find_categories plus a period; add group_by=['month'] "
                 "for a trend or compare='same_period_last_year' for a year-over-year change. "
@@ -427,7 +429,9 @@ def register(registry) -> None:
         (
             "apex_transactions_search",
             (
-                "List the individual transactions behind a number, with the same filters as "
+                "Answers 'which transactions' (use apex_transactions_summarize for 'how "
+                "much'): lists the individual transactions behind a number, with the same "
+                "filters as "
                 "apex_transactions_summarize (so the rows are exactly what it summed): date, "
                 "signed amount (purchases are negative), currency, merchant, category path, "
                 "account, and for BUSINESS the business share and deductible amount, for RENTAL "

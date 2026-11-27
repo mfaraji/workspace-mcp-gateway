@@ -313,13 +313,18 @@ async def test_bare_name_call_runs_the_internal_spec(monkeypatch):
     monkeypatch.setattr(
         pipeline,
         "_run_pipeline",
-        lambda spec, settings, args, token: seen.append((spec.name, args)),
+        lambda spec, settings, args, token, exposed=None: seen.append((spec.name, args, exposed)),
     )
     mcp = _calendar_mcp()
     await mcp.call_tool("get_event", {"event_id": "e1"})
     await mcp.call_tool("respond_to_event", {"event_id": "e1", "response": "accepted"})
-    assert [n for n, _ in seen] == ["google_calendar_get_event", "google_calendar_respond_to_event"]
+    assert [n for n, *_ in seen] == [
+        "google_calendar_get_event",
+        "google_calendar_respond_to_event",
+    ]
     assert seen[0][1]["event_id"] == "e1"
+    # Runtime text shown to the model uses the name this mount advertises.
+    assert [e for *_, e in seen] == ["get_event", "respond_to_event"]
 
 
 @pytest.mark.asyncio

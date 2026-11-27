@@ -184,6 +184,9 @@ CONNECTORS: list[Connector] = [
         register=_register_gmail,
         upstream=GMAIL_OAUTH,
         error_classifier=_google_classify_error,
+        # download_attachment is the one override: Google's own Gmail MCP server calls it
+        # download_gmail_attachment (added with the Google-compatible mounts, 57e8968), so it
+        # is Google's name, not ours; it just differs from our internal name.
         google_names=_google_names(
             "google_gmail_", GOOGLE_GMAIL_TOOLS, download_attachment="download_gmail_attachment"
         ),

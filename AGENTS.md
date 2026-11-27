@@ -219,7 +219,19 @@ Run the server locally: `uv run uvicorn gateway.app:create_app --factory --reloa
   SQL++, backup, or admin operations as tools. Add one scope per domain in the
   shared bucket and document any index in `scripts/capella/`. Storage errors
   carry stable codes; never return SDK exceptions or connection details.
-- **Tool naming** is provider-prefixed: `google_calendar_list_events`, etc.
+- **Tool naming** is provider-prefixed: `google_calendar_list_events`, etc. The full rules
+  (verbs, mounts, compatibility) are in `spec.md` §Tool Naming. Bare-name mounts
+  (`Connector.google_names`) are an alias layer only: write descriptions and field help with
+  internal names and the mount rewrites them (`providers.registry.resolve_names`). Never name a
+  tool from another connector in model-visible text; say what to pass ("a file_ref from an email
+  attachment download"). `tests/test_tool_discovery.py` fails when a mount's text names a tool
+  that is not on it. Two tools may not share an exposed name on one mount, and an alias for an
+  unregistered tool fails construction.
+- **Discovery schema.** `tools/list` advertises the provider input model's JSON schema
+  (`providers.registry.published_schema`): field descriptions, limits, enums and defaults, plus
+  `confirmation_token` on mutating tools. Put guidance in `Field(description=...)` and limits in
+  the model. Validation still happens only in the pipeline (`invalid_input`, audited), never in
+  FastMCP.
 - **Minimal OAuth scopes.** Only request scopes for tools actually registered in
   `build_mcp()` (incremental authorization). Product-specific OAuth starts use
   the relevant product scopes only. When you wire up a new provider module, union

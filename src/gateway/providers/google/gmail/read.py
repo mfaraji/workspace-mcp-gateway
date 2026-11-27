@@ -415,9 +415,9 @@ def register(registry) -> None:
             description=(
                 "Download one attachment (max 10 MB) of a shared Gmail message into a "
                 "short-lived private file handle. Returns file_ref, filename, mime_type and "
-                "size, never the bytes; pass file_ref to a tool that accepts it, e.g. "
-                "apex_create_expense or apex_upload_expense_receipt. Get attachment_id from "
-                "google_gmail_get_message." + _UNTRUSTED
+                "size, never the bytes; pass file_ref as the file_ref argument of a tool "
+                "that accepts one (for example, one that saves or uploads a file). Get "
+                "attachment_id from google_gmail_get_message." + _UNTRUSTED
             ),
             input_model=DownloadAttachmentInput,
             handler=download_attachment,

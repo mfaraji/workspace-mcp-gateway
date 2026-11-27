@@ -62,9 +62,11 @@ def register(registry) -> None:
             provider=PROVIDER,
             risk=RiskLevel.READ,
             description=(
-                "List the Apex workspaces you belong to (id, name, kind, capabilities). "
-                "Pass the id as workspace_id to every other apex_* tool. Invoicing, "
-                "timesheet and client tools need a BUSINESS workspace."
+                "Bookkeeping workspaces: list the Apex workspaces you belong to (id, name, "
+                "kind, capabilities). Pass the id as workspace_id to every other apex_* tool. "
+                "Invoicing, timesheet and client tools need a BUSINESS workspace; receipts "
+                "and expenses need one with receipt review. Pick the workspace the request is "
+                "about; if it is unclear, ask the user rather than guessing."
             ),
             input_model=NoInput,
             handler=list_workspaces,
@@ -80,8 +82,10 @@ def register_wealth(registry) -> None:
             provider=WEALTH_PROVIDER,
             risk=RiskLevel.READ,
             description=(
-                "List the Apex workspaces that hold wealth data (PERSONAL workspaces). "
-                "Pass the id as workspace_id to every other apex_wealth_* tool."
+                "Personal wealth: list the Apex workspaces that hold wealth data (PERSONAL "
+                "workspaces). Pass the id as workspace_id to every other apex_wealth_* tool. "
+                "If more than one fits and it is unclear which the user means, ask them "
+                "rather than guessing."
             ),
             input_model=NoInput,
             handler=list_wealth_workspaces,
@@ -97,8 +101,8 @@ def register_transactions(registry) -> None:
             provider=TRANSACTIONS_PROVIDER,
             risk=RiskLevel.READ,
             description=(
-                "List the Apex workspaces whose transactions you can ask about (id, name, "
-                "kind PERSONAL, BUSINESS or RENTAL, capabilities). Pass the id as "
+                "Spending questions: list the Apex workspaces whose transactions you can ask "
+                "about (id, name, kind PERSONAL, BUSINESS or RENTAL, capabilities). Pass the id as "
                 "workspace_id to every other apex_transactions_* tool. Pick the workspace the "
                 "question is about: personal spending is PERSONAL, company expenses are "
                 "BUSINESS, rental income and property costs are RENTAL. If it is unclear, "

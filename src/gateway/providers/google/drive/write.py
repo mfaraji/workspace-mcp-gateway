@@ -75,8 +75,9 @@ class CreateFileInput(GoogleAccountInput):
     file_ref: str | None = Field(
         None,
         description=(
-            "file_ref from google_gmail_download_attachment or google_drive_download_file_content "
-            "to save that file without passing its bytes through the model."
+            "file_ref from google_drive_download_file_content, or from an email attachment "
+            "download where one is available, to save that file without passing its bytes "
+            "through the model."
         ),
     )
     mime_type: str | None = Field(

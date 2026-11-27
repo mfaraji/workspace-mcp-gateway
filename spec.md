@@ -114,6 +114,25 @@ Tasks:
 - `google_tasks_complete_task`
 - `google_tasks_delete_task`
 
+### Naming convention
+
+- **Identity.** Published canonical IDs stay as they are. New gateway-owned tools use
+  lowercase snake_case: `<provider>_[<product>_]<verb>[_<object>]`. Omit the object when the
+  namespace already names it, so `apex_transactions_summarize` stays as is.
+- **Verbs.** `list` enumerates. `find` resolves a phrase to candidates, such as a category ID.
+  `search` returns matching rows. `summarize` returns provider-calculated totals. For a new
+  write, pick the verb the user would be authorizing.
+- **Mounts.** `/mcp` and `/mcp/google` keep prefixed names. Calendar, Drive and Gmail keep
+  explicit bare aliases on their own mounts (Google's names, `Connector.google_names`). Apex and
+  Tasks stay prefixed. `system_get_current_time` is unchanged. No alias just for symmetry.
+- **Text names tools as the mount does.** Descriptions and field help are written with internal
+  names; a bare mount rewrites them to its exposed names. Text must not name a tool that is not
+  on the mount: describe what to pass instead (for example "a file_ref from an email attachment
+  download"). A test checks every mount.
+- **Compatibility.** Never rename stored IDs or list old and new synonyms side by side. If
+  tool-choice tests later justify an alias, scope it to one mount and resolve it to the existing
+  grant. Never migrate permissions by matching display text.
+
 ## Risk Controls
 
 Read-only tools may execute directly after user authorization.

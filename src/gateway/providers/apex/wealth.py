@@ -13,7 +13,7 @@ from gateway.providers.apex.client import (
     CAP_WEALTH_WORKSPACE,
     SCOPE_WEALTH_READ,
     WEALTH_PROVIDER,
-    WORKSPACE_ID_DESC,
+    WEALTH_WORKSPACE_ID_DESC,
     apex_call,
     apex_credentials,
 )
@@ -24,7 +24,7 @@ _AMOUNTS = "Amounts are in the account's native currency; summaries also include
 
 
 class WorkspaceInput(BaseModel):
-    workspace_id: str = Field(..., description=WORKSPACE_ID_DESC)
+    workspace_id: str = Field(..., description=WEALTH_WORKSPACE_ID_DESC)
 
 
 class GetPositionsInput(WorkspaceInput):

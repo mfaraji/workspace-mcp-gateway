@@ -292,13 +292,17 @@ def _create_timesheet_preview(args: CreateTimesheetInput) -> str:
 def _invoice_status_preview(args: UpdateInvoiceStatusInput) -> str:
     if args.status == "SENT":
         return (
-            f"SEND invoice '{args.invoice_id}' by email to the client now (PDF attached). "
+            f"SEND invoice '{args.invoice_id}' by email to the client now (PDF attached); "
+            f"this emails the client. "
             f"The issue date is reset to today and the due date to today plus the "
             f"client's payment terms."
         )
     amount = f"{args.paid_amount:g}" if args.paid_amount is not None else "the full invoice total"
     when = args.paid_date or "today"
-    return f"Mark invoice '{args.invoice_id}' as PAID: {amount} received on {when}."
+    return (
+        f"Mark invoice '{args.invoice_id}' as PAID: {amount} received on {when}. "
+        f"This records a payment; it does not email the invoice."
+    )
 
 
 def _update_timesheet_preview(args: UpdateTimesheetInput) -> str:
@@ -354,11 +358,12 @@ def register(registry) -> None:
             provider=PROVIDER,
             risk=RiskLevel.MUTATING,
             description=(
-                "Change an Apex invoice's status. Invoices move DRAFT -> SENT -> PAID. "
-                "status=SENT EMAILS the invoice (PDF) to the client and resets its issue and "
-                "due dates, so it is a real, outward-facing action: ask the user first. "
-                "status=PAID records the payment (paid_date defaults to today, paid_amount to "
-                "the invoice total); a paid invoice can no longer be edited or deleted. "
+                "status=SENT EMAILS the invoice PDF to the client; status=PAID records a "
+                "payment. Changes an Apex invoice's status "
+                "(DRAFT -> SENT -> PAID). SENT also resets the invoice's issue and due dates, "
+                "so it is a real, outward-facing action: ask the user first. "
+                "PAID defaults paid_date to today and paid_amount to the invoice total; a paid "
+                "invoice can no longer be edited or deleted. "
                 "Void invoices can be neither sent nor marked paid. Use apex_list_timesheets "
                 "or the invoice id from apex_create_invoice to find the invoice."
             ),

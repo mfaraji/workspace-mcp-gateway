@@ -84,13 +84,15 @@ def check(
     confirmation_token: str | None = None,
     preview_builder=None,
     tier: RiskTier | None = None,
+    display_name: str | None = None,
 ) -> PolicyDecision:
     """Decide whether a tool call may proceed.
 
     Read tools and LOW-tier mutating tools are always allowed. MEDIUM-tier tools
     require a valid confirmation token; absent one, a ``NeedsConfirmation`` carrying
     a fresh token (and an optional human-readable preview) is returned. ``tier``
-    is the user's effective tier; ``None`` means the tool's default.
+    is the user's effective tier; ``None`` means the tool's default. ``display_name`` is
+    the name this mount shows the model, used only in the fallback preview.
     """
     tier = tier or spec.default_tier
     if spec.risk is RiskLevel.READ or tier is RiskTier.LOW:
@@ -101,6 +103,6 @@ def check(
     ):
         return Allow()
 
-    preview = preview_builder(args) if preview_builder else f"Confirm {spec.name}"
+    preview = preview_builder(args) if preview_builder else f"Confirm {display_name or spec.name}"
     token = mint_confirmation_token(settings, ctx, spec.name, args)
     return NeedsConfirmation(preview=preview, confirmation_token=token)

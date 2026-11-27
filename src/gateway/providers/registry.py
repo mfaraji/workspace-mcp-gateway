@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 import time
 import uuid
 from collections.abc import Callable, Mapping
@@ -82,6 +83,15 @@ class ToolRegistry:
         their exposed names and without widget metadata. Calls still run the spec's
         pipeline, so grants, tiers and audit use the internal name.
         """
+        if names is not None:
+            registered = {spec.name for spec in self._specs}
+            unknown = sorted(set(names) - registered)
+            if unknown:
+                raise ValueError(f"tool name aliases for unregistered tools: {', '.join(unknown)}")
+            exposed_names = [*names.values(), "system_get_current_time"]
+            duplicated = sorted({n for n in exposed_names if exposed_names.count(n) > 1})
+            if duplicated:
+                raise ValueError(f"duplicate exposed tool names: {', '.join(duplicated)}")
         for spec in self._specs:
             if predicate is not None and not predicate(spec):
                 continue
@@ -92,20 +102,31 @@ class ToolRegistry:
                     continue
                 exposed = names[spec.name]
                 widgets = False
+            description = spec.description if widgets else _plain(spec.description)
+            schema = published_schema(spec)
+            if names is not None:
+                # Model-visible text must name tools by what this mount calls them.
+                description = resolve_names(description, names)
+                schema = resolve_names(schema, names)
             mcp.add_tool(
-                self._build_callable(spec, settings),
+                self._build_callable(spec, settings, exposed),
                 name=exposed,
-                description=spec.description if widgets else _plain(spec.description),
+                description=description,
                 meta=spec.tool_meta if widgets else None,
             )
+            # Advertise the provider model's own schema (field descriptions, limits,
+            # defaults). Runtime validation stays in the pipeline, which reports
+            # ``invalid_input`` and writes the audit record; FastMCP only needs the
+            # permissive signature below to pass the arguments through.
+            mcp._tool_manager.get_tool(exposed).parameters = schema
 
-    def _build_callable(self, spec: ToolSpec, settings: Settings):
+    def _build_callable(self, spec: ToolSpec, settings: Settings, exposed: str | None = None):
         """Create an MCP-facing async function with a flat, model-derived schema."""
 
         async def tool(**kwargs: Any) -> Any:
             confirmation_token = kwargs.pop(_CONFIRM_PARAM, None)
             result = await anyio.to_thread.run_sync(
-                lambda: _run_pipeline(spec, settings, kwargs, confirmation_token)
+                lambda: _run_pipeline(spec, settings, kwargs, confirmation_token, exposed)
             )
             if settings.mcp_apps_enabled and spec.ui_resource and isinstance(result, dict | list):
                 return _with_structured_content(result)
@@ -146,6 +167,48 @@ class ToolRegistry:
         return tool
 
 
+_CONFIRM_PARAM_DESC = (
+    "Leave unset on the first call. When the result is confirmation_required, ask the user "
+    "and, only after an explicit yes, repeat the call with that result's confirmation_token."
+)
+
+
+def published_schema(spec: ToolSpec) -> dict[str, Any]:
+    """The JSON schema ``tools/list`` advertises for ``spec``.
+
+    Taken from the provider's input model so descriptions, limits and defaults reach the
+    agent, keeping the inputs flat. Mutating tools also advertise ``confirmation_token``.
+    """
+    schema = spec.input_model.model_json_schema(by_alias=False)
+    schema.pop("title", None)
+    schema.pop("description", None)
+    if spec.risk is RiskLevel.MUTATING:
+        schema.setdefault("properties", {})[_CONFIRM_PARAM] = {
+            "anyOf": [{"type": "string"}, {"type": "null"}],
+            "default": None,
+            "description": _CONFIRM_PARAM_DESC,
+            "title": "Confirmation Token",
+        }
+    return schema
+
+
+def resolve_names(value: Any, names: Mapping[str, str]) -> Any:
+    """Rewrite internal tool names in model-visible text to a mount's exposed names.
+
+    Walks strings, lists and dicts (a description or a JSON schema). Whole-name matches
+    only, so ``google_drive_create_file`` never rewrites inside a longer identifier.
+    """
+    if isinstance(value, str):
+        return _NAME_RE.sub(lambda m: names.get(m.group(0), m.group(0)), value)
+    if isinstance(value, list):
+        return [resolve_names(v, names) for v in value]
+    if isinstance(value, dict):
+        return {k: resolve_names(v, names) for k, v in value.items()}
+    return value
+
+
+_NAME_RE = re.compile(r"(?<![A-Za-z0-9_])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![A-Za-z0-9_])")
+
 _WIDGET_NOTE = "Shows an interactive"
 
 
@@ -170,12 +233,18 @@ def _with_structured_content(result: dict | list) -> CallToolResult:
 
 
 def _run_pipeline(
-    spec: ToolSpec, settings: Settings, raw_args: dict, confirmation_token: str | None
+    spec: ToolSpec,
+    settings: Settings,
+    raw_args: dict,
+    confirmation_token: str | None,
+    exposed_name: str | None = None,
 ) -> Any:
     """The synchronous per-call pipeline (runs in a worker thread).
 
     Resolves the caller, runs the tool inside one transaction, and queues exactly
     one audit document per call (after the transaction's outcome is known).
+    ``exposed_name`` is what this mount calls the tool; it only appears in text shown
+    to the model (grants, tiers and audit keep ``spec.name``).
     """
     try:
         auth = require_current_user()
@@ -215,11 +284,21 @@ def _run_pipeline(
 
     try:
         result = _execute(
-            spec, settings, raw_args, confirmation_token, auth, user_id, request_id, meta
+            spec,
+            settings,
+            raw_args,
+            confirmation_token,
+            auth,
+            user_id,
+            request_id,
+            meta,
+            exposed_name,
         )
     except ToolError as exc:
         audit("error", exc.error_code)
-        connect_result = _connect_required_result(spec, settings, auth.external_user_id, exc)
+        connect_result = _connect_required_result(
+            spec, settings, auth.external_user_id, exc, exposed_name
+        )
         if connect_result is not None:
             return connect_result
         raise
@@ -250,6 +329,7 @@ def _execute(
     user_id,
     request_id: str,
     meta: dict[str, Any],
+    exposed_name: str | None = None,
 ) -> Any:
     """Validate, gate, and execute the tool inside a single transaction.
 
@@ -294,6 +374,7 @@ def _execute(
             confirmation_token=confirmation_token,
             preview_builder=preview_builder,
             tier=tier,
+            display_name=exposed_name,
         )
         if isinstance(decision, confirm.NeedsConfirmation):
             meta["needs_confirmation"] = True
@@ -313,11 +394,16 @@ def _execute(
         except ToolError:
             raise
         except Exception as exc:
-            raise ToolError(_classify_error(spec, exc), f"{spec.name} failed") from exc
+            code = _classify_error(spec, exc)
+            raise ToolError(code, f"{exposed_name or spec.name} failed") from exc
 
 
 def _connect_required_result(
-    spec: ToolSpec, settings: Settings, external_user_id: str, exc: ToolError
+    spec: ToolSpec,
+    settings: Settings,
+    external_user_id: str,
+    exc: ToolError,
+    exposed_name: str | None = None,
 ) -> str | None:
     """Return user-facing auth guidance for recoverable provider-connection failures."""
     if exc.error_code not in {"not_connected", "reauth_required"}:
@@ -333,7 +419,7 @@ def _connect_required_result(
         "Open this authorization URL, approve access, then retry the same request:\n"
         f"{authorization_url}\n\n"
         f"Status: {exc.error_code}\n"
-        f"Tool: {spec.name}\n"
+        f"Tool: {exposed_name or spec.name}\n"
         "Do not create a Calendar event as a fallback unless the user explicitly asks."
     )
 

@@ -31,10 +31,6 @@ from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 from gateway.providers.registry import ToolError
 from gateway.storage.staged_files import MAX_FILE_BYTES, StagedContent, take
 
-_INBOX_NOTE = (
-    " It stays flagged for the user's review in the Apex inbox until they approve it."
-)
-
 _FILE_REFERENCES = (
     "FILE REFERENCES: to upload a file you can read here, don't type its base64; set "
     "base64Content to a file reference, sha256:<64 lowercase hex>:<its absolute path>. "
@@ -152,7 +148,11 @@ class CreateExpenseInput(_InlineReceipt):
         ),
     )
     receipt_file_ref: str | None = Field(
-        None, description="file_ref from google_gmail_download_attachment to attach as receipt."
+        None,
+        description=(
+            "file_ref from an email attachment download, to attach as receipt. Otherwise "
+            "send base64Content."
+        ),
     )
 
     @model_validator(mode="after")
@@ -181,7 +181,7 @@ class UploadExpenseReceiptInput(_InlineReceipt):
     file_ref: str | None = Field(
         None,
         description=(
-            "file_ref from google_gmail_download_attachment. Omit it when the file is on your "
+            "file_ref from an email attachment download. Omit it when the file is on your "
             "own machine: send base64Content, or you get an upload_url to POST the file to."
         ),
     )
@@ -353,7 +353,7 @@ def register(registry) -> None:
             name="apex_list_expense_categories",
             provider=PROVIDER,
             risk=RiskLevel.READ,
-            description="List the user's Apex expense categories (id, name, parent)." + _INBOX_NOTE,
+            description="List the user's Apex expense categories (id, name, parent).",
             input_model=ListExpenseCategoriesInput,
             handler=list_categories,
             required_capability="receiptReview",
@@ -366,20 +366,21 @@ def register(registry) -> None:
             risk=RiskLevel.MUTATING,
             description=(
                 _FILE_REFERENCES
-                + "Create an expense (merchant, amount, date, optional category) from e.g. an "
-                "emailed receipt. Pass receipt_file_ref from google_gmail_download_attachment "
-                "to attach the receipt in the same call (or base64Content + contentMimeType for "
-                "an inline file; file_ref wins when both are given); Apex scans the receipt "
-                "with AI, so merchant/amount/date may then be omitted and are filled from it "
-                "(values you give win). workspace_id (from apex_list_workspaces) is required: the "
-                "scan "
-                "picks the category from that workspace's categories. The expense is booked right "
-                "away as a needs-review expense in that workspace (rental workspaces link it to "
-                "their default property) and also listed in the user's Apex inbox; rejecting it "
-                "there moves it to the trash. Optional business_share_percent (default 100) and "
-                "gst_percent (GST/HST included in the amount, default 13; 0 for none) are saved "
-                "on business workspaces. An expense can belong to a rental and a business "
-                "workspace: pass the others in also_workspace_ids." + _INBOX_NOTE
+                + "Books a needs-review expense in the chosen workspace as soon as amount and "
+                "date are known (given, or scanned from the receipt); it stays flagged in the "
+                "user's Apex inbox until they approve it, and rejecting it there moves it to "
+                "the trash. Provide merchant, amount, date and an optional category, e.g. from "
+                "an emailed receipt. Pass receipt_file_ref (a file_ref from the Gmail "
+                "attachment download) to attach the receipt in the same call, or base64Content "
+                "+ contentMimeType for an inline file (file_ref wins when both are given). "
+                "Apex scans the receipt with AI, so merchant/amount/date may then be omitted "
+                "and are filled from it (values you give win). workspace_id (from "
+                "apex_list_workspaces) is required: the scan picks the category from that "
+                "workspace's categories, and rental workspaces link the expense to their "
+                "default property. Optional business_share_percent (default 100) and "
+                "gst_percent (GST/HST included in the amount, default 13; 0 for none) are "
+                "saved on business workspaces. An expense can belong to a rental and a "
+                "business workspace: pass the others in also_workspace_ids."
             ),
             input_model=CreateExpenseInput,
             handler=create_expense,
