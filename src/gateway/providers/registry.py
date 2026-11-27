@@ -48,6 +48,24 @@ class ToolError(Exception):
         self.error_code = error_code
 
 
+_SYSTEM_TOOL = "system_get_current_time"
+
+
+def _publish_schema(mcp: FastMCP, exposed: str, schema: dict[str, Any]) -> None:
+    """Replace the schema FastMCP advertises for one registered tool.
+
+    FastMCP has no public hook for a hand-built schema, so this touches its tool manager.
+    ``pyproject.toml`` caps the ``mcp`` version this was written against; fail loudly if the
+    internals move.
+    """
+    try:
+        mcp._tool_manager.get_tool(exposed).parameters = schema
+    except AttributeError as exc:  # pragma: no cover - only on an incompatible mcp release
+        raise RuntimeError(
+            "this mcp release no longer exposes the tool manager used to publish schemas"
+        ) from exc
+
+
 def _validation_message(exc: Exception) -> str:
     """One short line per problem; never the submitted values or library internals."""
     if isinstance(exc, ValidationError):
@@ -88,7 +106,8 @@ class ToolRegistry:
             unknown = sorted(set(names) - registered)
             if unknown:
                 raise ValueError(f"tool name aliases for unregistered tools: {', '.join(unknown)}")
-            exposed_names = [*names.values(), "system_get_current_time"]
+            has_system = any(spec.name == _SYSTEM_TOOL for spec in self._specs)
+            exposed_names = [*names.values(), *([_SYSTEM_TOOL] if has_system else [])]
             duplicated = sorted({n for n in exposed_names if exposed_names.count(n) > 1})
             if duplicated:
                 raise ValueError(f"duplicate exposed tool names: {', '.join(duplicated)}")
@@ -97,7 +116,7 @@ class ToolRegistry:
                 continue
             exposed = spec.name
             widgets = settings.mcp_apps_enabled
-            if names is not None and spec.name != "system_get_current_time":
+            if names is not None and spec.name != _SYSTEM_TOOL:
                 if spec.name not in names:
                     continue
                 exposed = names[spec.name]
@@ -118,7 +137,7 @@ class ToolRegistry:
             # defaults). Runtime validation stays in the pipeline, which reports
             # ``invalid_input`` and writes the audit record; FastMCP only needs the
             # permissive signature below to pass the arguments through.
-            mcp._tool_manager.get_tool(exposed).parameters = schema
+            _publish_schema(mcp, exposed, schema)
 
     def _build_callable(self, spec: ToolSpec, settings: Settings, exposed: str | None = None):
         """Create an MCP-facing async function with a flat, model-derived schema."""

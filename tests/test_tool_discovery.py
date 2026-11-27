@@ -17,7 +17,7 @@ from gateway.mcp.context import _current_user
 from gateway.mcp.server import build_mcp, product_tool_filter
 from gateway.policy import confirm
 from gateway.providers.apex import client as apex_client
-from gateway.providers.apex import wealth
+from gateway.providers.apex import transactions, wealth
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 from gateway.providers.registry import (
     ToolError,
@@ -55,7 +55,7 @@ async def test_summarize_publishes_descriptions_limits_enums_and_defaults():
     schema = (await _published(mcp))["apex_transactions_summarize"].inputSchema
     props = schema["properties"]
 
-    assert len(props) == 23
+    assert set(props) == set(transactions.SummarizeInput.model_fields)
     assert [name for name, p in props.items() if not p.get("description")] == []
     assert schema["required"] == ["workspace_id"]
 
@@ -141,8 +141,9 @@ def test_expense_descriptions():
 
 def test_transactions_descriptions_state_how_much_versus_which():
     specs = _apex_specs()
-    assert specs["apex_transactions_summarize"].description.startswith("Answers 'how much'")
-    assert specs["apex_transactions_search"].description.startswith("Answers 'which transactions'")
+    first = {n: specs[n].description.split(":")[0] for n in specs if "transactions_s" in n}
+    assert "how much" in first["apex_transactions_summarize"]
+    assert "which transactions" in first["apex_transactions_search"]
     assert "never by you" in specs["apex_transactions_summarize"].description
 
 

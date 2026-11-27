@@ -370,7 +370,7 @@ def register(registry) -> None:
                 "date are known (given, or scanned from the receipt); it stays flagged in the "
                 "user's Apex inbox until they approve it, and rejecting it there moves it to "
                 "the trash. Provide merchant, amount, date and an optional category, e.g. from "
-                "an emailed receipt. Pass receipt_file_ref (a file_ref from the Gmail "
+                "an emailed receipt. Pass receipt_file_ref (a file_ref from an email "
                 "attachment download) to attach the receipt in the same call, or base64Content "
                 "+ contentMimeType for an inline file (file_ref wins when both are given). "
                 "Apex scans the receipt with AI, so merchant/amount/date may then be omitted "
