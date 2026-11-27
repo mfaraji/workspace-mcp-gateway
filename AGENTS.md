@@ -123,7 +123,7 @@ with Open WebUI's native tool-server UI:
   checked at discovery (`tools/list`, widgets), on the consent and `/access` pages
   (`policy.permitted_catalog`) and at call time (`policy.enforce` -> `forbidden`), always
   intersected with the client grant. Apex re-checks membership and capability itself.
-- `/mcp/finance` registers `system_get_current_time` plus `finance_*` read-only
+- `/mcp/finance` (shown as "Market") registers `system_get_current_time` plus `finance_*` read-only
   exchange-rate tools (public API, no per-user credentials; default quote IRR).
 - `/mcp/recipes` registers `system_get_current_time` plus `recipes_*` tools
   (get/list/search/save/update/delete plus add/delete feedback) backed by Couchbase Capella. Capella is
@@ -272,7 +272,7 @@ New tools are denied until selected. Never reintroduce key/header authentication
 ## Connector access modes
 
 `Connector.access_mode` defaults to `AccessMode.PERSONAL`: keep explicit tool grants
-for user-owned data, including Recipes. Finance explicitly uses
+for user-owned data, including Recipes. Market (`/mcp/finance`) explicitly uses
 `AccessMode.AUTHENTICATED_SHARED` for generic read-only data available to all signed-in
 OAuth users. Never infer shared access from absent upstream credentials. Shared
 connectors must contain only READ tools; MCP construction validates this invariant.

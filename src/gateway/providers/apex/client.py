@@ -357,5 +357,5 @@ class ApexUpstream:
         return any(workspace_has(w, spec.required_capability) for w in workspaces)
 
 
-APEX_UPSTREAM = ApexUpstream(upstream_provider=PROVIDER, display_name="Apex")
-APEX_WEALTH_UPSTREAM = ApexUpstream(upstream_provider=WEALTH_PROVIDER, display_name="Apex Wealth")
+APEX_UPSTREAM = ApexUpstream(upstream_provider=PROVIDER, display_name="Apex Finance")
+APEX_WEALTH_UPSTREAM = ApexUpstream(upstream_provider=WEALTH_PROVIDER, display_name="Apex Invest")

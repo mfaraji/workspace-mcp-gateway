@@ -193,7 +193,7 @@ CONNECTORS: list[Connector] = [
     Connector(
         slug="apex",
         tool_prefix="apex_",
-        display_name="Apex",
+        display_name="Apex Finance",
         upstream_provider="apex",
         register=_register_apex,
         upstream=APEX_UPSTREAM,
@@ -202,7 +202,7 @@ CONNECTORS: list[Connector] = [
     Connector(
         slug="apex-wealth",
         tool_prefix="apex_wealth_",
-        display_name="Apex Wealth",
+        display_name="Apex Invest",
         upstream_provider="apex_wealth",
         register=_register_apex_wealth,
         upstream=APEX_WEALTH_UPSTREAM,
@@ -229,7 +229,7 @@ CONNECTORS: list[Connector] = [
     Connector(
         slug="finance",
         tool_prefix="finance_",
-        display_name="Finance",
+        display_name="Market",
         upstream_provider="finance",
         register=_register_finance,
         access_mode=AccessMode.AUTHENTICATED_SHARED,

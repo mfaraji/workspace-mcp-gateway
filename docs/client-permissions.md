@@ -4,7 +4,7 @@ Every connector is served separately at `/mcp/<slug>`, including calendar,
 drive, tasks, telegram, apex, apex-wealth, finance, and recipes (`apex-transactions` is a hidden alias of `apex`). `/mcp` remains
 a compatibility endpoint. All mounts share one backend and require OAuth.
 Personal tools require a grant for the verified user and OAuth application.
-Shared read-only tools (Finance) are available to authenticated users. Every
+Shared read-only tools (Market, `/mcp/finance`) are available to authenticated users. Every
 endpoint exposes only its own tools.
 
 ## Breaking cutover

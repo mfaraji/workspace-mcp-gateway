@@ -156,7 +156,7 @@ exposes `system_get_current_time`, `google_drive_search_files`, and
 There are no Apex API keys: sign in with Clerk OAuth and pass `workspace_id` (from
 `apex_list_workspaces`) on every workspace-scoped call.
 
-Apex Wealth (`/mcp/apex-wealth`) exposes `system_get_current_time` plus read-only
+Apex Invest (`/mcp/apex-wealth`) exposes `system_get_current_time` plus read-only
 `apex_wealth_*` tools: `apex_wealth_list_workspaces`, `apex_wealth_list_accounts`,
 `apex_wealth_get_accounts_summary` (cash and liabilities),
 `apex_wealth_get_investments_summary`, `apex_wealth_get_positions`,
