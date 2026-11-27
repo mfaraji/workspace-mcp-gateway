@@ -1,7 +1,7 @@
 """What an agent can learn from ``tools/list``: schemas, descriptions and tool names.
 
-See ``docs/proposal-agent-tool-discovery.md``. These tests read the registered tools
-directly (``FastMCP.list_tools``) so they do not depend on grants or a database.
+These tests read the registered tools directly (``FastMCP.list_tools``) so they do not
+depend on grants or a database. Naming rules: ``spec.md`` §Tool Naming.
 """
 
 from __future__ import annotations
