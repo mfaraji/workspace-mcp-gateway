@@ -74,6 +74,18 @@ with Open WebUI's native tool-server UI:
 - `/mcp/apex-wealth` registers `system_get_current_time` and read-only
   `apex_wealth_*` tools (wealth data only exists in PERSONAL workspaces); `/mcp/apex`
   excludes these tools via `Connector.exclude_prefixes`.
+- `/mcp/apex-transactions` registers `system_get_current_time` and read-only
+  `apex_transactions_*` tools (`providers/apex/transactions.py`): `list_workspaces`,
+  `find_categories`, `summarize`, `search`, `find_merchants` and rental-only
+  `list_properties`. They wrap Apex's transactions query REST API (scope
+  `apex:transactions.read`; capability `transactionInsights`, `rentalBooks` for
+  properties). Apex does no natural-language parsing, so the tool descriptions carry the
+  workflow (find the category id in English first, then summarize, then search for the
+  rows) and every answer should state `interpretation.period` and mention `leftOut`.
+  Never compute totals in the model or the gateway: Apex returns them (spending positive,
+  net of refunds, CAD; BUSINESS is the business share, RENTAL is allocated slices with
+  capital and personal use kept out). The audit log records ids, presets and enums only,
+  never payee/search text, tags, amounts or dates. `/mcp/apex` excludes these tools.
 - Apex has no keys, no stored credentials and no default workspace. The user's Clerk
   token is audience-bound to the gateway and is **never forwarded** (MCP token
   passthrough is forbidden). For each call `gateway.providers.apex.client.apex_credentials`

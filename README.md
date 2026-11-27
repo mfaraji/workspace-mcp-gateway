@@ -140,6 +140,7 @@ send. Existing users must re-authorize Google (`product=gmail`) to grant the
 Google OAuth app in testing mode until it passes Google verification.
 - `http://127.0.0.1:8000/mcp/apex`
 - `http://127.0.0.1:8000/mcp/apex-wealth`
+- `http://127.0.0.1:8000/mcp/apex-transactions`
 - `http://127.0.0.1:8000/mcp/telegram`
 - `http://127.0.0.1:8000/mcp/finance`
 - `http://127.0.0.1:8000/mcp/recipes`
@@ -162,6 +163,20 @@ Apex Wealth (`/mcp/apex-wealth`) exposes `system_get_current_time` plus read-onl
 `apex_wealth_list_manual_holdings`, and `apex_wealth_get_net_worth_history`, against the
 [Apex wealth REST API](../apex/docs/api/wealth-rest.openapi.yaml). Wealth data only
 exists in PERSONAL workspaces; each of these tools takes a `workspace_id`.
+
+Apex Transactions (`/mcp/apex-transactions`) answers questions about spending and
+income in any language ("how much were my water bills this year?", "how much did we
+spend on clothing?") with read-only `apex_transactions_*` tools:
+`apex_transactions_list_workspaces`, `apex_transactions_find_categories`,
+`apex_transactions_summarize`, `apex_transactions_search`,
+`apex_transactions_find_merchants` and, for rental workspaces,
+`apex_transactions_list_properties`, against the
+[Apex transactions query REST API](../apex/docs/api/transactions-query.openapi.yaml)
+(scope `apex:transactions.read`, capability `transactionInsights`). Apex does no
+language parsing: the model translates the question into category ids, a period and
+filters, and every answer echoes how Apex interpreted them. It serves PERSONAL,
+BUSINESS (business share of each expense) and RENTAL (recorded rental allocations)
+workspaces; each tool takes a `workspace_id`.
 
 **How the gateway reaches Apex.** The Clerk access token is issued for the gateway and
 is never sent to Apex. For each call the gateway mints a short-lived (120 s) JWT valid

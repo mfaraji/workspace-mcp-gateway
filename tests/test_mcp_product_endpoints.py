@@ -135,6 +135,29 @@ def test_apex_wealth_filter_registers_only_wealth_tools():
     }
 
 
+def test_apex_transactions_filter_registers_only_transaction_tools():
+    names = _tool_names(_settings(), "apex-transactions")
+
+    assert names == {
+        "system_get_current_time",
+        "apex_transactions_find_categories",
+        "apex_transactions_list_properties",
+        "apex_transactions_find_merchants",
+        "apex_transactions_summarize",
+        "apex_transactions_search",
+        "apex_transactions_list_workspaces",
+    }
+
+
+def test_apex_filter_excludes_transaction_tools():
+    assert not any(
+        n.startswith("apex_transactions_") for n in _tool_names(_settings(), "apex")
+    )
+    assert not any(
+        n.startswith("apex_transactions_") for n in _tool_names(_settings(), "apex-wealth")
+    )
+
+
 def test_apex_filter_excludes_wealth_tools():
     assert not any(n.startswith("apex_wealth_") for n in _tool_names(_settings(), "apex"))
 

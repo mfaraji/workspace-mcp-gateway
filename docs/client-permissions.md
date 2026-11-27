@@ -1,7 +1,7 @@
 # OAuth client permissions
 
 Every connector is served separately at `/mcp/<slug>`, including calendar,
-drive, tasks, telegram, apex, apex-wealth, finance, and recipes. `/mcp` remains
+drive, tasks, telegram, apex, apex-wealth, apex-transactions, finance, and recipes. `/mcp` remains
 a compatibility endpoint. All mounts share one backend and require OAuth.
 Personal tools require a grant for the verified user and OAuth application.
 Shared read-only tools (Finance) are available to authenticated users. Every

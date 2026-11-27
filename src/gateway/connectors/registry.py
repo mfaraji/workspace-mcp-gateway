@@ -15,9 +15,14 @@ from gateway.connectors.base import AccessMode, Bundle, Connector
 from gateway.providers.apex import auth as apex_auth
 from gateway.providers.apex import expenses as apex_expenses
 from gateway.providers.apex import read as apex_read
+from gateway.providers.apex import transactions as apex_transactions
 from gateway.providers.apex import wealth as apex_wealth
 from gateway.providers.apex import write as apex_write
-from gateway.providers.apex.client import APEX_UPSTREAM, APEX_WEALTH_UPSTREAM
+from gateway.providers.apex.client import (
+    APEX_TRANSACTIONS_UPSTREAM,
+    APEX_UPSTREAM,
+    APEX_WEALTH_UPSTREAM,
+)
 from gateway.providers.base import ToolSpec
 from gateway.providers.finance import read as finance_read
 from gateway.providers.google.calendar import read as google_calendar_read
@@ -106,6 +111,11 @@ def _register_apex_wealth(registry: ToolRegistry, _settings: Settings) -> None:
     apex_auth.register_wealth(registry)
 
 
+def _register_apex_transactions(registry: ToolRegistry, _settings: Settings) -> None:
+    apex_transactions.register(registry)
+    apex_auth.register_transactions(registry)
+
+
 def _register_finance(registry: ToolRegistry, _settings: Settings) -> None:
     finance_read.register(registry)
 
@@ -185,7 +195,7 @@ CONNECTORS: list[Connector] = [
         upstream_provider="apex",
         register=_register_apex,
         upstream=APEX_UPSTREAM,
-        exclude_prefixes=("apex_wealth_",),
+        exclude_prefixes=("apex_wealth_", "apex_transactions_"),
     ),
     Connector(
         slug="apex-wealth",
@@ -194,6 +204,14 @@ CONNECTORS: list[Connector] = [
         upstream_provider="apex_wealth",
         register=_register_apex_wealth,
         upstream=APEX_WEALTH_UPSTREAM,
+    ),
+    Connector(
+        slug="apex-transactions",
+        tool_prefix="apex_transactions_",
+        display_name="Apex Transactions",
+        upstream_provider="apex_transactions",
+        register=_register_apex_transactions,
+        upstream=APEX_TRANSACTIONS_UPSTREAM,
     ),
     Connector(
         slug="telegram",

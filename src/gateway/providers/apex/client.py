@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 PROVIDER = "apex"
 WEALTH_PROVIDER = "apex_wealth"
+TRANSACTIONS_PROVIDER = "apex_transactions"
 
 _STATUS_ERROR_CODES = {
     401: "unauthorized",
@@ -46,11 +47,16 @@ SCOPE_CLIENTS_READ = "apex:clients.read"
 SCOPE_INVOICING_READ = "apex:invoicing.read"
 SCOPE_INVOICING_WRITE = "apex:invoicing.write"
 SCOPE_WEALTH_READ = "apex:wealth.read"
+SCOPE_TRANSACTIONS_READ = "apex:transactions.read"
 SCOPE_EXPENSES_READ = "apex:expenses.read"
 SCOPE_EXPENSES_WRITE = "apex:expenses.write"
 
 # Capability sentinel: workspaces that hold wealth data (PERSONAL kind).
 CAP_WEALTH_WORKSPACE = "wealthWorkspace"
+
+# Apex workspace capabilities (the names Apex reports in /api/workspaces).
+CAP_TRANSACTIONS = "transactionInsights"  # Personal, Business and Rental
+CAP_RENTAL_BOOKS = "rentalBooks"  # Rental workspaces only
 
 _WORKSPACE_CACHE_TTL = 60.0
 _WORKSPACE_CACHE_MAX = 1024
@@ -328,3 +334,6 @@ class ApexUpstream:
 
 APEX_UPSTREAM = ApexUpstream(upstream_provider=PROVIDER, display_name="Apex")
 APEX_WEALTH_UPSTREAM = ApexUpstream(upstream_provider=WEALTH_PROVIDER, display_name="Apex Wealth")
+APEX_TRANSACTIONS_UPSTREAM = ApexUpstream(
+    upstream_provider=TRANSACTIONS_PROVIDER, display_name="Apex Transactions"
+)
