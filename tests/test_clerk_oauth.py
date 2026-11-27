@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -55,8 +56,12 @@ async def test_resource_metadata_on_all_and_product_mounts(monkeypatch):
     assert missing.status_code == 404
     monkeypatch.setattr("gateway.app.get_settings", lambda: settings)
     app = create_app()
-    paths = {route.path for route in app.routes}
-    assert "/.well-known/oauth-protected-resource/mcp/{product}" in paths
+    # Ask the mounted app rather than inspecting app.routes: newer FastAPI keeps included
+    # routers as single route objects.
+    with TestClient(app) as client:
+        response = client.get("/.well-known/oauth-protected-resource/mcp/calendar")
+    assert response.status_code == 200
+    assert response.json()["resource"] == "https://mcp.example.test/mcp/calendar"
 
 
 @pytest.mark.asyncio
