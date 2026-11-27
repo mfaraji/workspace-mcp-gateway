@@ -12,8 +12,8 @@ from pydantic import ValidationError
 from gateway.audit.log import summarize_input
 from gateway.config import Settings
 from gateway.connectors.registry import by_spec
-from gateway.providers.apex import auth, transactions
 from gateway.providers.apex import client as apex_client
+from gateway.providers.apex import transactions
 from gateway.providers.base import CallContext, RiskLevel
 from gateway.providers.registry import ToolError, ToolRegistry, _validation_message
 
@@ -237,7 +237,6 @@ def test_each_call_mints_the_read_scope_for_the_workspace(
             scopes=["apex:transactions.read"],
             workspace_id="w1",
             capability=capability,
-            list_tool="apex_transactions_list_workspaces",
         )
     ]
 
@@ -307,15 +306,14 @@ def test_merchant_and_search_limits_are_bounded():
 def _specs():
     registry = ToolRegistry()
     transactions.register(registry)
-    auth.register_transactions(registry)
     return {s.name: s for s in registry._specs}
 
 
-def test_tools_are_read_only_and_belong_to_the_transactions_connector():
+def test_tools_are_read_only_and_belong_to_apex_finance():
     specs = _specs()
-    assert set(specs) == EXPECTED_TOOLS | {"apex_transactions_list_workspaces"}
+    assert set(specs) == EXPECTED_TOOLS
     assert all(s.risk is RiskLevel.READ for s in specs.values())
-    assert {by_spec(s).slug for s in specs.values()} == {"apex-transactions"}
+    assert {by_spec(s).slug for s in specs.values()} == {"apex"}
 
 
 def test_capabilities_gate_which_tools_a_user_is_offered():
@@ -323,7 +321,6 @@ def test_capabilities_gate_which_tools_a_user_is_offered():
     for name in EXPECTED_TOOLS - {"apex_transactions_list_properties"}:
         assert specs[name].required_capability == "transactionInsights"
     assert specs["apex_transactions_list_properties"].required_capability == "rentalBooks"
-    assert specs["apex_transactions_list_workspaces"].required_capability is None
 
 
 @pytest.mark.parametrize(
@@ -357,32 +354,6 @@ def test_tool_descriptions_teach_the_flow():
         assert phrase in summarize
 
 
-# --- workspace listing -----------------------------------------------------------
-
-
-def test_list_workspaces_only_offers_workspaces_that_can_answer(monkeypatch):
-    monkeypatch.setattr(auth, "get_settings", lambda: _settings())
-    monkeypatch.setattr(
-        auth,
-        "user_workspaces",
-        lambda *a, **k: [
-            PERSONAL,
-            RENTAL,
-            {"id": "w-old", "name": "Old", "kind": "BUSINESS", "capabilities": ["invoicing"]},
-        ],
-    )
-    result = auth.list_transactions_workspaces(auth.NoInput(), _ctx(), None)
-    assert [w["id"] for w in result] == ["w-main", "w-rent"]
-
-
-def test_list_workspaces_refuses_an_unknown_apex_user(monkeypatch):
-    monkeypatch.setattr(auth, "get_settings", lambda: _settings())
-    monkeypatch.setattr(auth, "user_workspaces", lambda *a, **k: None)
-    with pytest.raises(ToolError) as exc:
-        auth.list_transactions_workspaces(auth.NoInput(), _ctx(), None)
-    assert exc.value.error_code == "forbidden"
-
-
 # --- audit -----------------------------------------------------------------------
 
 
@@ -414,7 +385,7 @@ def test_audit_notes_that_a_query_was_given_without_recording_it():
     )
     assert "therapy" not in summary
     assert "query=<set>" in summary
-    assert summarize_input("apex_transactions_list_workspaces", {"x": "y"}) == ""
+    assert summarize_input("apex_list_workspaces", {"x": "y"}) == ""
 
 
 # --- error messages ------------------------------------------------------------
@@ -449,7 +420,7 @@ def test_unknown_ids_point_at_the_lookup_tool_not_an_internal_route(
     assert "/api/" not in text and "statusCode" not in text and "{" not in text
 
 
-def test_unknown_workspace_names_the_connectors_own_list_tool(monkeypatch):
+def test_unknown_workspace_names_the_listing_tool_the_caller_can_use(monkeypatch):
     monkeypatch.setattr(apex_client, "user_workspaces", lambda *a, **k: [PERSONAL])
     with pytest.raises(ToolError) as exc_info:
         apex_client.apex_credentials(
@@ -458,10 +429,19 @@ def test_unknown_workspace_names_the_connectors_own_list_tool(monkeypatch):
             scopes=["s"],
             workspace_id="nope",
             capability="transactionInsights",
-            list_tool="apex_transactions_list_workspaces",
         )
-    assert "apex_transactions_list_workspaces" in str(exc_info.value)
-    assert "call apex_list_workspaces" not in str(exc_info.value)
+    assert "call apex_list_workspaces." in str(exc_info.value)
+
+    with pytest.raises(ToolError) as wealth_exc:
+        apex_client.apex_credentials(
+            _settings(),
+            _ctx(),
+            scopes=["s"],
+            workspace_id="nope",
+            capability="wealthWorkspace",
+            list_tool="apex_wealth_list_workspaces",
+        )
+    assert "call apex_wealth_list_workspaces." in str(wealth_exc.value)
 
 
 def test_from_after_to_is_a_plain_message_without_library_internals():

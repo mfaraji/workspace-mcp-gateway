@@ -106,6 +106,7 @@ def create_app() -> FastAPI:
             ],
         }
         for c in CONNECTORS
+        if not c.hidden
     ]
 
     from gateway.api.apex_uploads import router as apex_uploads_router

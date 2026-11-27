@@ -71,11 +71,16 @@ with Open WebUI's native tool-server UI:
 - `/mcp/telegram` registers `system_get_current_time`,
   `telegram_list_destinations`, and `telegram_send_message`. Bot credentials are
   configured through the private HTTP API, never through a model-visible tool.
-- `/mcp/apex-wealth` registers `system_get_current_time` and read-only
-  `apex_wealth_*` tools (wealth data only exists in PERSONAL workspaces); `/mcp/apex`
-  excludes these tools via `Connector.exclude_prefixes`.
-- `/mcp/apex-transactions` registers `system_get_current_time` and read-only
-  `apex_transactions_*` tools (`providers/apex/transactions.py`): `list_workspaces`,
+- Apex is two products. **Apex Finance** (`/mcp/apex`) is the personal finance app:
+  bookkeeping (`apex_*`: invoices, timesheets, expenses) and spending questions
+  (`apex_transactions_*`). **Apex Invest** (`/mcp/apex-wealth`) is wealth and investments.
+  `/mcp/apex-wealth` registers `system_get_current_time` and read-only `apex_wealth_*`
+  tools (wealth data only exists in PERSONAL workspaces); `/mcp/apex` excludes these via
+  `Connector.exclude_prefixes`. `/mcp/apex-transactions` is a hidden alias of `/mcp/apex`
+  (`Connector.hidden`/`alias_of`) kept for existing clients; it owns no tools and is not
+  listed on the access or connections pages. Workspaces are listed by
+  `apex_list_workspaces` for every Apex Finance tool.
+- The spending tools (`apex_transactions_*`, `providers/apex/transactions.py`):
   `find_categories`, `summarize`, `search`, `find_merchants` and rental-only
   `list_properties`. They wrap Apex's transactions query REST API (scope
   `apex:transactions.read`; capability `transactionInsights`, `rentalBooks` for
@@ -85,7 +90,7 @@ with Open WebUI's native tool-server UI:
   Never compute totals in the model or the gateway: Apex returns them (spending positive,
   net of refunds, CAD; BUSINESS is the business share, RENTAL is allocated slices with
   capital and personal use kept out). The audit log records ids, presets and enums only,
-  never payee/search text, tags, amounts or dates. `/mcp/apex` excludes these tools.
+  never payee/search text, tags, amounts or dates. `/mcp/apex-wealth` excludes these tools.
 - Apex has no keys, no stored credentials and no default workspace. The user's Clerk
   token is audience-bound to the gateway and is **never forwarded** (MCP token
   passthrough is forbidden). For each call `gateway.providers.apex.client.apex_credentials`

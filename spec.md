@@ -118,7 +118,9 @@ Tasks:
 
 - **Identity.** Published canonical IDs stay as they are. New gateway-owned tools use
   lowercase snake_case: `<provider>_[<product>_]<verb>[_<object>]`. Omit the object when the
-  namespace already names it, so `apex_transactions_summarize` stays as is.
+  namespace already names it, so `apex_transactions_summarize` stays as is. Apex Finance (the
+  personal finance app) owns `apex_*` and `apex_transactions_*` and is served at `/mcp/apex`;
+  Apex Invest (wealth and investments) owns `apex_wealth_*` at `/mcp/apex-wealth`.
 - **Verbs.** `list` enumerates. `find` resolves a phrase to candidates, such as a category ID.
   `search` returns matching rows. `summarize` returns provider-calculated totals. For a new
   write, pick the verb the user would be authorizing.

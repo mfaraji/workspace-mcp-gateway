@@ -149,14 +149,9 @@ def test_transactions_descriptions_state_how_much_versus_which():
 
 def test_every_apex_workspace_listing_says_what_the_mount_is_for_and_when_to_ask():
     specs = _apex_specs()
-    assert specs["apex_list_workspaces"].description.startswith("Bookkeeping")
+    assert specs["apex_list_workspaces"].description.startswith("Apex Finance workspaces")
     assert specs["apex_wealth_list_workspaces"].description.startswith("Personal wealth")
-    assert specs["apex_transactions_list_workspaces"].description.startswith("Spending")
-    for name in (
-        "apex_list_workspaces",
-        "apex_wealth_list_workspaces",
-        "apex_transactions_list_workspaces",
-    ):
+    for name in ("apex_list_workspaces", "apex_wealth_list_workspaces"):
         assert "ask the user" in specs[name].description or "ask them" in specs[name].description
 
 

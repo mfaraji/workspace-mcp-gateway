@@ -359,6 +359,3 @@ class ApexUpstream:
 
 APEX_UPSTREAM = ApexUpstream(upstream_provider=PROVIDER, display_name="Apex")
 APEX_WEALTH_UPSTREAM = ApexUpstream(upstream_provider=WEALTH_PROVIDER, display_name="Apex Wealth")
-APEX_TRANSACTIONS_UPSTREAM = ApexUpstream(
-    upstream_provider=TRANSACTIONS_PROVIDER, display_name="Apex Transactions"
-)

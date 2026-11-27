@@ -56,7 +56,6 @@ _SAFE_FIELDS: dict[str, set[str]] = {
     # Apex transaction questions: ids, presets and enums only. Merchant/payee text, search
     # text, tags, amounts, dates and the paging cursor are never recorded (`query` is
     # recorded as presence only, below).
-    "apex_transactions_list_workspaces": set(),
     "apex_transactions_find_categories": {"workspace_id"},
     "apex_transactions_list_properties": {"workspace_id"},
     "apex_transactions_find_merchants": {

@@ -184,6 +184,7 @@ def connections(request: Request):
                 **connection_status(c, session, user.id, auth, settings),
             }
             for c in CONNECTORS
+            if not c.hidden
         ]
         # Overarching endpoints that serve several connectors' tools in one registration.
         items += [

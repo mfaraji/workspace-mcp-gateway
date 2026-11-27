@@ -31,7 +31,7 @@ from gateway.providers.apex.client import (
 )
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
-WORKSPACE_ID_DESC = "Apex workspace id (from apex_transactions_list_workspaces)."
+WORKSPACE_ID_DESC = "Apex workspace id (from apex_list_workspaces)."
 
 Period = Literal[
     "ytd",
@@ -302,7 +302,6 @@ def _get(
         scopes=[SCOPE_TRANSACTIONS_READ],
         workspace_id=workspace_id,
         capability=capability,
-        list_tool="apex_transactions_list_workspaces",
     )
     from gateway.providers.registry import ToolError
 

@@ -19,7 +19,6 @@ from gateway.providers.apex import transactions as apex_transactions
 from gateway.providers.apex import wealth as apex_wealth
 from gateway.providers.apex import write as apex_write
 from gateway.providers.apex.client import (
-    APEX_TRANSACTIONS_UPSTREAM,
     APEX_UPSTREAM,
     APEX_WEALTH_UPSTREAM,
 )
@@ -104,6 +103,7 @@ def _register_apex(registry: ToolRegistry, _settings: Settings) -> None:
     apex_write.register(registry)
     apex_expenses.register(registry)
     apex_auth.register(registry)
+    apex_transactions.register(registry)
 
 
 def _register_apex_wealth(registry: ToolRegistry, _settings: Settings) -> None:
@@ -111,9 +111,8 @@ def _register_apex_wealth(registry: ToolRegistry, _settings: Settings) -> None:
     apex_auth.register_wealth(registry)
 
 
-def _register_apex_transactions(registry: ToolRegistry, _settings: Settings) -> None:
-    apex_transactions.register(registry)
-    apex_auth.register_transactions(registry)
+def _register_none(_registry: ToolRegistry, _settings: Settings) -> None:
+    """For alias mounts: their tools are registered by the connector they point at."""
 
 
 def _register_finance(registry: ToolRegistry, _settings: Settings) -> None:
@@ -198,7 +197,7 @@ CONNECTORS: list[Connector] = [
         upstream_provider="apex",
         register=_register_apex,
         upstream=APEX_UPSTREAM,
-        exclude_prefixes=("apex_wealth_", "apex_transactions_"),
+        exclude_prefixes=("apex_wealth_",),
     ),
     Connector(
         slug="apex-wealth",
@@ -209,12 +208,15 @@ CONNECTORS: list[Connector] = [
         upstream=APEX_WEALTH_UPSTREAM,
     ),
     Connector(
+        # Spending questions used to be their own mount. They are part of Apex Finance now
+        # (`/mcp/apex`); this URL keeps serving the same tools for clients already using it.
         slug="apex-transactions",
         tool_prefix="apex_transactions_",
-        display_name="Apex Transactions",
-        upstream_provider="apex_transactions",
-        register=_register_apex_transactions,
-        upstream=APEX_TRANSACTIONS_UPSTREAM,
+        display_name="Apex Finance (spending alias)",
+        upstream_provider="apex",
+        register=_register_none,
+        hidden=True,
+        alias_of="apex",
     ),
     Connector(
         slug="telegram",
@@ -250,7 +252,7 @@ def by_slug(slug: str) -> Connector | None:
 
 def by_spec(spec: ToolSpec) -> Connector | None:
     """Return the connector that owns a tool spec, by name-prefix match, or ``None``."""
-    return next((c for c in CONNECTORS if c.matches(spec)), None)
+    return next((c for c in CONNECTORS if not c.hidden and c.matches(spec)), None)
 
 
 # Overarching endpoints that combine the tools of several connectors. The per-connector
@@ -278,8 +280,9 @@ def connector_slugs_for(slug: str) -> set[str] | None:
 
     ``None`` means no endpoint exists at that slug.
     """
-    if by_slug(slug) is not None:
-        return {slug}
+    connector = by_slug(slug)
+    if connector is not None:
+        return {connector.alias_of or slug}
     bundle = bundle_by_slug(slug)
     if bundle is not None:
         return {c.slug for c in bundle_members(bundle)}

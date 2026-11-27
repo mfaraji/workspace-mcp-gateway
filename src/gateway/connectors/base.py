@@ -73,6 +73,11 @@ class Connector:
     # connector's own ``/mcp/<slug>`` mount exposes exactly these tools under those names
     # (no widgets, no extras); grants, tiers and audit keep the internal names.
     google_names: Mapping[str, str] = field(default_factory=dict)
+    # A hidden connector is a mount kept only so existing clients keep working. It owns no
+    # tools (``by_spec`` skips it), is not listed on the access or connections pages, and
+    # serves the tools of the connector named by ``alias_of``.
+    hidden: bool = False
+    alias_of: str | None = None
 
     def matches(self, spec: ToolSpec) -> bool:
         """Whether a tool spec belongs to this connector."""

@@ -117,6 +117,11 @@ def test_apex_filter_registers_expected_apex_tools():
         "apex_create_expense",
         "apex_upload_expense_receipt",
         "apex_list_workspaces",
+        "apex_transactions_find_categories",
+        "apex_transactions_list_properties",
+        "apex_transactions_find_merchants",
+        "apex_transactions_summarize",
+        "apex_transactions_search",
     }
 
 
@@ -135,24 +140,11 @@ def test_apex_wealth_filter_registers_only_wealth_tools():
     }
 
 
-def test_apex_transactions_filter_registers_only_transaction_tools():
-    names = _tool_names(_settings(), "apex-transactions")
-
-    assert names == {
-        "system_get_current_time",
-        "apex_transactions_find_categories",
-        "apex_transactions_list_properties",
-        "apex_transactions_find_merchants",
-        "apex_transactions_summarize",
-        "apex_transactions_search",
-        "apex_transactions_list_workspaces",
-    }
+def test_apex_transactions_mount_is_an_alias_of_apex_finance():
+    assert _tool_names(_settings(), "apex-transactions") == _tool_names(_settings(), "apex")
 
 
-def test_apex_filter_excludes_transaction_tools():
-    assert not any(
-        n.startswith("apex_transactions_") for n in _tool_names(_settings(), "apex")
-    )
+def test_apex_wealth_filter_excludes_transaction_tools():
     assert not any(
         n.startswith("apex_transactions_") for n in _tool_names(_settings(), "apex-wealth")
     )
@@ -275,3 +267,17 @@ def test_product_mcp_no_slash_redirect_route_exists(monkeypatch):
     assert {"GET", "POST", "DELETE"}.issubset(route.methods)
 
     get_settings.cache_clear()
+
+
+def test_hidden_alias_connectors_own_no_tools_and_point_at_a_real_connector():
+    from gateway.connectors.registry import CONNECTORS, by_slug, by_spec
+
+    hidden = [c for c in CONNECTORS if c.hidden]
+    assert [c.slug for c in hidden] == ["apex-transactions"]
+    for connector in hidden:
+        assert by_slug(connector.alias_of) is not None
+    registry_names = _tool_names(_settings(), "apex")
+    specs = build_mcp(_settings()).gateway_specs
+    transaction_specs = [s for s in specs if s.name.startswith("apex_transactions_")]
+    assert transaction_specs and {s.name for s in transaction_specs} <= registry_names
+    assert {by_spec(s).slug for s in transaction_specs} == {"apex"}

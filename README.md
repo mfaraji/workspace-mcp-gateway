@@ -140,7 +140,7 @@ send. Existing users must re-authorize Google (`product=gmail`) to grant the
 Google OAuth app in testing mode until it passes Google verification.
 - `http://127.0.0.1:8000/mcp/apex`
 - `http://127.0.0.1:8000/mcp/apex-wealth`
-- `http://127.0.0.1:8000/mcp/apex-transactions`
+- `http://127.0.0.1:8000/mcp/apex-transactions` (alias of `/mcp/apex`, kept for existing clients)
 - `http://127.0.0.1:8000/mcp/telegram`
 - `http://127.0.0.1:8000/mcp/finance`
 - `http://127.0.0.1:8000/mcp/recipes`
@@ -164,10 +164,10 @@ Apex Wealth (`/mcp/apex-wealth`) exposes `system_get_current_time` plus read-onl
 [Apex wealth REST API](../apex/docs/api/wealth-rest.openapi.yaml). Wealth data only
 exists in PERSONAL workspaces; each of these tools takes a `workspace_id`.
 
-Apex Transactions (`/mcp/apex-transactions`) answers questions about spending and
+Apex Finance (`/mcp/apex`) also answers questions about spending and
 income in any language ("how much were my water bills this year?", "how much did we
-spend on clothing?") with read-only `apex_transactions_*` tools:
-`apex_transactions_list_workspaces`, `apex_transactions_find_categories`,
+spend on clothing?") with read-only `apex_transactions_*` tools (workspaces come from
+`apex_list_workspaces`): `apex_transactions_find_categories`,
 `apex_transactions_summarize`, `apex_transactions_search`,
 `apex_transactions_find_merchants` and, for rental workspaces,
 `apex_transactions_list_properties`, against the

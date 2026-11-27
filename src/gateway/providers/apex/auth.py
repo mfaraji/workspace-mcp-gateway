@@ -12,13 +12,10 @@ from sqlalchemy.orm import Session
 
 from gateway.config import get_settings
 from gateway.providers.apex.client import (
-    CAP_TRANSACTIONS,
     PROVIDER,
-    TRANSACTIONS_PROVIDER,
     WEALTH_PROVIDER,
     is_wealth_workspace,
     user_workspaces,
-    workspace_has,
 )
 from gateway.providers.base import CallContext, RiskLevel, ToolSpec
 
@@ -27,9 +24,7 @@ class NoInput(BaseModel):
     pass
 
 
-def _list(
-    ctx: CallContext, *, wealth_only: bool = False, capability: str | None = None
-) -> list[dict]:
+def _list(ctx: CallContext, *, wealth_only: bool = False) -> list[dict]:
     from gateway.providers.registry import ToolError
 
     workspaces = user_workspaces(get_settings(), ctx.clerk_subject, ctx.oauth_client_id)
@@ -37,8 +32,6 @@ def _list(
         raise ToolError("forbidden", "Apex does not recognize your account or is unreachable")
     if wealth_only:
         workspaces = [w for w in workspaces if is_wealth_workspace(w)]
-    if capability is not None:
-        workspaces = [w for w in workspaces if workspace_has(w, capability)]
     return workspaces
 
 
@@ -50,10 +43,6 @@ def list_wealth_workspaces(_args: NoInput, ctx: CallContext, session: Session) -
     return _list(ctx, wealth_only=True)
 
 
-def list_transactions_workspaces(_args: NoInput, ctx: CallContext, session: Session) -> list[dict]:
-    return _list(ctx, capability=CAP_TRANSACTIONS)
-
-
 def register(registry) -> None:
     """Register the Apex workspace listing tool with the tool registry."""
     registry.add(
@@ -62,10 +51,13 @@ def register(registry) -> None:
             provider=PROVIDER,
             risk=RiskLevel.READ,
             description=(
-                "Bookkeeping workspaces: list the Apex workspaces you belong to (id, name, "
-                "kind, capabilities). Pass the id as workspace_id to every other apex_* tool. "
+                "Apex Finance workspaces: list the Apex workspaces you belong to (id, name, "
+                "kind PERSONAL, BUSINESS or RENTAL, capabilities). Pass the id as workspace_id "
+                "to every other Apex Finance tool (apex_*, including apex_transactions_*). "
                 "Invoicing, timesheet and client tools need a BUSINESS workspace; receipts "
-                "and expenses need one with receipt review. Pick the workspace the request is "
+                "and expenses need one with receipt review. Spending questions work on any "
+                "kind: personal spending is PERSONAL, company expenses are BUSINESS, rental "
+                "income and property costs are RENTAL. Pick the workspace the request is "
                 "about; if it is unclear, ask the user rather than guessing."
             ),
             input_model=NoInput,
@@ -92,23 +84,3 @@ def register_wealth(registry) -> None:
         )
     )
 
-
-def register_transactions(registry) -> None:
-    """Register the Apex Transactions workspace listing tool with the tool registry."""
-    registry.add(
-        ToolSpec(
-            name="apex_transactions_list_workspaces",
-            provider=TRANSACTIONS_PROVIDER,
-            risk=RiskLevel.READ,
-            description=(
-                "Spending questions: list the Apex workspaces whose transactions you can ask "
-                "about (id, name, kind PERSONAL, BUSINESS or RENTAL, capabilities). Pass the id as "
-                "workspace_id to every other apex_transactions_* tool. Pick the workspace the "
-                "question is about: personal spending is PERSONAL, company expenses are "
-                "BUSINESS, rental income and property costs are RENTAL. If it is unclear, "
-                "ask the user rather than guessing."
-            ),
-            input_model=NoInput,
-            handler=list_transactions_workspaces,
-        )
-    )

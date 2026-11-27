@@ -92,7 +92,7 @@ def test_api_lists_every_connector_without_secrets(monkeypatch):
     assert [b["slug"] for b in bundles] == ["google"]
     assert bundles[0]["oauth_product"] == "all"
     assert [c["slug"] for c in data["connectors"] if not c.get("bundle")] == [
-        c.slug for c in CONNECTORS
+        c.slug for c in CONNECTORS if not c.hidden
     ]
     assert data["csrf"] == "csrf"
     assert all(c["mcp_url"].endswith(f"/mcp/{c['slug']}") for c in data["connectors"])
