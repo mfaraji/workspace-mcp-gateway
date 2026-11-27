@@ -4,8 +4,10 @@ set -euo pipefail
 SITE_NAME="${SITE_NAME:-workspace-mcp-gateway}"
 SERVER_NAME="${SERVER_NAME:-_}"
 # Default to loopback so the only public route to the gateway is through nginx.
-# Bind the app itself to 127.0.0.1:8000 (not 0.0.0.0) and firewall the port.
-UPSTREAM="${UPSTREAM:-127.0.0.1:8000}"
+# Bind the app itself to 127.0.0.1 (not 0.0.0.0) and firewall the port. The default matches
+# docker-compose.yml (uvicorn on 127.0.0.1:8001); the Dockerfile's own default is 8000, and on
+# hosts where another service holds 8000 pointing here by mistake sends MCP traffic to it.
+UPSTREAM="${UPSTREAM:-127.0.0.1:8001}"
 LISTEN_PORT="${LISTEN_PORT:-80}"
 DEFAULT_SERVER="${DEFAULT_SERVER:-false}"
 
@@ -224,6 +226,6 @@ Generate a shared secret and give the SAME value to the gateway and to Open WebU
 (Open WebUI must send it as the X-Gateway-Auth header on MCP requests):
   GATEWAY_SHARED_SECRET=\$(python -c "import secrets; print(secrets.token_urlsafe(48))")
 
-Open WebUI must reach the gateway directly (e.g. http://127.0.0.1:8000), bypassing
+Open WebUI must reach the gateway directly (e.g. http://${UPSTREAM}), bypassing
 this proxy, so its X-Gateway-Auth and X-Open-WebUI-* headers are preserved.
 EOF
